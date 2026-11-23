@@ -6,7 +6,6 @@
 use crate::icons::{self, Icon};
 use crate::theme::Tokens;
 use egui::{Align2, Sense, Ui, vec2};
-use notecraft_model::NodeColor;
 use notecraft_store::tree::Node;
 
 /// What the File screen asks the window to do.
@@ -203,9 +202,12 @@ pub fn show(
     let mut acts = Vec::new();
     egui::Frame::NONE.fill(t.panel).show(ui, |ui| {
         ui.horizontal_top(|ui| {
-            side_bar(ui, page, t, &mut acts);
+            egui::ScrollArea::vertical().id_salt("file-sections").auto_shrink([true, false]).show(ui, |ui| {
+                side_bar(ui, page, t, &mut acts);
+            });
             ui.add_space(14.0);
-            ui.vertical(|ui| {
+            let render_page = |ui: &mut Ui| {
+                ui.set_max_width(ui.available_width().min(760.0));
                 ui.add_space(10.0);
                 match page {
                     "New" => new_page(ui, notebooks_folder, t, &mut acts),
@@ -219,6 +221,7 @@ pub fn show(
                     "Options" => options_page(
                         ui,
                         telemetry_root,
+                        show_path,
                         notebooks_folder,
                         telemetry_level,
                         session_id,
@@ -233,50 +236,45 @@ pub fn show(
                     ),
                     _ => info_page(ui, notebooks, notebooks_folder, show_path, t, &mut acts),
                 }
-            });
+            };
+            if matches!(page, "Info" | "New" | "Open" | "Options") {
+                egui::ScrollArea::vertical().id_salt(("file-content", page)).auto_shrink([false, false]).show(ui, |ui| {
+                    ui.vertical(render_page);
+                });
+            } else {
+                ui.vertical(render_page);
+            }
         });
     });
     acts
 }
 
 fn side_bar(ui: &mut Ui, page: &str, t: &Tokens, acts: &mut Vec<Act>) {
+    let width = (ui.available_width() * 0.22).clamp(94.0, 170.0);
     ui.vertical(|ui| {
-        ui.set_width(170.0);
+        ui.set_width(width);
         ui.add_space(8.0);
-        // The arrow back to the notebook, as in Office.
-        let (rect, back) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::click());
-        let painter = ui.painter_at(rect);
-        if back.hovered() {
-            painter.circle_filled(rect.center(), 15.0, t.row_hover);
-        }
-        painter.circle_stroke(rect.center(), 11.0, egui::Stroke::new(1.5, t.accent));
-        painter.line_segment(
-            [egui::pos2(rect.center().x + 5.0, rect.center().y), egui::pos2(rect.center().x - 4.0, rect.center().y)],
-            egui::Stroke::new(1.5, t.accent),
-        );
-        painter.line_segment(
-            [egui::pos2(rect.center().x - 4.0, rect.center().y), egui::pos2(rect.center().x, rect.center().y - 4.0)],
-            egui::Stroke::new(1.5, t.accent),
-        );
-        painter.line_segment(
-            [egui::pos2(rect.center().x - 4.0, rect.center().y), egui::pos2(rect.center().x, rect.center().y + 4.0)],
-            egui::Stroke::new(1.5, t.accent),
-        );
-        let enabled = ui.is_enabled();
-        let back_label = crate::tl_id!("ui.back");
-        back.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, back_label));
-        if back.on_hover_text(crate::tl_id!("ui.back_to_the_notebook")).clicked() {
+        if ui.add(egui::Button::new(crate::tl_id!("ui.back_to_the_notebook")).wrap()).clicked() {
             acts.push(Act::Close);
         }
         ui.add_space(8.0);
         for (name, built) in SIDE {
+            if name == "Account" {
+                ui.add_space(6.0);
+                ui.separator();
+                ui.add_space(6.0);
+            }
             let selected = name == page;
             let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
             let painter = ui.painter_at(rect);
             if selected {
                 painter.rect_filled(rect, 4.0, t.row_selected);
+                painter.rect_filled(egui::Rect::from_min_size(rect.min, vec2(3.0, rect.height())), 2.0, t.accent);
             } else if resp.hovered() {
                 painter.rect_filled(rect, 4.0, t.row_hover);
+            }
+            if resp.has_focus() {
+                painter.rect_stroke(rect.shrink(1.0), 4.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
             }
             let color = if built { t.text } else { t.muted };
             painter.text(
@@ -379,51 +377,50 @@ fn info_page(ui: &mut Ui, notebooks: &[Node], folder: &str, show_path: &dyn Fn(&
     if notebooks.is_empty() {
         ui.label(egui::RichText::new(crate::tl_id!("ui.there_are_no_notebooks_yet_new_starts_one")).color(t.muted));
     }
-    egui::ScrollArea::vertical().id_salt("backstage-info").show(ui, |ui| {
-        for n in notebooks {
-            ui.horizontal_top(|ui| {
-                // The notebook's cover, in its own colour.
-                let (rect, resp) = ui.allocate_exact_size(vec2(64.0, 64.0), Sense::click());
-                let painter = ui.painter_at(rect);
-                let color = n
-                    .info
-                    .color
-                    .map(|c| {
-                        let (r, g, b) = c.rgb(t.panel.r() < 128);
-                        egui::Color32::from_rgb(r, g, b)
-                    })
-                    .unwrap_or(t.notebook);
-                icons::paint(&painter, rect.shrink(8.0), Icon::Notebook, color);
-                let name = n.info.title.clone();
-                let enabled = ui.is_enabled();
-                let accessible_name = crate::i18n::format_message_id("ui.open_name", &[("name", &name)]);
-                resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, accessible_name.clone()));
-                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(crate::tl_id!("ui.open_this_notebook")).clicked() {
-                    acts.push(Act::Open(n.path.clone()));
-                }
-                ui.add_space(8.0);
-                ui.vertical(|ui| {
-                    ui.label(egui::RichText::new(&n.info.title).size(17.0).color(t.accent));
-                    ui.label(egui::RichText::new(show_path(&n.path)).size(11.5).monospace().color(t.muted));
-                    ui.horizontal(|ui| {
-                        let open_folder =
-                            egui::Button::new(crate::tl_id!("ui.open_folder")).small().stroke(egui::Stroke::new(1.0, t.container_border));
-                        if ui.add(open_folder).clicked() {
-                            acts.push(Act::OpenFolder(n.path.clone()));
-                        }
-                        let count = n.count().to_string();
-                        let colour = n.info.color.map(NodeColor::label).unwrap_or(crate::tl_id!("ui.no"));
-                        let summary = crate::i18n::format_message_id("ui.count_items_colour_colour", &[("count", &count), ("colour", colour)]);
-                        ui.label(egui::RichText::new(summary).size(11.0).color(t.muted));
+    for n in notebooks {
+        ui.push_id(&n.path, |ui| {
+            egui::Frame::new().stroke(egui::Stroke::new(1.0, t.faint)).corner_radius(6.0).inner_margin(10.0).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal_top(|ui| {
+                    let (rect, _) = ui.allocate_exact_size(vec2(32.0, 38.0), Sense::hover());
+                    let painter = ui.painter_at(rect);
+                    let color = n
+                        .info
+                        .color
+                        .map(|c| {
+                            let (r, g, b) = c.rgb(t.panel.r() < 128);
+                            egui::Color32::from_rgb(r, g, b)
+                        })
+                        .unwrap_or(t.notebook);
+                    icons::paint(&painter, rect.shrink(3.0), Icon::Notebook, color);
+                    ui.vertical(|ui| {
+                        let path = show_path(&n.path);
+                        ui.label(egui::RichText::new(&n.info.title).size(17.0).strong().color(t.strong));
+                        ui.add(egui::Label::new(egui::RichText::new(&path).size(11.5).monospace().color(t.muted)).truncate()).on_hover_text(&path);
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.local_notebook")).size(11.5).color(t.muted));
+                        ui.add_space(4.0);
+                        ui.horizontal_wrapped(|ui| {
+                            let action = crate::i18n::format_message_id("ui.open_name", &[("name", &n.info.title)]);
+                            let open = ui.add(egui::Button::new(&action).wrap()).on_hover_text(&path);
+                            if notebooks.iter().any(|other| other.path != n.path && other.info.title == n.info.title) {
+                                open.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{action}, {path}")));
+                            }
+                            if open.clicked() {
+                                acts.push(Act::Open(n.path.clone()));
+                            }
+                            if !cfg!(target_arch = "wasm32") && ui.button(crate::tl_id!("ui.open_folder")).on_hover_text(&path).clicked() {
+                                acts.push(Act::OpenFolder(n.path.clone()));
+                            }
+                        });
                     });
                 });
             });
-            ui.add_space(10.0);
-        }
-    });
+        });
+        ui.add_space(8.0);
+    }
     ui.add_space(6.0);
     ui.separator();
-    let location = crate::i18n::format_message_id("ui.all_of_them_live_in_folder", &[("folder", folder)]);
+    let location = crate::i18n::format_message_id("ui.notebooks_folder_current", &[("folder", folder)]);
     ui.label(egui::RichText::new(location).size(11.5).color(t.muted));
     ui.label(egui::RichText::new(crate::tl_id!("ui.online_notebooks_onedrive_sharepoint_are_not_built_a_860f0281c0")).size(11.5).color(t.muted));
 }
@@ -443,7 +440,7 @@ fn new_page(ui: &mut Ui, folder: &str, t: &Tokens, acts: &mut Vec<Act>) {
 
 fn open_page(ui: &mut Ui, recent: &[Node], folder: &str, show_path: &dyn Fn(&std::path::Path) -> String, t: &Tokens, acts: &mut Vec<Act>) {
     heading(ui, crate::tl_id!("ui.open_a_notebook"), t);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if ui.add_sized([230.0, 42.0], egui::Button::new(egui::RichText::new(crate::tl_id!("ui.browse_for_a_notebook")).size(15.0))).clicked() {
             acts.push(Act::ChooseFolder);
         }
@@ -452,7 +449,7 @@ fn open_page(ui: &mut Ui, recent: &[Node], folder: &str, show_path: &dyn Fn(&std
         }
     });
     ui.add_space(10.0);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if open_action(ui, crate::tl_id!("ui.import_notebook_folder"), 230.0, 36.0, t, true).clicked() {
             acts.push(Act::ImportNotebookFolder);
         }
@@ -657,6 +654,7 @@ fn scale_label(percent: u16) -> String {
 fn options_page(
     ui: &mut Ui,
     root: &std::path::Path,
+    show_path: &dyn Fn(&std::path::Path) -> String,
     notebooks_folder: &str,
     level: &str,
     session_id: Option<&str>,
@@ -670,20 +668,33 @@ fn options_page(
     acts: &mut Vec<Act>,
 ) {
     heading(ui, crate::tl_id!("ui.options"), t);
-    ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_folder")).strong().size(15.0).color(t.strong));
-    let current = crate::i18n::format_message_id("ui.notebooks_folder_current", &[("folder", notebooks_folder)]);
-    ui.label(egui::RichText::new(current).size(12.0).color(t.text));
-    ui.horizontal(|ui| {
-        // The web build has no folder dialog, so the change button is shown only where one exists.
-        if !cfg!(target_arch = "wasm32") && open_action(ui, crate::tl_id!("ui.change_notebooks_folder"), 230.0, 34.0, t, true).clicked() {
-            acts.push(Act::ChooseNotebooksFolder);
-        }
-        if open_action(ui, crate::tl_id!("ui.use_the_default_notebooks_folder"), 260.0, 34.0, t, false).clicked() {
-            acts.push(Act::UseDefaultNotebooksFolder);
+    let sections = [
+        crate::tl_id!("ui.appearance_and_language"),
+        crate::tl_id!("ui.notebook_storage"),
+        crate::tl_id!("ui.version_and_updates"),
+        crate::tl_id!("ui.local_diagnostics_and_usage"),
+        crate::tl_id!("ui.application_preferences"),
+    ];
+    let mut jump = None;
+    ui.horizontal_wrapped(|ui| {
+        for (index, section) in sections.iter().enumerate() {
+            if ui.link(*section).clicked() {
+                jump = Some(index);
+            }
         }
     });
-    ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_folder_hint")).size(11.5).color(t.muted));
     ui.add_space(12.0);
+    let section_heading = |ui: &mut Ui, index: usize| {
+        ui.separator();
+        ui.add_space(4.0);
+        let title = egui::RichText::new(sections[index]).strong().size(15.0).color(t.strong);
+        let response = ui.label(title);
+        if jump == Some(index) {
+            response.scroll_to_me(Some(egui::Align::Min));
+        }
+    };
+    section_heading(ui, 0);
+    let field_width = (ui.available_width() * 0.57).clamp(125.0, 205.0);
     let automatic = crate::tl_id!("ui.automatic_system_language");
     let selected = if ui_language == crate::i18n::AUTO {
         automatic.to_string()
@@ -694,6 +705,8 @@ fn options_page(
             .map_or_else(|| crate::tl_id!("ui.english").to_string(), |language| language.name.clone())
     };
     egui::ComboBox::from_label(crate::tl_id!("ui.interface_language"))
+        .width(field_width)
+        .truncate()
         .selected_text(selected)
         .popup_style(crate::theme::picker_popup_style(*t))
         .show_ui(ui, |ui| {
@@ -715,6 +728,7 @@ fn options_page(
         });
     ui.add_space(8.0);
     egui::ComboBox::from_label(crate::tl_id!("ui.interface_size"))
+        .width(field_width)
         .selected_text(scale_label(ui_scale))
         .popup_style(crate::theme::picker_popup_style(*t))
         .show_ui(ui, |ui| {
@@ -734,6 +748,25 @@ fn options_page(
     }
     ui.label(egui::RichText::new(crate::tl_id!("ui.auto_switch_tip")).size(11.5).color(t.muted));
     ui.add_space(12.0);
+    section_heading(ui, 1);
+    let current = crate::i18n::format_message_id("ui.notebooks_folder_current", &[("folder", notebooks_folder)]);
+    ui.add(egui::Label::new(egui::RichText::new(&current).size(12.0).color(t.text)).truncate()).on_hover_text(current);
+    ui.horizontal_wrapped(|ui| {
+        // The web build has no folder dialog, so the change button is shown only where one exists.
+        if !cfg!(target_arch = "wasm32") && open_action(ui, crate::tl_id!("ui.change_notebooks_folder"), 230.0, 34.0, t, true).clicked() {
+            acts.push(Act::ChooseNotebooksFolder);
+        }
+        if open_action(ui, crate::tl_id!("ui.use_the_default_notebooks_folder"), 260.0, 34.0, t, false).clicked() {
+            acts.push(Act::UseDefaultNotebooksFolder);
+        }
+    });
+    ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_folder_hint")).size(11.5).color(t.muted));
+    ui.add_space(12.0);
+    ui.separator();
+    ui.add_space(4.0);
+    if jump == Some(2) {
+        ui.scroll_to_cursor(Some(egui::Align::Min));
+    }
     // Shown here too: Options is where someone asked for a log looks, and an older build may
     // not have the option they were told about.
     version_and_updates(ui, update, t, acts);
@@ -743,9 +776,9 @@ fn options_page(
         acts.push(Act::SetUpdateCheckOff(off));
     }
     ui.add_space(12.0);
+    section_heading(ui, 3);
     ui.label(egui::RichText::new(crate::tl_id!("ui.privacy_is_our_top_priority_logs_and_telemetry_stay_17a34813d0")).strong().color(t.strong));
     ui.add_space(12.0);
-    ui.label(egui::RichText::new(crate::tl_id!("ui.local_diagnostics_and_usage")).strong().size(15.0).color(t.strong));
     ui.label(egui::RichText::new(crate::tl_id!("ui.choose_what_notecraft_records_locally_nothing_is_upl_fc372d68e8")).size(12.0).color(t.muted));
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(crate::tl_id!("ui.level")).strong());
@@ -763,17 +796,17 @@ fn options_page(
         let label = crate::i18n::format_message_id("ui.current_session_id", &[("id", id)]);
         ui.label(egui::RichText::new(label).strong().monospace().size(11.0).color(t.text));
     }
-    let folder = root.display().to_string();
+    let folder = show_path(root);
     let label = crate::i18n::format_message_id("ui.folder_folder", &[("folder", &folder)]);
-    ui.label(egui::RichText::new(label).strong().size(11.0).color(t.text));
-    ui.horizontal(|ui| {
+    ui.add(egui::Label::new(egui::RichText::new(&label).strong().size(11.0).color(t.text)).truncate()).on_hover_text(label);
+    ui.horizontal_wrapped(|ui| {
         if open_action(ui, crate::tl_id!("ui.open_telemetry_folder"), 190.0, 34.0, t, true).clicked() {
             acts.push(Act::OpenTelemetryFolder(root.to_path_buf()));
         }
         if open_action(ui, crate::tl_id!("ui.export_current_session_zip"), 220.0, 34.0, t, true).clicked() {
             acts.push(Act::ExportTelemetry(root.to_path_buf()));
         }
-        if open_action(ui, crate::tl_id!("ui.clear_telemetry"), 150.0, 34.0, t, true).clicked() {
+        if warning_action(ui, crate::tl_id!("ui.clear_telemetry"), 150.0, 34.0, t).clicked() {
             acts.push(Act::ClearTelemetry(root.to_path_buf()));
         }
     });
@@ -789,8 +822,7 @@ fn options_page(
             acts.push(Act::DictationSetup);
         }
     }
-    ui.separator();
-    ui.label(egui::RichText::new(crate::tl_id!("ui.application_preferences")).strong().size(15.0).color(t.strong));
+    section_heading(ui, 4);
     ui.label(egui::RichText::new(crate::tl_id!("ui.reset_themes_layout_ribbon_choices_and_other_saved_n_61cc3d1cfb")).size(11.5).color(t.muted));
     ui.colored_label(t.warn, crate::tl_id!("ui.this_does_not_delete_notebooks_or_pages_it_cannot_be_undone"));
     if warning_action(ui, crate::tl_id!("ui.reset_app_preferences_2"), 210.0, 34.0, t).clicked() {

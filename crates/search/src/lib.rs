@@ -36,6 +36,20 @@ pub fn tokenize(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Byte ranges of complete words in the original text that match any normalized token.
+pub fn match_ranges<'a>(text: &'a str, tokens: &'a [String]) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
+    use unicode_normalization::char::is_combining_mark;
+
+    let is_word = |c: char| c.is_alphanumeric() || is_combining_mark(c);
+    let mut offset = 0;
+    text.split_inclusive(move |c| !is_word(c)).filter_map(move |segment| {
+        let start = offset;
+        offset += segment.len();
+        let word = segment.trim_end_matches(|c| !is_word(c));
+        tokenize(word).iter().any(|token| tokens.contains(token)).then_some(start..start + word.len())
+    })
+}
+
 /// An in-memory BM25 index over a fixed set of units.
 #[derive(Debug, Clone)]
 pub struct Index {
