@@ -51,6 +51,7 @@ pub struct Lab {
     models: Option<PathBuf>,
     theme: Theme,
     follow_system: bool,
+    health: crate::models::Health,
     /// The theme last applied to the window, so the visuals are set only when it changes.
     applied_theme: Option<Theme>,
     mode: Mode,
@@ -77,6 +78,7 @@ impl Lab {
             models: None,
             theme: Theme { mode: notecraft_ui_egui::theme::Mode::Dark, accent: notecraft_ui_egui::theme::Accent::Default },
             follow_system: false,
+            health: crate::models::Health::NotSet,
             applied_theme: None,
             mode: Mode::Select,
             selected: None,
@@ -88,6 +90,7 @@ impl Lab {
         if let Some(dir) = models {
             lab.load_reader(&dir);
         }
+        lab.health = crate::models::check(lab.models.as_deref());
         lab.follow_system = saved_follow;
         if let Some(id) = saved_theme {
             lab.theme = Theme::all().into_iter().find(|t| t.id() == id).unwrap_or(Theme::DEFAULT);
@@ -98,6 +101,7 @@ impl Lab {
 
     /// Loads the two ONNX models from a folder. Failure leaves the lab usable for browsing.
     pub fn load_reader(&mut self, dir: &Path) {
+        self.health = crate::models::check(Some(dir));
         let (det, rec) = (dir.join("text-detection.onnx"), dir.join("text-recognition.onnx"));
         let mut timings = Vec::new();
         let loaded = telemetry::timed("model load", &mut timings, || OcrsReader::from_model_files(&det, &rec));
@@ -162,7 +166,14 @@ impl Lab {
             Ok(file) => {
                 self.log.event(&format!("opened {name} {}x{} with {} labels", size[0], size[1], file.labels.len()));
                 let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-                self.loaded = Some(Loaded { index, texture, size, bytes, file, lines: Vec::new(), timings: Vec::new(), score: None });
+                let mut loaded = Loaded { index, texture, size, bytes, file, lines: Vec::new(), timings: Vec::new(), score: None };
+                if let Some((lines, timings)) = load_run(&path) {
+                    loaded.score = Some(case::score(&loaded.file.labels, &lines));
+                    loaded.lines = lines;
+                    loaded.timings = timings;
+                    self.log.event(&format!("loaded the saved OCR run for {name}"));
+                }
+                self.loaded = Some(loaded);
                 self.selected = None;
                 self.drag = None;
                 self.status = format!("{name}: {} labels", self.loaded.as_ref().map_or(0, |l| l.file.labels.len()));
@@ -203,6 +214,7 @@ impl Lab {
                 loaded.lines = lines;
                 loaded.score = Some(score);
                 loaded.timings = timings;
+                save_run(&path, &loaded.lines, &loaded.timings, &mut self.log);
             }
             Err(e) => {
                 self.status = format!("OCR failed on {name}: {e:?}");
@@ -326,7 +338,10 @@ impl Lab {
         egui::Panel::top("header").frame(egui::Frame::new().fill(band)).show_separator_line(false).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("NoteCraft OCR lab");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.theme_button(ui));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    self.theme_button(ui);
+                    self.health_light(ui);
+                });
             });
         });
         egui::Panel::left("cases").resizable(true).default_size(260.0).show(ui, |ui| self.case_list(&ctx, ui));
@@ -335,6 +350,39 @@ impl Lab {
         egui::CentralPanel::default().show(ui, |ui| self.picture_area(ui));
         if self.selected.is_some() && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Delete)) {
             self.delete_selected();
+        }
+    }
+
+    /// A small light in the header: green when the models are present and intact, red when a file
+    /// is wrong, amber when one is missing, grey when no folder is set. Hover for the reason.
+    fn health_light(&mut self, ui: &mut egui::Ui) {
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(20.0, 24.0), Sense::hover());
+        let colour = match self.health {
+            crate::models::Health::Ok => Color32::from_rgb(60, 180, 90),
+            crate::models::Health::Corrupt(_) => Color32::from_rgb(220, 60, 50),
+            crate::models::Health::Missing(_) => Color32::from_rgb(230, 170, 40),
+            crate::models::Health::NotSet => Color32::GRAY,
+        };
+        ui.painter_at(rect).circle_filled(rect.center(), 5.5, colour);
+        resp.on_hover_text(format!("OCR models: {}", self.health.describe()));
+    }
+
+    /// Downloads the two public models into the lab's own folder and loads them. Blocks the window
+    /// for the length of the download (about 12 MB), so it is a person's deliberate action.
+    fn download_models(&mut self) {
+        let dir = crate::lab_root().join("local").join("models");
+        self.status = "Downloading the models (about 12 MB)…".to_string();
+        match crate::models::download(&dir) {
+            Ok(()) => {
+                self.log.event("models downloaded");
+                self.load_reader(&dir);
+                self.remember();
+            }
+            Err(e) => {
+                self.log.event(&format!("model download failed: {e}"));
+                self.status = format!("Download failed: {e}");
+                self.health = crate::models::check(self.models.as_deref());
+            }
         }
     }
 
@@ -374,12 +422,17 @@ impl Lab {
         ui.heading("Test cases");
         ui.label(format!("{} pictures", self.pictures.len()));
         ui.monospace(folder_name(&self.folder));
-        if ui.button("Open folder…").clicked()
-            && let Some(dir) = rfd::FileDialog::new().set_directory(&self.folder).pick_folder()
-        {
-            self.set_folder(dir);
-            self.remember();
-        }
+        ui.horizontal(|ui| {
+            if ui.button("Open folder…").clicked()
+                && let Some(dir) = rfd::FileDialog::new().set_directory(&self.folder).pick_folder()
+            {
+                self.set_folder(dir);
+                self.remember();
+            }
+            if ui.button("Show in Explorer").clicked() {
+                open_in_file_manager(&self.folder);
+            }
+        });
         ui.separator();
         let mut pick = None;
         // Kind (handwriting, drawings, ...) first, then language, then the pictures.
@@ -444,6 +497,9 @@ impl Lab {
                 Some(dir) => ui.label(format!("Models: {}", folder_name(dir))),
                 None => ui.label("Models: not set"),
             };
+            if !matches!(self.health, crate::models::Health::Ok) && ui.button("Download models").clicked() {
+                self.download_models();
+            }
         });
         if let Some(e) = self.reader_error.clone() {
             ui.colored_label(Color32::from_rgb(200, 60, 40), e);
@@ -692,4 +748,116 @@ impl Lab {
 
 fn folder_name(folder: &Path) -> String {
     folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// Opens a folder in the system file manager (Explorer on Windows).
+fn open_in_file_manager(folder: &Path) {
+    let program = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    if let Err(e) = std::process::Command::new(program).arg(folder).spawn() {
+        eprintln!("could not open {}: {e}", folder.display());
+    }
+}
+
+/// Saves a run beside its picture, so the next time it opens the result is there without reading
+/// the picture again. The file records the picture's checksum: a changed picture does not match and
+/// its old run is ignored.
+fn save_run(picture: &Path, lines: &[Line], timings: &[Timing], log: &mut Log) {
+    let Some(sha) = case::picture_sha256(picture) else { return };
+    let saved_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let value = serde_json::json!({
+        "version": 1,
+        "picture_sha256": sha,
+        "saved_at": saved_at,
+        "engine": "ocrs 0.14 through notecraft-ocr",
+        "timings": timings,
+        "lines": lines.iter().map(|l| serde_json::json!({
+            "text": l.text,
+            "quad": l.quad.iter().map(|p| [p.x, p.y]).collect::<Vec<_>>(),
+            "confidence": l.confidence,
+        })).collect::<Vec<_>>(),
+    });
+    let path = case::run_path(picture);
+    let tmp = path.with_extension("json.tmp");
+    let written = serde_json::to_string_pretty(&value)
+        .map_err(|e| e.to_string())
+        .and_then(|text| {
+            std::fs::write(
+                &tmp,
+                format!(
+                    "{text}
+"
+                ),
+            )
+            .map_err(|e| e.to_string())
+        })
+        .and_then(|_| std::fs::rename(&tmp, &path).map_err(|e| e.to_string()));
+    if let Err(e) = written {
+        log.event(&format!("OCR run not saved: {e}"));
+    }
+}
+
+/// The saved run for a picture, if one exists and still matches the picture's bytes.
+fn load_run(picture: &Path) -> Option<(Vec<Line>, Vec<Timing>)> {
+    let text = std::fs::read_to_string(case::run_path(picture)).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    if value.get("picture_sha256")?.as_str()? != case::picture_sha256(picture)? {
+        return None;
+    }
+    let mut lines = Vec::new();
+    for item in value.get("lines")?.as_array()? {
+        let quad_values = item.get("quad")?.as_array()?;
+        if quad_values.len() != 4 {
+            return None;
+        }
+        let mut quad = [notecraft_ocr::Point { x: 0.0, y: 0.0 }; 4];
+        for (slot, point) in quad.iter_mut().zip(quad_values) {
+            let xy = point.as_array()?;
+            slot.x = xy.first()?.as_f64()? as f32;
+            slot.y = xy.get(1)?.as_f64()? as f32;
+        }
+        let confidence = item.get("confidence").and_then(|c| c.as_f64()).map(|c| c as f32);
+        lines.push(Line::new(item.get("text")?.as_str()?, quad, confidence).ok()?);
+    }
+    let mut timings = Vec::new();
+    for item in value.get("timings")?.as_array()? {
+        let step = match item.get("step")?.as_str()? {
+            "model load" => "model load",
+            "read picture" => "read picture",
+            "score" => "score",
+            _ => continue,
+        };
+        timings.push(Timing { step, ms: item.get("ms")?.as_f64()? });
+    }
+    Some((lines, timings))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use notecraft_ocr::Point;
+
+    #[test]
+    fn a_saved_run_loads_back_for_the_same_picture_and_is_ignored_once_the_picture_changes() {
+        let dir = std::env::temp_dir().join(format!("ocr-lab-run-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let picture = dir.join("p.png");
+        image::RgbImage::new(20, 10).save(&picture).expect("picture");
+        let quad = [Point { x: 1.0, y: 2.0 }, Point { x: 9.0, y: 2.0 }, Point { x: 9.0, y: 6.0 }, Point { x: 1.0, y: 6.0 }];
+        let lines = vec![Line::new("Sourdough 6.00", quad, None).expect("line")];
+        let timings = vec![Timing { step: "read picture", ms: 12.5 }];
+        let mut log = Log::open(&dir.join("log.txt"));
+        save_run(&picture, &lines, &timings, &mut log);
+        let (loaded, loaded_timings) = load_run(&picture).expect("the run loads");
+        assert_eq!(loaded, lines);
+        assert_eq!(loaded_timings.len(), 1);
+        image::RgbImage::new(21, 10).save(&picture).expect("the picture changes");
+        assert!(load_run(&picture).is_none(), "a changed picture does not use the old run");
+        std::fs::remove_dir_all(&dir).expect("clean up");
+    }
 }

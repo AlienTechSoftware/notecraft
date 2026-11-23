@@ -180,6 +180,32 @@ cargo xtask demo-copy html
 cargo run -p notecraft -- --notebooks ./my-notebooks --expand-all
 ```
 
+### OCR test and label lab
+
+`tools/ocr-lab` is a developer tool for OCR. It is never shipped and is not a default workspace
+member, so the normal build and the release do not touch it. It runs the product's own OCR code
+(`notecraft-ocr`), so what it shows is what the app would read.
+
+- **Start it:** `run.cmd --ocr-lab`. Extra flags pass through: `--folder <dir>` for the test
+  pictures, `--models <dir>` for the model folder. Without flags it reopens the last folder and
+  models. `cargo run -p notecraft-ocr-lab` does the same without the script.
+- **Headless:** `--check --folder <dir> --models <dir>` reads every picture, prints one line each
+  and exits 1 if any picture fails. Use it in scripts; it opens no window.
+- **Models:** the header light is green when both ONNX files are present and match their checksum,
+  amber when one is missing, red when one is wrong, grey when no folder is set. Hover it for the
+  reason. **Download models** fetches the two public `ocrs` files (about 12 MB) into
+  `tools/ocr-lab/local/models`, checks them, then loads them. Nothing downloads until someone
+  presses the button. The weights are CC BY-SA 4.0 (see the OCR skill).
+- **Cases:** a folder of pictures, grouped in the navigator by kind (the first folder) and language
+  (folder names). Labels are drawn in the window and saved beside each picture as
+  `<picture>.label.json`. A run is saved as `<picture>.ocr-run.json`, and a changed picture ignores
+  its old run. Each case folder keeps a `SOURCES.txt` with where each picture came from and its
+  licence.
+- **Local, never committed:** `tools/ocr-lab/local/` holds the settings, the log, the reports and
+  the downloaded models. It is git-ignored.
+- **Checks:** `cargo test -p notecraft-ocr-lab` covers scoring, label files, the grouping rules,
+  the model check and the saved-run round trip.
+
 ### Local diagnostics paths
 
 `cargo run -p notecraft` from a development checkout normally uses

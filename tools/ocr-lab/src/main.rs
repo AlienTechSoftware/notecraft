@@ -9,6 +9,7 @@
 
 mod app;
 mod case;
+mod models;
 mod settings;
 mod telemetry;
 

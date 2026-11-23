@@ -87,6 +87,19 @@ pub fn label_path(picture: &Path) -> PathBuf {
     picture.with_file_name(format!("{name}.label.json"))
 }
 
+/// The saved OCR run beside a picture: `<picture>.ocr-run.json`.
+pub fn run_path(picture: &Path) -> PathBuf {
+    let name = picture.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    picture.with_file_name(format!("{name}.ocr-run.json"))
+}
+
+/// The SHA-256 of a picture's bytes, so a saved run can tell it still belongs to the picture.
+pub fn picture_sha256(picture: &Path) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let bytes = std::fs::read(picture).ok()?;
+    Some(format!("{:x}", Sha256::digest(&bytes)))
+}
+
 /// Loads the labels of a picture. A picture with no label file gets an empty set.
 pub fn load_labels(picture: &Path) -> Result<LabelFile, String> {
     let (width, height) = image::image_dimensions(picture).map_err(|e| format!("{}: {e}", picture.display()))?;
