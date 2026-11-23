@@ -35,8 +35,7 @@ OCR is not needed to build or run the app. To work on it:
 
 - `cargo xtask ocr-check` runs the OCR lab's tests, and the headless read of the smoke pictures
   when the models are set (`NOTECRAFT_OCR_MODELS`, the folder with the two ONNX files).
-- `.\SKILLS
-c-devx\scripts\setup.ps1 -OcrModels` fetches the models into
+- `.\SKILLS\nc-devx\scripts\setup.ps1 -OcrModels` fetches the models into
   `tools\ocr-lab\local\models` and checks them. They are about 12 MB and their weights are
   CC BY-SA 4.0, so the fetch is opt-in.
 - `run.cmd --ocr-lab` opens the OCR test and label lab. Its header light shows whether the models
