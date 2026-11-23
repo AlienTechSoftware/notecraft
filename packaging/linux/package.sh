@@ -70,7 +70,7 @@ for format in html cmgfm; do
     [ -d "$DEMO_SOURCE/$format" ] || { echo "required $format demo format is missing" >&2; exit 1; }
     [ -f "$DEMO_SOURCE/$format/_node.toml" ] || { echo "required $format demo notebook is missing" >&2; exit 1; }
     count=$(find "$DEMO_SOURCE/$format" -mindepth 1 -maxdepth 1 -type d -regex '.*/\(1[0-9]\|2[0-9]\)-.*' | wc -l)
-    [ "$count" -eq 13 ] || { echo "$format demo has $count language folders, expected 13" >&2; exit 1; }
+    [ "$count" -eq 14 ] || { echo "$format demo has $count language folders, expected 14" >&2; exit 1; }
 done
 DEMO_DEST="$STAGE/usr/share/notecraft/demo/welcome-to-notecraft"
 mkdir -p "$DEMO_DEST"

@@ -26,7 +26,7 @@ done
 for format in html cmgfm; do
     count=$(tar -tzf "$ARCHIVE" | awk -F/ -v base="notecraft-$VERSION-linux-$ARCH" -v format="$format" \
         '$1 == base && $2 == "share" && $3 == "notecraft" && $4 == "demo" && $5 == "welcome-to-notecraft" && $6 == format && $7 ~ /^(1[0-9]|2[0-9])-[a-z][a-z]$/ { found[$7] = 1 } END { print length(found) }')
-    [ "$count" -eq 13 ] || { echo "$format package contains $count language folders, expected 13" >&2; exit 1; }
+    [ "$count" -eq 14 ] || { echo "$format package contains $count language folders, expected 14" >&2; exit 1; }
 done
 echo "linux paired-demo packaging smoke test passed: $ARCHIVE"
 
