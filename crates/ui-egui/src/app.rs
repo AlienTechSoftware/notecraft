@@ -141,7 +141,12 @@ fn row_name_room(name_width: f32, label_width: Option<f32>, room: f32) -> (bool,
 /// `text` as it fits in `room` points: whole when it fits, otherwise cut at a character
 /// and ended with "…", so a long name never runs into what is drawn after it.
 fn fit_to_width(ui: &Ui, text: &str, size: f32, room: f32) -> String {
-    if text_width(ui, text, size) <= room {
+    fit_with(&|s| text_width(ui, s, size), text, room)
+}
+
+/// [`fit_to_width`] with the width of a piece of text given by `width`.
+fn fit_with(width: &dyn Fn(&str) -> f32, text: &str, room: f32) -> String {
+    if width(text) <= room {
         return text.to_owned();
     }
     let ends: Vec<usize> = text.char_indices().map(|(i, _)| i).skip(1).chain(std::iter::once(text.len())).collect();
@@ -150,7 +155,7 @@ fn fit_to_width(ui: &Ui, text: &str, size: f32, room: f32) -> String {
     while lo < hi {
         let mid = (lo + hi).div_ceil(2);
         let candidate = format!("{}…", text[..ends[mid - 1]].trim_end());
-        if text_width(ui, &candidate, size) <= room { lo = mid } else { hi = mid - 1 }
+        if width(&candidate) <= room { lo = mid } else { hi = mid - 1 }
     }
     if lo == 0 { "…".to_owned() } else { format!("{}…", text[..ends[lo - 1]].trim_end()) }
 }
@@ -4532,13 +4537,16 @@ impl NoteCraftApp {
         // title is on the hover of the words.
         // A phone-width window has no room for the title between the controls: the page's own
         // title is the first thing on it anyway.
+        let mut title_shown = false;
         if !self.compact {
             let start = left.min_rect().right() + 12.0;
             let end = right.min_rect().left() - 12.0;
             if end - start > 24.0 {
+                title_shown = true;
                 let size = 12.5;
-                let shown = fit_to_width(ui, &text, size, end - start);
-                let width = text_width(ui, &shown, size);
+                let measure = |s: &str| crate::bidi::line_width(ui, s, size, None);
+                let shown = fit_with(&measure, &text, end - start);
+                let width = measure(&shown);
                 let centre = band_title_centre(row.center().x, start, end, width);
                 let room = egui::Rect::from_min_max(egui::pos2(start, row.min.y), egui::pos2(end, row.max.y));
                 // A page named in Arabic puts the band's words in the wrong order if the whole
@@ -4546,13 +4554,20 @@ impl NoteCraftApp {
                 // page does. The name decides its own direction here; there is no page to follow.
                 let band = ui.painter_at(room);
                 crate::bidi::line_at(ui, &band, egui::pos2(centre, row.center().y), Align2::CENTER_CENTER, &shown, size, on.text, None);
+                let words = egui::Rect::from_center_size(egui::pos2(centre, row.center().y), vec2(width, H));
+                // Hover only: a press here still reaches the band's handle and moves the window.
+                // The full title is its accessible name, cut or not.
+                let hover = ui.interact(words, ui.id().with("title-words"), Sense::hover());
+                hover.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, text.as_str()));
                 if shown != text {
-                    let words = egui::Rect::from_center_size(egui::pos2(centre, row.center().y), vec2(width, H));
-                    // Hover only: a press here still reaches the band's handle and moves the window.
-                    let hover = ui.interact(words, ui.id().with("title-words"), Sense::hover());
                     hover.on_hover_text(text.as_str());
                 }
             }
+        }
+        // Issue #371: with no room for the title in the band, its full text is on the band's
+        // hover instead, so it is never hidden without a way to read it.
+        if !title_shown {
+            handle.clone().on_hover_text(text.as_str());
         }
         ui.advance_cursor_after_rect(row);
     }
@@ -4577,6 +4592,7 @@ impl NoteCraftApp {
             egui::FontId::proportional(13.0),
             on.text,
         );
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Discord"));
         let resp = resp.on_hover_text(crate::tl_id!("ui.open_the_artcraft_discord"));
         if resp.clicked() {
             ui.ctx().open_url(egui::OpenUrl::new_tab(DISCORD_URL));
@@ -10352,7 +10368,10 @@ impl NoteCraftApp {
     }
 
     fn page_save_state(&self, ed: &Editor) -> String {
-        if ed.dirty_since.is_some() || ed.saving.is_some() {
+        // Issue #371: a save in flight says so, apart from edits not yet written.
+        if ed.saving.is_some() {
+            crate::tl_id!("ui.saving").into()
+        } else if ed.dirty_since.is_some() {
             crate::tl_id!("ui.editing").into()
         } else {
             self.saved_caption(ed.last_saved.as_deref())
@@ -10370,8 +10389,21 @@ impl NoteCraftApp {
     fn status_bar(&mut self, ui: &mut Ui) {
         egui::Panel::bottom("status").show(ui, |ui| {
             ui.horizontal(|ui| {
-                let color = if self.status_is_error { self.tokens.warn } else { self.tokens.muted };
-                ui.label(egui::RichText::new(crate::i18n::pseudo_dynamic(&self.status)).color(color));
+                // Issue #371: an error gets its own mark and a heavier weight, not only a colour.
+                let shown = crate::i18n::pseudo_dynamic(&self.status);
+                let line = if self.status_is_error {
+                    egui::RichText::new(format!("! {shown}")).strong().color(self.tokens.warn)
+                } else {
+                    egui::RichText::new(shown).color(self.tokens.muted)
+                };
+                // Cut to the room the footer's controls leave, with the whole line on hover, so a
+                // long error never pushes the default-format control out of view.
+                let whole = self.status.clone();
+                let status_room = (ui.available_width() - 480.0).max(160.0);
+                ui.scope(|ui| {
+                    ui.set_max_width(status_room);
+                    ui.add(egui::Label::new(line).truncate()).on_hover_text(whole);
+                });
                 if let Some(ed) = self.editor.as_ref() {
                     let state = self.page_save_state(ed);
                     ui.separator();
@@ -10382,6 +10414,9 @@ impl NoteCraftApp {
                 // labels or the folder summary, so the status beside it stays readable.
                 let compact = self.compact;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let (current, source) = self.session.settings.global_format();
+                    // Issue #371: counts, the folder and where the default comes from sit behind
+                    // one Details control, so the footer keeps its save state and format in view.
                     if !compact {
                         let nodes: usize = self.session.tree().iter().map(|n| n.count()).sum();
                         let notebooks = crate::i18n::format_count_id("ui.n_notebook_n_notebooks", self.session.tree().len() as u64);
@@ -10391,10 +10426,14 @@ impl NoteCraftApp {
                             "ui.notebooks_items_folder",
                             &[("notebooks", &notebooks), ("items", &items), ("folder", &folder)],
                         );
-                        ui.label(egui::RichText::new(summary).small().color(self.tokens.muted));
+                        let inherited = format!("({})", crate::tl!(source.label()));
+                        let details = ui.button(crate::tl_id!("ui.notebook_details"));
+                        egui::Popup::menu(&details).show(|ui| {
+                            ui.label(egui::RichText::new(summary).small().color(self.tokens.muted));
+                            ui.label(egui::RichText::new(inherited).small().color(self.tokens.muted));
+                        });
                         ui.separator();
                     }
-                    let (current, source) = self.session.settings.global_format();
                     let mut chosen = current;
                     let combo = if compact {
                         egui::ComboBox::from_id_salt("default-format")
@@ -10409,7 +10448,6 @@ impl NoteCraftApp {
                     if compact {
                         combo.response.on_hover_text(crate::tl_id!("ui.default_format"));
                     } else {
-                        ui.label(egui::RichText::new(format!("({})", crate::tl!(source.label()))).small().color(self.tokens.muted));
                         ui.label(egui::RichText::new(crate::tl_id!("ui.new_pages")).small().color(self.tokens.muted));
                     }
                     if chosen != current && self.run("settings.default_format.set", &params(&[("format", chosen.id())])).is_some() {
