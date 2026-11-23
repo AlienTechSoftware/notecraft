@@ -82,6 +82,12 @@ Everything local is under `tools/ocr-lab/local/`, which is git-ignored:
 The test pictures stay in their own folder. Each case folder has a `SOURCES.txt` that records where every
 picture came from and its licence.
 
+## Language of the lab
+
+The lab's own labels and messages are English only. It is a developer tool that is never shipped, so
+it is outside the app's translation audit (`cargo xtask i18n-audit` covers the app's source only). This
+is a decision, not an oversight; a translation would need a reason to ship.
+
 ## Checks
 
 ```bash

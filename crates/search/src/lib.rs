@@ -3,6 +3,7 @@
 //! Pure Rust with no dependencies. The index is a cache built from the text it is given, so it
 //! can always be rebuilt. Semantic search is not here; it sits beside this index and is merged
 //! with reciprocal rank fusion (see the nc-info-search skill).
+use unicode_normalization::UnicodeNormalization;
 
 use std::collections::HashMap;
 
@@ -27,6 +28,8 @@ pub struct Ranked {
 /// Splits text into lowercase words. A word is a run of letters or digits, so Arabic, Hebrew,
 /// Persian and Urdu words are kept whole. Anything else separates words.
 pub fn tokenize(text: &str) -> Vec<String> {
+    // Composed form first, so 'e' + combining accent (macOS text) matches the composed 'é' a query types.
+    let text: String = text.nfc().collect();
     text.split(|c: char| !c.is_alphanumeric())
         .filter(|word| !word.is_empty())
         .map(|word| word.chars().flat_map(char::to_lowercase).collect())
@@ -176,5 +179,13 @@ mod tests {
             assert_eq!(a.id, b.id);
             assert!((a.score - b.score).abs() < 1e-9, "{a:?} vs {b:?}");
         }
+    }
+
+    #[test]
+    fn a_decomposed_accent_matches_the_composed_word_typed_in_a_query() {
+        let index = Index::build(&[unit("cafe", "Cafe\u{301} au lait")]);
+        let hits = index.search("café", 10);
+        assert_eq!(hits.len(), 1, "the NFD text is found by the NFC query");
+        assert_eq!(tokenize("Cafe\u{301}"), tokenize("Café"));
     }
 }

@@ -148,14 +148,18 @@ fn the_printed_smoke_pictures_read_and_their_boxes_are_inside() {
     let rows = load_manifest(&root);
     let smoke: Vec<&Row> = rows.iter().filter(|r| r.split == "smoke" && r.category == "printed-ocr").collect();
     assert!(!smoke.is_empty(), "the smoke set has printed pictures");
+    let mut found = 0;
     for row in smoke {
         let path = root.join(&row.file);
         let (width, height) = image::image_dimensions(&path).expect("picture size");
         let lines: Vec<Line> = engine.read_image(&path).expect("the picture reads");
+        found += lines.len();
         for line in lines {
             for p in line.quad {
                 assert!(p.x >= 0.0 && p.x <= width as f32 && p.y >= 0.0 && p.y <= height as f32, "{}: a box lies outside the picture", row.id);
             }
         }
     }
+    // The smoke pictures have printed text, so an engine that finds nothing must fail here.
+    assert!(found > 0, "the smoke pictures have text, so some lines are found");
 }

@@ -60,16 +60,21 @@ fn a3_every_box_lies_inside_its_picture() {
         "whiteboard-sketch/assets/sketch.png",
         "arabic-alt-text/assets/receipt-ar.png",
     ];
+    let mut found = 0;
     for relative in pictures {
         let path: &Path = &fixture(relative);
         let (width, height) = image::image_dimensions(path).expect("picture size");
-        for line in engine.read_image(path).expect("picture reads") {
+        let lines = engine.read_image(path).expect("picture reads");
+        found += lines.len();
+        for line in lines {
             for p in line.quad {
                 assert!(p.x >= 0.0 && p.x <= width as f32, "{relative}: x {} outside {width}", p.x);
                 assert!(p.y >= 0.0 && p.y <= height as f32, "{relative}: y {} outside {height}", p.y);
             }
         }
     }
+    // Without this, a model that finds nothing would pass every box check above.
+    assert!(found > 0, "the pictures have text, so the engine finds some lines");
 }
 
 /// A4: re-running OCR on an unchanged picture does nothing.

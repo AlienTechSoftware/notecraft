@@ -449,7 +449,7 @@ impl Lab {
             "engine_lines": lines,
             "recent_events": self.log.recent(),
         });
-        let text = serde_json::to_string_pretty(&value).ok()?;
+        let text = scrub_paths(&serde_json::to_string_pretty(&value).ok()?, &self.folder);
         let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let stem = name.replace('/', "_");
         let dir = crate::lab_root().join("local").join("reports");
@@ -1036,6 +1036,22 @@ fn open_in_file_manager(folder: &Path) {
     }
 }
 
+/// Replaces this machine's folder and home paths in a report with stand-ins, so the copy can be shared.
+fn scrub_paths(text: &str, cases: &Path) -> String {
+    let mut out = text.to_string();
+    for (path, stand_in) in [(cases.to_string_lossy().into_owned(), "<test folder>")]
+        .into_iter()
+        .chain(std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok().map(|home| (home, "<home>")))
+    {
+        if path.is_empty() {
+            continue;
+        }
+        // Both separators, since a path may be written either way in a log line.
+        out = out.replace(&path, stand_in).replace(&path.replace(char::from(92), "/"), stand_in);
+    }
+    out
+}
+
 /// Deletes the saved run beside a picture. Returns whether there was one to delete.
 fn remove_run_file(picture: &Path) -> Result<bool, String> {
     match std::fs::remove_file(case::run_path(picture)) {
@@ -1218,5 +1234,19 @@ mod tests {
         image::RgbImage::new(21, 10).save(&picture).expect("the picture changes");
         assert!(load_run(&picture).is_none(), "a changed picture does not use the old run");
         std::fs::remove_dir_all(&dir).expect("clean up");
+    }
+}
+
+#[cfg(test)]
+mod scrub_tests {
+    use super::*;
+
+    #[test]
+    fn a_report_loses_the_test_folder_and_home_paths() {
+        let cases = Path::new(r"C:\Users\someone\ocr-cases");
+        let text = "{\"log\":\"opened C:\\Users\\someone\\ocr-cases\\a.png and C:/Users/someone/ocr-cases/b.png\"}";
+        let out = scrub_paths(text, cases);
+        assert!(!out.contains("someone"), "{out}");
+        assert!(out.contains("<test folder>"), "{out}");
     }
 }

@@ -83,7 +83,9 @@ pub fn check(dir: Option<&Path>) -> Health {
 pub fn download(dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     for model in &MODELS {
-        let mut response = ureq::get(model.url).call().map_err(|e| format!("{}: {e}", model.url))?;
+        // Two minutes for the whole request: a stalled connection must not hang the window for good.
+        let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(120))).build().into();
+        let mut response = agent.get(model.url).call().map_err(|e| format!("{}: {e}", model.url))?;
         let bytes = response.body_mut().read_to_vec().map_err(|e| format!("{}: {e}", model.url))?;
         let hash = format!("{:x}", Sha256::digest(&bytes));
         if bytes.len() as u64 != model.size || hash != model.sha256 {

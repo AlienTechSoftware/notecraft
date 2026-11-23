@@ -62,6 +62,11 @@ addition, never a requirement for finding a word.
 ### What is indexed
 
 - **Page text.** The visible text of each page, from `index.html` or `index.md`, with markup removed.
+- **Known limit: CJK.** Words are split on non-letters and digits, so Chinese and Japanese text has no
+  word breaks to split on: a run of CJK characters is one word, and only a query for that exact run
+  finds it. Proper word segmentation needs a dictionary and is not built. Korean works, because its
+  words are space-separated.
+- **Known limit: snippets** show the text around the first query word, at most 120 characters.
 - **Alt text.** The `alt` of each picture in the page markup, per RFC 0003. Indexed with the page
   as its own text; the page is the hit, and an alt hit carries no boxes.
 - **OCR text.** `<picture>.txt` (derived, from `nc-info-ocr`). Indexed as its own unit, so a hit

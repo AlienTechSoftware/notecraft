@@ -37,7 +37,23 @@ pub enum OcrError {
     Engine(String),
     /// A confidence outside `0.0..=1.0`.
     InvalidConfidence(f32),
+    /// A file could not be read or written (the picture, a companion, or a temporary file).
+    Io(String),
 }
+
+impl std::fmt::Display for OcrError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OcrError::Decode(m) => write!(f, "could not decode the picture: {m}"),
+            OcrError::Model(m) => write!(f, "could not load a model: {m}"),
+            OcrError::Engine(m) => write!(f, "the OCR engine failed: {m}"),
+            OcrError::InvalidConfidence(c) => write!(f, "confidence {c} is outside 0 to 1"),
+            OcrError::Io(m) => write!(f, "could not read or write a file: {m}"),
+        }
+    }
+}
+
+impl std::error::Error for OcrError {}
 
 impl Line {
     /// Builds a line, refusing a confidence outside `0.0..=1.0` (criterion A2).
@@ -54,6 +70,13 @@ impl Line {
 /// Anything that reads the printed-text lines of a picture. The companion job depends on this
 /// trait, not on a particular engine, so a new engine (a platform fast path, PP-OCRv5 through ONNX,
 /// a test double) plugs in without changing the job.
+/// Reads the text of pictures. The companion job relies on this contract:
+///
+/// - lines come back in reading order;
+/// - each line's box lies inside the picture (the job does not clamp it);
+/// - a line's text may contain any character; the job replaces tabs and line breaks when it writes;
+/// - a picture with no text gives an empty list, not an error;
+/// - `read_picture` may be called from any thread, but the job calls it one picture at a time.
 pub trait PictureReader {
     /// Reads one picture, lines in reading order.
     fn read_picture(&self, path: &Path) -> Result<Vec<Line>, OcrError>;
@@ -138,21 +161,35 @@ pub enum Refresh {
 /// The text goes to `<picture>.txt` beside the picture, one line per row. The hash of the bytes
 /// it was read from goes to `<picture>.ocr-hash`. Both are written through a temporary file, so a
 /// crash leaves the old pair, never a half-written one.
+/// Version of the companion files. Bump it when their format or the reader changes, so every
+/// companion made by the old format is read again once.
+const COMPANION_FORMAT: &str = "companion-v2 ocrs-0.14";
+
 pub fn refresh_companion(reader: &dyn PictureReader, picture: &Path) -> Result<Refresh, OcrError> {
-    let bytes = std::fs::read(picture).map_err(|e| OcrError::Decode(format!("{}: {e}", picture.display())))?;
-    let hash = format!("{:016x}", fnv1a(&bytes));
+    let bytes = std::fs::read(picture).map_err(|e| OcrError::Io(format!("{}: {e}", picture.display())))?;
+    let hash = format!("{:016x}", fnv1a(&[bytes.as_slice(), COMPANION_FORMAT.as_bytes()].concat()));
     let text_path = companion_path(picture, "txt");
+    let lines_path = companion_path(picture, "lines");
     let hash_path = companion_path(picture, "ocr-hash");
-    if text_path.exists() && std::fs::read_to_string(&hash_path).is_ok_and(|stored| stored.trim() == hash) {
+    // Unchanged needs all three companions: a missing boxes file is made again, not trusted.
+    if text_path.exists() && lines_path.exists() && std::fs::read_to_string(&hash_path).is_ok_and(|stored| stored.trim() == hash) {
         return Ok(Refresh::Unchanged);
     }
     let lines = reader.read_picture(picture)?;
-    let text: String = lines.iter().map(|l| format!("{}\n", l.text)).collect();
+    let text: String = lines.iter().map(|l| format!("{}\n", sanitize(&l.text))).collect();
     write_replacing(&text_path, text.as_bytes())?;
-    write_replacing(&companion_path(picture, "lines"), &lines_file(&lines))?;
+    write_replacing(&lines_path, &lines_file(&lines))?;
     write_replacing(&hash_path, hash.as_bytes())?;
     Ok(Refresh::Rewritten)
 }
+
+/// Text on one line: tabs and line breaks become spaces, so a record never spans two lines.
+fn sanitize(text: &str) -> String {
+    text.chars().map(|c| if c == '\t' || c == '\n' || c == '\r' { ' ' } else { c }).collect()
+}
+
+/// Counts names for temporary files, so two writers never share one.
+static TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// The boxes file: one line per text line, `x0,y0,x1,y1,x2,y2,x3,y3<TAB>text`, in picture pixels.
 /// Tabs and line breaks inside a text are replaced by spaces, so each line is one record.
@@ -177,9 +214,14 @@ fn companion_path(picture: &Path, extension: &str) -> PathBuf {
 }
 
 fn write_replacing(path: &Path, bytes: &[u8]) -> Result<(), OcrError> {
-    let temp = companion_path(path, "tmp");
-    std::fs::write(&temp, bytes).map_err(|e| OcrError::Decode(format!("{}: {e}", temp.display())))?;
-    std::fs::rename(&temp, path).map_err(|e| OcrError::Decode(format!("{}: {e}", path.display())))
+    // A name unique to this process and call, so concurrent writers cannot install each other's bytes.
+    let n = TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let temp = companion_path(path, &format!("tmp-{}-{n}", std::process::id()));
+    std::fs::write(&temp, bytes).map_err(|e| OcrError::Io(format!("{}: {e}", temp.display())))?;
+    std::fs::rename(&temp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        OcrError::Io(format!("{}: {e}", path.display()))
+    })
 }
 
 /// FNV-1a, 64 bits: a hash that is the same on every run and every platform, which the standard
@@ -203,7 +245,13 @@ fn group_rows(mut pieces: Vec<Piece>) -> Vec<Piece> {
     pieces.sort_by_key(|p| (p.top, p.left));
     let mut rows: Vec<Vec<Piece>> = Vec::new();
     for piece in pieces {
-        let joins = rows.iter().position(|row| row.iter().any(|other| overlaps_vertically(other, &piece)));
+        // The row the piece overlaps most, so a tall piece cannot bridge two rows that are apart.
+        let joins = rows
+            .iter()
+            .enumerate()
+            .filter_map(|(i, row)| row.iter().filter(|o| overlaps_vertically(o, &piece)).map(|o| overlap_amount(o, &piece)).max().map(|a| (i, a)))
+            .max_by_key(|&(_, a)| a)
+            .map(|(i, _)| i);
         match joins {
             Some(i) => rows[i].push(piece),
             None => rows.push(vec![piece]),
@@ -221,6 +269,11 @@ fn group_rows(mut pieces: Vec<Piece>) -> Vec<Piece> {
             }
         })
         .collect()
+}
+
+/// How many pixels two pieces share vertically; negative when they do not touch.
+fn overlap_amount(a: &Piece, b: &Piece) -> i32 {
+    a.bottom.min(b.bottom) - a.top.max(b.top)
 }
 
 fn overlaps_vertically(a: &Piece, b: &Piece) -> bool {
@@ -244,6 +297,80 @@ mod tests {
             self.calls.set(self.calls.get() + 1);
             Ok(vec![Line::new("TOTAL 13.75", [Point { x: 0.0, y: 0.0 }; 4], None)?])
         }
+    }
+
+    /// A scratch folder unique to this run, so a stale folder from an earlier run cannot leak in.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("nc-ocr-{name}-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch folder");
+        dir
+    }
+
+    struct FailingReader;
+
+    impl PictureReader for FailingReader {
+        fn read_picture(&self, _path: &Path) -> Result<Vec<Line>, OcrError> {
+            Err(OcrError::Engine("the engine stopped".to_string()))
+        }
+    }
+
+    #[test]
+    fn a_missing_boxes_file_is_made_again_rather_than_trusted() {
+        let dir = scratch("missing-lines");
+        let picture = dir.join("p.png");
+        std::fs::write(&picture, b"bytes").expect("picture");
+        let reader = CountingReader { calls: Cell::new(0) };
+        assert_eq!(refresh_companion(&reader, &picture).expect("first"), Refresh::Rewritten);
+        std::fs::remove_file(dir.join("p.png.lines")).expect("the boxes file exists");
+        assert_eq!(refresh_companion(&reader, &picture).expect("second"), Refresh::Rewritten, "no boxes file means read again");
+        assert!(dir.join("p.png.lines").is_file());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_missing_picture_is_an_io_error_not_a_decode_error() {
+        let dir = scratch("no-picture");
+        let reader = CountingReader { calls: Cell::new(0) };
+        match refresh_companion(&reader, &dir.join("gone.png")) {
+            Err(OcrError::Io(message)) => assert!(message.contains("gone.png"), "{message}"),
+            other => panic!("expected an I/O error, got {other:?}"),
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_failed_read_leaves_the_companions_from_the_last_good_read() {
+        let dir = scratch("reader-fails");
+        let picture = dir.join("p.png");
+        std::fs::write(&picture, b"first").expect("picture");
+        refresh_companion(&CountingReader { calls: Cell::new(0) }, &picture).expect("first read");
+        std::fs::write(&picture, b"second").expect("the picture changes");
+        assert!(refresh_companion(&FailingReader, &picture).is_err());
+        assert_eq!(std::fs::read_to_string(dir.join("p.png.txt")).expect("text"), "TOTAL 13.75\n", "the old text is kept");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_line_with_a_tab_or_a_break_stays_one_record_in_the_text_file() {
+        let dir = scratch("tabs");
+        let picture = dir.join("p.png");
+        std::fs::write(&picture, b"bytes").expect("picture");
+        struct Odd;
+        impl PictureReader for Odd {
+            fn read_picture(&self, _path: &Path) -> Result<Vec<Line>, OcrError> {
+                Ok(vec![Line::new("a\tb\nc", [Point { x: 0.0, y: 0.0 }; 4], None)?])
+            }
+        }
+        refresh_companion(&Odd, &picture).expect("reads");
+        assert_eq!(std::fs::read_to_string(dir.join("p.png.txt")).expect("text"), "a b c\n");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn errors_print_a_sentence_a_person_can_act_on() {
+        assert_eq!(OcrError::Io("x".into()).to_string(), "could not read or write a file: x");
+        assert!(OcrError::Decode("y".into()).to_string().starts_with("could not decode the picture"));
     }
 
     fn piece(text: &str, left: i32, top: i32, right: i32, bottom: i32) -> Piece {

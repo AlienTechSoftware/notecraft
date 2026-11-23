@@ -387,18 +387,36 @@ fn ocr_refresh(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let folder = s.settings.get("ocr_models").filter(|v| !v.trim().is_empty()).ok_or_else(|| {
         EngineError::BadParam("OCR is not set up: set ocr_models to the folder with text-detection.onnx and text-recognition.onnx".into())
     })?;
-    let models = std::path::PathBuf::from(folder);
-    let reader = notecraft_ocr::OcrsReader::from_model_files(&models.join("text-detection.onnx"), &models.join("text-recognition.onnx"))
-        .map_err(|e| EngineError::BadParam(format!("the OCR models did not load: {e:?}")))?;
+    let reader = cached_ocr_reader(std::path::Path::new(&folder))?;
     let (mut read, mut unchanged) = (0usize, 0usize);
     for name in picture_names(&page) {
-        match notecraft_ocr::refresh_companion(&reader, &page.join("assets").join(&name)) {
+        match notecraft_ocr::refresh_companion(reader.as_ref(), &page.join("assets").join(&name)) {
             Ok(notecraft_ocr::Refresh::Rewritten) => read += 1,
             Ok(notecraft_ocr::Refresh::Unchanged) => unchanged += 1,
             Err(e) => return Err(EngineError::BadParam(format!("{name}: {e:?}"))),
         }
     }
     Ok(Output::Text(format!("{read} read, {unchanged} unchanged")))
+}
+
+/// The OCR reader for a models folder, loaded the first time and kept while the setting names the same
+/// folder. Loading the two models takes long enough to notice, and every page open used to pay it.
+fn cached_ocr_reader(models: &std::path::Path) -> Result<std::sync::Arc<notecraft_ocr::OcrsReader>, EngineError> {
+    use std::sync::{Arc, Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<Option<(std::path::PathBuf, Arc<notecraft_ocr::OcrsReader>)>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(None));
+    let mut slot = cache.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((folder, reader)) = slot.as_ref()
+        && folder == models
+    {
+        return Ok(Arc::clone(reader));
+    }
+    let reader = Arc::new(
+        notecraft_ocr::OcrsReader::from_model_files(&models.join("text-detection.onnx"), &models.join("text-recognition.onnx"))
+            .map_err(|e| EngineError::BadParam(format!("the OCR models did not load: {e:?}")))?,
+    );
+    *slot = Some((models.to_path_buf(), Arc::clone(&reader)));
+    Ok(reader)
 }
 
 /// Writes the alt text of a picture in a page. An empty text removes it.

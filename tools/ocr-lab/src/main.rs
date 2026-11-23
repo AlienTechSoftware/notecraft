@@ -85,7 +85,14 @@ fn check(folder: &Path, models: Option<&Path>, mut log: telemetry::Log) -> i32 {
     }
     for picture in &pictures {
         let name = picture.strip_prefix(folder).unwrap_or(picture).to_string_lossy().replace('\\', "/");
-        let labels = case::load_labels(picture).map(|f| f.labels).unwrap_or_default();
+        let labels = match case::load_labels(picture) {
+            Ok(file) => file.labels,
+            Err(e) => {
+                failures += 1;
+                println!("{name}: FAILED the label file: {e}");
+                continue;
+            }
+        };
         let mut run = Vec::new();
         let read = telemetry::timed("read picture", &mut run, || reader.read_image(picture));
         match read {

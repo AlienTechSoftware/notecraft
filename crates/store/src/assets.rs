@@ -207,64 +207,155 @@ pub fn alt_texts(body: &str, format: notecraft_model::PageFormat) -> Vec<(String
     }
 }
 
-/// Every `<img ...>` tag in the body, in order.
-fn html_images(body: &str) -> Vec<String> {
+/// Where each `<img ...>` tag starts and ends in the body, in order. The tag name is matched in any
+/// letter case, and only where it is a whole word (`<img>`, `<img src=...>`, `<IMG/>`).
+fn html_image_spans(body: &str) -> Vec<(usize, usize)> {
+    let lower = body.to_ascii_lowercase();
     let mut out = Vec::new();
-    let mut rest = body;
-    while let Some(start) = rest.find("<img") {
-        let Some(end) = rest[start..].find('>') else { break };
-        out.push(rest[start..=start + end].to_string());
-        rest = &rest[start + end + 1..];
+    let mut from = 0;
+    while let Some(rel) = lower[from..].find("<img") {
+        let start = from + rel;
+        let after = lower[start + 4..].chars().next();
+        if !matches!(after, Some(c) if c.is_ascii_whitespace() || c == '>' || c == '/') {
+            from = start + 4;
+            continue;
+        }
+        // The tag ends at the first `>` that is outside quotes.
+        let mut quote: Option<char> = None;
+        let mut end = None;
+        for (i, c) in body[start..].char_indices() {
+            match (quote, c) {
+                (Some(q), c) if c == q => quote = None,
+                (Some(_), _) => {}
+                (None, '"' | '\'') => quote = Some(c),
+                (None, '>') => {
+                    end = Some(start + i + 1);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let Some(end) = end else { break };
+        out.push((start, end));
+        from = end;
     }
     out
 }
 
+/// One attribute of an HTML tag: where it sits, its lowercase name, and its unescaped value (empty
+/// when it has none, as in `<img hidden>`).
+struct HtmlAttr {
+    start: usize,
+    end: usize,
+    name: String,
+    value: String,
+}
+
+/// The attributes of a tag such as `<img src="a.png" alt='x'>`. Names are case-insensitive; values may be
+/// double-quoted, single-quoted or bare, and may have spaces around `=`.
+fn html_attrs(tag: &str) -> Vec<HtmlAttr> {
+    let bytes = tag.as_bytes();
+    let mut out = Vec::new();
+    let mut i = tag.find(|c: char| c.is_ascii_whitespace()).unwrap_or(tag.len());
+    loop {
+        while i < bytes.len() && (bytes[i].is_ascii_whitespace() || bytes[i] == b'/') {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] == b'>' {
+            break;
+        }
+        let start = i;
+        while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'=' && bytes[i] != b'>' && bytes[i] != b'/' {
+            i += 1;
+        }
+        let name = tag[start..i].to_ascii_lowercase();
+        let mut j = i;
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        let mut value = String::new();
+        if j < bytes.len() && bytes[j] == b'=' {
+            j += 1;
+            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            if j < bytes.len() && (bytes[j] == b'"' || bytes[j] == b'\'') {
+                let q = bytes[j];
+                let v_start = j + 1;
+                j = v_start;
+                while j < bytes.len() && bytes[j] != q {
+                    j += 1;
+                }
+                value = unescape_html(&tag[v_start..j.min(tag.len())]);
+                j = (j + 1).min(bytes.len());
+            } else {
+                let v_start = j;
+                while j < bytes.len() && !bytes[j].is_ascii_whitespace() && bytes[j] != b'>' {
+                    j += 1;
+                }
+                value = unescape_html(&tag[v_start..j]);
+            }
+            i = j;
+        }
+        if !name.is_empty() {
+            out.push(HtmlAttr { start, end: i, name, value });
+        }
+    }
+    out
+}
+
+/// Undoes the entities the writer uses, and the common named ones.
+fn unescape_html(raw: &str) -> String {
+    raw.replace("&quot;", "\"").replace("&#39;", "'").replace("&apos;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+}
+
+/// Every `<img>` tag in the body, in order.
+fn html_images(body: &str) -> Vec<String> {
+    html_image_spans(body).into_iter().map(|(a, b)| body[a..b].to_string()).collect()
+}
+
 /// The value of an attribute in an HTML tag, unescaped for the few characters written here.
 fn attr_value(tag: &str, name: &str) -> Option<String> {
-    let key = format!(" {name}=\"");
-    let at = tag.find(&key)? + key.len();
-    let close = tag[at..].find('"')?;
-    Some(tag[at..at + close].replace("&quot;", "\"").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"))
+    html_attrs(tag).into_iter().find(|a| a.name == name).map(|a| a.value)
 }
 
 /// Replaces the alt of the `<img>` whose source is `target`. Returns the body and whether it was found.
 fn set_html_alt(body: &str, target: &str, text: &str) -> (String, bool) {
     let mut out = String::new();
-    let mut rest = body;
+    let mut last = 0;
     let mut found = false;
-    while let Some(start) = rest.find("<img") {
-        let Some(end) = rest[start..].find('>') else { break };
-        let tag = &rest[start..=start + end];
-        out.push_str(&rest[..start]);
+    for (start, end) in html_image_spans(body) {
+        let tag = &body[start..end];
+        out.push_str(&body[last..start]);
         if attr_value(tag, "src").as_deref() == Some(target) {
             found = true;
             out.push_str(&with_html_alt(tag, text));
         } else {
             out.push_str(tag);
         }
-        rest = &rest[start + end + 1..];
+        last = end;
     }
-    out.push_str(rest);
+    out.push_str(&body[last..]);
     (out, found)
 }
 
-/// The tag with its alt set to `text`: replaced where it is, or added before the closing `>`.
+/// The tag with its alt set to `text`. Every existing alt is removed first, whatever its quotes or
+/// case, so a tag can never end up with two; the new alt goes before the closing `>` (or `/>`).
 fn with_html_alt(tag: &str, text: &str) -> String {
     let value = text.trim().replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;").replace('>', "&gt;");
-    let key = " alt=\"";
-    match tag.find(key) {
-        Some(at) => {
-            let from = at + key.len();
-            match tag[from..].find('"') {
-                Some(close) => format!("{}{}{}", &tag[..from], value, &tag[from + close..]),
-                None => tag.to_string(),
-            }
-        }
-        None => {
-            let body = tag.strip_suffix('>').unwrap_or(tag);
-            format!("{body} alt=\"{value}\">")
-        }
+    let attrs = html_attrs(tag);
+    let mut out = String::new();
+    let mut last = 0;
+    for a in attrs.iter().filter(|a| a.name == "alt") {
+        out.push_str(&tag[last..a.start]);
+        last = a.end;
     }
+    out.push_str(&tag[last..]);
+    // Put the new alt just before the tag's closing `>` (or `/>`).
+    let close = out.rfind('>').unwrap_or(out.len());
+    let (head, tail) = out.split_at(close);
+    let head = head.trim_end().trim_end_matches('/').trim_end();
+    format!("{head} alt=\"{value}\"{tail}")
 }
 
 /// One CommonMark image: where its alt text sits in the body, and its target.
@@ -281,6 +372,11 @@ fn markdown_images_at(body: &str) -> Vec<MarkdownImage> {
     let mut out = Vec::new();
     let mut i = 0;
     while let Some(rel) = body[i..].find("![") {
+        // An image inside a link's label (an attachment card's icon) is not the picture's own alt text.
+        if body[..i + rel].ends_with('[') {
+            i += rel + 2;
+            continue;
+        }
         let start = i + rel + 2;
         let mut j = start;
         let mut alt_end = None;
@@ -546,6 +642,39 @@ mod tests {
         set_alt_text(&page, "a.png", "second").expect("writes");
         let body = crate::page::load_page(&page).expect("load").body;
         assert!(body.contains("![cat](assets/cat.png) ![second](assets/a.png)"), "{body}");
+    }
+
+    #[test]
+    fn html_alt_is_found_and_replaced_whatever_the_quotes_case_or_spacing() {
+        for body in ["<IMG SRC=\"assets/a.png\" ALT='old'>", "<img src = 'assets/a.png' alt = \"old\" />", "<img alt=old src=assets/a.png>"] {
+            let (out, found) = set_html_alt(body, "assets/a.png", "new");
+            assert!(found, "{body}");
+            assert_eq!(out.matches("alt").count(), 1, "one alt, not two: {out}");
+            assert!(out.contains("alt=\"new\""), "{out}");
+            assert_eq!(attr_value(&out, "alt").as_deref(), Some("new"), "{out}");
+            assert_eq!(attr_value(&out, "src").as_deref(), Some("assets/a.png"), "{out}");
+        }
+    }
+
+    #[test]
+    fn a_greater_than_inside_a_quoted_value_does_not_end_the_tag() {
+        let body = "<img src=\"assets/a.png\" alt=\"a > b\"><p>after</p>";
+        assert_eq!(alt_texts(body, notecraft_model::PageFormat::Html), vec![("a.png".to_string(), "a > b".to_string())]);
+        let (out, found) = set_html_alt(body, "assets/a.png", "c");
+        assert!(found);
+        assert!(out.ends_with("<p>after</p>") && out.contains("alt=\"c\""), "{out}");
+    }
+
+    #[test]
+    fn an_html_alt_round_trips_with_quotes_and_ampersands() {
+        let (out, _) = set_html_alt("<img src=\"assets/a.png\">", "assets/a.png", "Tom & \"Jerry\"");
+        assert_eq!(alt_texts(&out, notecraft_model::PageFormat::Html), vec![("a.png".to_string(), "Tom & \"Jerry\"".to_string())], "{out}");
+    }
+
+    #[test]
+    fn an_image_inside_a_link_label_is_not_the_pictures_alt_text() {
+        let body = "[![old.pdf](assets/old.pdf.png) old.pdf](assets/old.pdf)";
+        assert!(alt_texts(body, notecraft_model::PageFormat::Cmgfm).is_empty(), "a card icon is not alt text");
     }
 
     #[test]

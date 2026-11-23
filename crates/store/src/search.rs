@@ -205,8 +205,7 @@ pub fn ranked(root: &Path, elsewhere: &[PathBuf], query: &str, limit: usize) -> 
         if best.iter().any(|r| r.path == piece.page) || !qualifies(&piece.page) {
             continue;
         }
-        // Lowercased, as the search has always shown its snippets.
-        let snippet = piece.text.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect();
+        let snippet = snippet_around(&piece.text, &wanted);
         let query_words = notecraft_search::tokenize(query);
         let boxes: Vec<Quad> = piece
             .lines
@@ -228,6 +227,18 @@ pub fn ranked(root: &Path, elsewhere: &[PathBuf], query: &str, limit: usize) -> 
         }
     }
     best
+}
+
+/// A short, single-line snippet of `text`, lowercased as the search has always shown them, centred on
+/// the first place a wanted word appears. With no match in view it starts at the top of the text.
+fn snippet_around(text: &str, wanted: &[String]) -> String {
+    const WIDTH: usize = 120;
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    let first = wanted.iter().filter_map(|w| flat.find(w.as_str())).min().unwrap_or(0);
+    let chars: Vec<char> = flat.chars().collect();
+    let at = flat[..first].chars().count();
+    let start = at.saturating_sub(WIDTH / 3).min(chars.len().saturating_sub(WIDTH));
+    chars[start..(start + WIDTH).min(chars.len())].iter().collect()
 }
 
 #[cfg(test)]
@@ -352,6 +363,25 @@ Flat white 4.50
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].path, page);
         assert_eq!(hits[0].source, Source::Picture);
+    }
+
+    #[test]
+    fn a_page_needs_every_query_word_and_its_snippet_shows_the_match() {
+        let t = TempDir::new("search-and-words");
+        let (root, page) = picture_fixture(&t);
+        assert!(ranked(&root, &[], "cash unicorn", 10).iter().all(|h| h.path != page), "a page missing one word does not qualify");
+        assert!(ranked(&root, &[], "   ", 10).is_empty(), "a blank query finds nothing");
+        let hits = ranked(&root, &[], "cash", 10);
+        assert!(hits.iter().any(|h| h.path == page && h.snippet.contains("cash")), "{hits:?}");
+    }
+
+    #[test]
+    fn a_long_page_gets_a_snippet_around_the_match_not_its_first_words() {
+        let filler = "lorem ipsum dolor sit amet ".repeat(30);
+        let body = format!("{filler}the needle is here {filler}");
+        let snippet = snippet_around(&body, &["needle".to_string()]);
+        assert!(snippet.contains("needle"), "{snippet}");
+        assert!(snippet.chars().count() <= 120 && !snippet.contains('\n'));
     }
 
     #[test]
