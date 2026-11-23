@@ -234,9 +234,9 @@ pub fn header(ui: &mut egui::Ui, page_dir: &std::path::Path, i: usize, emoji: &[
                 field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextInput, true, "Search emoji"));
                 ui.data_mut(|d| d.insert_temp(search_id, query.clone()));
                 let needle = query.trim().to_lowercase();
-                // A grid that scrolls, so the set can grow without the popup growing with it.
-                egui::ScrollArea::vertical().max_height(200.0 * zoom).show(ui, |ui| {
-                    ui.set_max_width(8.0 * 36.0 * zoom);
+                // Wide and tall enough to show every choice; the grid scrolls only past that.
+                egui::ScrollArea::vertical().max_height(300.0 * zoom).show(ui, |ui| {
+                    ui.set_max_width(10.0 * 36.0 * zoom);
                     ui.horizontal_wrapped(|ui| {
                         for (c, name) in CHOICES.iter().zip(CHOICE_NAMES) {
                             if !needle.is_empty() && !name.contains(needle.as_str()) {

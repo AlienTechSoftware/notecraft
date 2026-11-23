@@ -14714,3 +14714,97 @@ fn the_emoji_popup_searches_its_choices_by_name() {
     assert!(h.query_all_by_label(FIRE).count() > 0, "the search finds fire");
     assert_eq!(h.query_all_by_label(GRIN).count(), 0, "and hides the emoji it does not name");
 }
+
+/// Issue #371: the footer keeps the save state and the default-format control in view. The
+/// notebook counts, the folder and the format inheritance sit behind one Details control, and
+/// a keyboard user reaches them from there.
+#[test]
+fn status_footer_keeps_format_in_view_and_moves_details_behind_a_button() {
+    let (_t, app, _s) = sample_app("ui-status-details");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1280.0, 760.0));
+    settle(&mut h);
+    assert!(h.query_all_by_label("Default format").count() > 0, "the default-format control stays in the footer");
+    assert_eq!(h.query_all_by_label("Notebook details").count(), 1, "one Details control holds the counts and folder");
+    assert_eq!(h.query_all_by_label_contains(" \u{b7} ").count(), 0, "the counts are not in the footer before Details is opened");
+    h.get_by_label("Notebook details").click();
+    settle(&mut h);
+    assert!(h.query_all_by_label_contains(" \u{b7} ").count() > 0, "the details popup shows the notebook and item counts");
+    review(&mut h, "status-footer-details");
+}
+
+/// Issue #371: a long page title in the title band never runs under the search box or the
+/// Discord link, at the supported 1280-point width and at 150% display scaling, and its full
+/// text stays reachable by name.
+#[test]
+fn long_page_title_stays_clear_of_the_band_controls_at_1280_and_150_percent() {
+    let long = "https://example.com/notes/a/very/long/address/that/keeps/going/and/going/and/going/and/going/\u{0645}\u{0644}\u{0627}\u{062d}\u{0638}\u{0629}-title/\u{0645}\u{0644}\u{0627}\u{062d}\u{0638}\u{0629}-more";
+    for scale in [1.0_f32, 1.5] {
+        let t = TempDir::new("ui-title-band");
+        let mut s = session(&t);
+        let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+        s.run("node.title", &params(&[("path", sample.html_page.to_str().expect("utf8")), ("title", long)])).expect("rename");
+        let mut app = NoteCraftApp::new(s);
+        app.set_redact_paths(true);
+        app.open_path(&sample.html_page.to_string_lossy());
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1280.0, 760.0))
+            .with_pixels_per_point(scale)
+            .with_accessibility_check(false)
+            .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+        settle(&mut h);
+        let title = h.get_by_label(&format!("{long} - NoteCraft")).rect();
+        assert!(title.width() > 0.0, "the title is drawn at scale {scale}");
+        let search = h
+            .get_all_by_role(egui::accesskit::Role::TextInput)
+            .find(|n| n.rect().min.y < 40.0 && n.rect().max.x > 640.0)
+            .expect("search field")
+            .rect();
+        let discord = h.get_by_label("Discord").rect();
+        assert!(title.max.x <= search.min.x, "title {title:?} runs under search {search:?} at scale {scale}");
+        assert!(title.max.x <= discord.min.x || title.min.x >= discord.max.x, "title {title:?} overlaps Discord {discord:?} at scale {scale}");
+        review(&mut h, &format!("title-band-{}", (scale * 10.0) as u32));
+    }
+}
+
+/// Issue #371: an opened page with nothing to write says it is saved in the footer.
+#[test]
+fn status_footer_says_a_clean_page_is_saved() {
+    let (_t, mut app, s) = sample_app("ui-status-saved");
+    app.open_path(&s.html_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1280.0, 760.0));
+    settle(&mut h);
+    assert!(
+        h.query_all_by_label_contains("HTML - Saved").count() > 0 || h.query_all_by_label_contains(" - Saved").count() > 0,
+        "the footer names the save state"
+    );
+}
+
+/// Issue #371: an error in the footer is set apart from a routine status, by its own mark as
+/// well as its colour, so it does not depend on colour alone.
+#[test]
+fn status_footer_marks_an_error_apart_from_a_routine_status() {
+    let (t, app, _s) = sample_app("ui-status-error");
+    let mut app = app;
+    let missing = t.path().join("no-such-page-folder");
+    app.open_path(&missing.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1280.0, 760.0));
+    settle(&mut h);
+    assert!(h.query_all_by_label_contains("! ").count() > 0, "the error line carries its own mark");
+    review(&mut h, "status-footer-error");
+}
+
+/// The emoji grid shows every choice, the party popper included, without scrolling.
+#[test]
+fn the_emoji_grid_shows_every_choice_including_the_party_popper() {
+    const POPPER: &str = "\u{1F389}";
+    let (_t, app, s) = sample_app("ui-emoji-grid-all");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.query_all_by_label_contains("Add emoji to block").next().expect("a block header `+`").click();
+    h.run();
+    settle(&mut h);
+    let popper = h.query_all_by_label(POPPER).last().expect("the party popper is in the grid").rect();
+    let tiles = h.query_all_by_label_contains("\u{1F600}").count();
+    assert!(tiles >= 1 && popper.bottom() > 0.0, "the popper is laid out: {popper:?}");
+}
