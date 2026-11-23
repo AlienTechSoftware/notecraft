@@ -1,6 +1,6 @@
 # Feature parity
 
-Last reviewed: 2026-10-17.
+Last reviewed: 2026-11-23.
 
 What NoteCraft does today against the feature list of the desktop note taking app most
 people are moving from, called **the other app** below. That list is kept out of this
@@ -16,30 +16,30 @@ side by side. Status words:
 | Structure | Multi-level collapse and expand | Done | Per-row chevrons, Expand all, Collapse all. |
 | Structure | A new notebook starts usable | Done | Like the other app: one section, "New Section 1", holding one empty page. `notebook.create empty=true` skips it. |
 | Structure | Colours per notebook or section | Done | Nine colours on notebooks, section groups and sections, saved in `_node.toml`, shown on the icon and the row edge. |
-| Structure | Templates | Partial | Insert > Page Templates: eight built-in templates in four categories, and any page saved as a template; a click adds a page to the section. No previews, and no default template for new pages. |
-| Authoring | Rich text | Partial | Both formats are written on in their finished look, block by block, with a real caret. A page whose markup cannot be written back exactly opens read-only rather than risking it. No font, size, colour or alignment controls yet. |
-| Authoring | Tables, lists, to-do, quotes, code | Done | The ribbon inserts them, the page draws them, and a to-do box ticks where it stands. |
-| Authoring | Right-to-left text | Partial | Arabic and Hebrew draw, and the page, the line and the run each take a direction, written into the text so it travels. A line that mixes the two directions is still drawn in one order, and the window is not mirrored. |
-| Authoring | Tags | Partial | Twelve tags, stored as plain text in the page and drawn as marks. No tag summary page. |
+| Structure | Templates | Partial | Insert > Page Templates: built-in templates across categories (Academic, Blank, Business, Planners), and any page saved as a template; a click adds a page to the section. No preview images, and no default template for new pages. |
+| Authoring | Rich text | Partial | Both formats edit block by block with a real caret, falling back to read-only for unrepresentable markup. The Home ribbon provides font family selection from installed faces, font sizing, font colour, text highlights, formatting marks (bold, italic, underline, strikethrough, sub/superscript), paragraph alignment (left, center, right), and paragraph spacing. Partial selections across lines or markup and OS font registration remain limited. |
+| Authoring | Tables, lists, to-do, quotes, code | Done | The ribbon inserts them, the page draws them, to-do boxes tick where they stand, and lists scale markers with effective body font size. Tables include a dedicated Table ribbon tab with cell editing, row/col management, shading, cell alignment, cell merge/split, sorting, and optional GridCraft spreadsheet integration. |
+| Authoring | Right-to-left text | Partial | Arabic, Hebrew, Persian and Urdu draw with proper word placement, line and run directions. Arrow navigation follows visual direction through mixed bidi text, caret avoids vowels, and block-spanning selections work. Window mirroring and Arabic collation sorting are not built. |
+| Authoring | Tags | Partial | Twelve tags stored as plain text marks. Home > Find Tags opens a Tags Summary pane across open notebooks with jump-to-tag clicks. Grouping/sorting options, search within summary, and generating a dedicated tag summary page are not built. |
 | Authoring | Equations | Done | KaTeX-style TeX drawn natively in real maths fonts, with a gallery on the Insert tab. A formula the engine cannot take stays visible as text. `how-to/write-equations.md`. |
 | Authoring | Diagrams (Mermaid) | Partial | Drawn in the page (flowcharts, sequence, class, state, ER, Gantt, mind maps, pie, bar and line, quadrant), in both page formats; a click opens the source, and the code view shows it as text. `how-to/draw-diagrams.md`. |
-| Authoring | Free-form canvas boxes | Later | Not representable in Markdown. |
-| Authoring | Ink | Later | Possible as SVG strokes per page. |
-| Embedding | Images, files, video | Partial | A dropped file can be copied into the page folder, linked where it is, or rendered as a printout. PDF rendering is native Rust; LibreOffice is still used for Office conversion. |
+| Authoring | Free-form canvas boxes | Partial | Pages support multiple free-form text containers with draggable top handles, right-edge resizing, and click-to-place on blank paper. Layout metadata is stored in HTML head or CMGFM front matter. Moving blocks between containers, exact container height detection, and picture containers are not built. |
+| Authoring | Ink | Partial | Draw tab with five nibs, customizable pen rack (thickness dots, colour grid, eyedropper, stroke previews, Alt+1..9), pressure sensitivity, eraser, undo/redo, ruler stencil, regular shapes, automatic shape recognition, ink replay, and select/lasso (including open C-bracket). Ink is saved to `ink.svg` with `nc:dabs` readings, written off the main thread. Ink to Text/Math and macOS/X11 pressure are not built. |
+| Embedding | Images, files, video | Partial | Dropped files can be copied into the page folder, linked, or inserted as PDF printouts (native Rust rasterization; LibreOffice for Office formats). Includes image right-click "Save picture as...", Insert > Online Video links, and a 12-sticker gallery. Video embedding/playback, screen clipping, audio/video recording, and transcription are not built. |
 | Embedding | Live Office objects | Skip | Not portable. |
 | Retrieval | Full-text search | Done | Across all notebooks, title and body. |
-| Retrieval | Links between pages | Partial | Stored as relative links; shown, not clickable yet. |
-| Retrieval | Versions, recycle bin | Later | Left to file history of the synced folder. |
-| Retrieval | OCR, audio search | Later | |
-| Sync | Cloud sync and backup | Done by design | Plain files in a synced folder. Verified once on OneDrive in the prototype; not re-verified for this build. |
+| Retrieval | Links between pages | Partial | Clicking a link opens the named page, section, external file, or web URL. Copy link to page generates `notecraft:/book/section/page` links. Links are followed by path; links by ID, links inside table cells, and links inside mixed bidi lines are not built. |
+| Retrieval | Versions, recycle bin | Partial | History tab provides Page Versions (stores and restores snapshots of a page's primary file) and Notebook Recycle Bin (restores or permanently removes deleted pages, sections, and section groups). Versioning does not track companion assets/drawings, and deleting entire notebooks is not supported in the bin. |
+| Retrieval | OCR, audio search | Later | Unbuilt. Raw stroke data (`nc:dabs`) in ink files is preserved for future handwriting recognition. |
+| Sync | Cloud sync and backup | Done by design | Plain files in a synced folder (OneDrive, Dropbox, Nextcloud, Syncthing). File changes debounce and defer during active ink strokes. Real-time conflict merging is not built. |
 | Sync | Section passwords | Later | |
-| Collaboration | Sharing | By design | A shared folder. Live co-authoring is Later. |
-| Output | Export | Later | Export scope is undecided. |
-| Output | Import | In progress | Required, import only (owner's decision, 2026-10-17). `notecraft-cli import onenote` reads `.one` sections and optional `.onetoc2` color metadata, then writes notebook folders in either page format. `.onepkg` packages are unpacked and imported as notebooks. Still missing: TOC section order, ink, tags, and an import command in the window. |
+| Collaboration | Sharing | Partial | Shared folder sync; live co-authoring is Later. File > Share, File > Export, and Home > Send Page provide reviewed original-format folder exports (or browser ZIP downloads). History tab includes author tracking and Find by Author across open notebooks. Native OS share sheets are not integrated. |
+| Output | Export | Partial | File > Export produces reviewed original-format folder packages (downloaded as ZIP in the browser). Images offer "Save picture as...", drawings offer "Save picture" SVG export, tables export to CSV for GridCraft, and pages offer background printout rendering. Dedicated PDF or OneNote file export writers are not built. |
+| Output | Import | Partial | `notecraft-cli import onenote` and in-app import read `.one` sections, `.onetoc2` color metadata, and `.onepkg` packages into notebook folders. Still missing: importing ink strokes, tags, and password-protected sections. |
 | Input | Local dictation | Partial | Optional `voice` build, reviewed text insert, Undo and save. See [dictation](how-to/dictate.md) for format and hardware acceptance limits. |
 | Output | Add-ins, AI | Later | |
 | Look | Themes | Done | 14 themes, contrast checked. `themes.md`. |
-| Look | Ruled and grid page backgrounds | Done | View, Rule Lines: none, lines or squares behind the page, in colours each theme checks for contrast. Remembered between runs. |
-| Look | Office-style ribbon | Partial | Home, Insert and View with groups, a Styles gallery, a Tags gallery, a contextual Source tab and a File screen. Draw, History, Review and Help are not built, and say so. |
+| Look | Ruled and grid page backgrounds | Done | Format Background on Draw or View provides none, lines, or squares with selectable rule line colours and page tint colours, stored per page in metadata (`notecraft:paper`, `notecraft:page-color`) and contrast-checked across themes. |
+| Look | Office-style ribbon | Partial | Home, Insert, Draw, History and View tabs with Office-style groups, Styles and Tags galleries, contextual Table and Source tabs, section tabs layout, and File screen. Immersive Reader and Dock to Desktop are available. Review tab and general Help tab remain unbuilt. |
 | Files | See what a page is made of | Done | The code view lists every file of a page and shows what is in each. The other app keeps a section in one binary file that a text editor cannot read. `how-to/look-inside-a-page.md`. |
-| Look | Platforms | Partial | Windows built and tested; macOS and Linux not built. |
+| Look | Platforms | Partial | Desktop builds (Windows MSI/zip, Linux deb/rpm/AppImage/tar.gz, macOS DMG/zip) and browser WASM demo are actively built and verified in CI. Android arm64 APK builds with a phone layout, but lacks native file pickers, system clipboard, and on-device signoff. |
