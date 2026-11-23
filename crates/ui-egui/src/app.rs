@@ -144,6 +144,35 @@ fn fit_to_width(ui: &Ui, text: &str, size: f32, room: f32) -> String {
     fit_with(&|s| text_width(ui, s, size), text, room)
 }
 
+fn paint_search_snippet(ui: &Ui, painter: &egui::Painter, at: egui::Pos2, text: &str, query: &str, tokens: &Tokens) {
+    const SIZE: f32 = 12.0;
+    let normal = egui::TextFormat { font_id: egui::FontId::proportional(SIZE), color: tokens.muted, ..Default::default() };
+    let emphasis = egui::TextFormat { color: tokens.strong, background: tokens.selection, ..normal.clone() };
+    let mut pieces = Vec::new();
+    let mut end = 0;
+    for range in notecraft_store::search::snippet_matches(text, query) {
+        if end < range.start {
+            pieces.push((end..range.start, normal.clone()));
+        }
+        end = range.end;
+        pieces.push((range, emphasis.clone()));
+    }
+    if end < text.len() {
+        pieces.push((end..text.len(), normal));
+    }
+    if crate::bidi::paints(text, None) {
+        let (runs, size) = crate::bidi::runs(ui, text, &pieces, SIZE, f32::INFINITY, None);
+        crate::bidi::paint_with(painter, at - vec2(0.0, size.y * 0.5), &runs);
+    } else {
+        let mut job = egui::text::LayoutJob::default();
+        for (range, format) in pieces {
+            job.append(&text[range], 0.0, format);
+        }
+        let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+        painter.galley(at - vec2(0.0, galley.rect.height() * 0.5), galley, egui::Color32::PLACEHOLDER);
+    }
+}
+
 /// [`fit_to_width`] with the width of a piece of text given by `width`.
 fn fit_with(width: &dyn Fn(&str) -> f32, text: &str, room: f32) -> String {
     if width(text) <= room {
@@ -523,6 +552,15 @@ enum TagScope {
     Section,
     Notebook,
     All,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum SearchScope {
+    #[default]
+    All,
+    Notebook,
+    Section,
+    Page,
 }
 
 impl TagScope {
@@ -1318,6 +1356,7 @@ pub struct NoteCraftApp {
     hit_trails: Vec<String>,
     /// The result chosen with the arrow keys, if any (issue #370).
     search_pick: Option<usize>,
+    search_scope: SearchScope,
     /// The Tags Summary, while it is open.
     tags_pane: Option<TagsPane>,
     /// Home > More tags > Customize Tags, while it is open (issue #259).
@@ -1613,6 +1652,7 @@ impl NoteCraftApp {
             hits: Vec::new(),
             hit_trails: Vec::new(),
             search_pick: None,
+            search_scope: SearchScope::default(),
             tags_pane: None,
             custom_tags: None,
             templates_pane: None,
@@ -4151,23 +4191,44 @@ impl NoteCraftApp {
     fn draw_row(&self, ui: &mut Ui, node: &Node, depth: usize, acts: &mut Vec<Act>, pages: bool) {
         let has_kids = if pages { !node.children.is_empty() } else { node.children.iter().any(|c| c.info.kind != NodeKind::Page) };
         let open = self.open.contains(&node.path);
+        let page = node.info.kind == NodeKind::Page;
         let selected = self.selected.as_deref() == Some(node.path.as_path());
+        let active_section = node.info.kind == NodeKind::Section && self.selected.as_ref().is_some_and(|p| p.starts_with(&node.path));
+        let active = selected || active_section;
         let width = ui.available_width();
         // A row can be taken hold of and dragged elsewhere in the pane (see `navdrag`); a press
         // that hardly moves is still a click.
-        let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click_and_drag());
+        let (_, rect) = ui.allocate_space(vec2(width, ROW_HEIGHT));
+        let resp = ui.interact(rect, ui.make_persistent_id(("navigation-row", &node.path)), Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         let t = &self.tokens;
         self.drag_row(ui, node, rect, &resp, acts);
-        if selected {
+        if active {
             painter.rect_filled(rect, 4.0, t.row_selected);
         } else if resp.hovered() {
             painter.rect_filled(rect, 4.0, t.row_hover);
         }
-        let x0 = rect.min.x + depth as f32 * INDENT + 2.0;
+        let x0 = rect.min.x + (depth as f32 * INDENT).min(rect.width() * 0.42) + 3.0;
         let cy = rect.center().y;
-        let chevron_rect = egui::Rect::from_min_size(egui::pos2(x0, rect.min.y), vec2(16.0, ROW_HEIGHT));
+        let chevron_rect = egui::Rect::from_min_size(egui::pos2(x0, rect.min.y), vec2(19.0, ROW_HEIGHT));
         if has_kids {
+            let disclosure = ui.interact(chevron_rect, resp.id.with("disclosure"), Sense::click());
+            let title = &[("title", node.info.title.as_str())];
+            let label = if open {
+                crate::i18n::format_message_id("ui.collapse_navigation_node", title)
+            } else {
+                crate::i18n::format_message_id("ui.expand_navigation_node", title)
+            };
+            disclosure.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), open, &label));
+            if disclosure.hovered() {
+                painter.rect_filled(chevron_rect, 3.0, t.row_hover);
+            }
+            if disclosure.has_focus() {
+                painter.rect_stroke(chevron_rect.shrink(1.0), 3.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+            }
+            if disclosure.on_hover_text(label).clicked() {
+                acts.push(Act::Toggle(node.path.clone()));
+            }
             let c = chevron_rect.center();
             let stroke = egui::Stroke::new(1.5, t.muted);
             let pts = if open {
@@ -4192,23 +4253,26 @@ impl NoteCraftApp {
             }
             None => default_color,
         };
-        // The coloured edge of the row, like the edge of a OneNote tab.
-        if node.info.color.is_some() {
-            let edge = egui::Rect::from_min_size(egui::pos2(rect.min.x, rect.min.y + 2.0), vec2(3.0, ROW_HEIGHT - 4.0));
-            painter.rect_filled(edge, 1.5, color);
+        // The left edge identifies the active location independently of the focus outline.
+        if active {
+            let edge = egui::Rect::from_min_size(egui::pos2(rect.min.x, rect.min.y + 3.0), vec2(3.0, ROW_HEIGHT - 6.0));
+            painter.rect_filled(edge, 1.5, t.accent);
+        }
+        if resp.has_focus() {
+            painter.rect_stroke(rect.shrink(1.0), 4.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
         }
         let icon_rect = egui::Rect::from_min_size(egui::pos2(x0 + 18.0, cy - 8.5), vec2(17.0, 17.0));
-        icons::paint(&painter, icon_rect, icon, color);
-        // A page changed since the user last read it carries a dot, as unread mail does (#291).
-        let unread = node.info.kind == NodeKind::Page && self.unread.contains(&node.path);
-        if unread {
-            painter.circle_filled(icon_rect.right_top() + vec2(-1.0, 2.0), 3.5, t.accent);
+        if !page {
+            icons::paint(&painter, icon_rect, icon, color);
         }
-        let text_pos = egui::pos2(x0 + 40.0, cy);
-        let text_color = if selected { t.strong } else { ui.style().visuals.text_color() };
-        // Pages keep room for the add-page "+" at the end of the row. Organiser rows do not,
-        // so notebook, group and section names run almost to the pane border.
-        let trailing = if node.info.kind == NodeKind::Page { 28.0 } else { 8.0 };
+        let unread = page && self.unread.contains(&node.path);
+        if unread {
+            painter.circle_filled(egui::pos2(rect.max.x - 29.0, cy), 3.5, t.accent);
+        }
+        let font_size = if node.info.kind == NodeKind::Notebook { 15.0 } else { 14.0 };
+        let text_pos = egui::pos2(x0 + if page { 21.0 } else { 40.0 }, cy);
+        let text_color = if active || unread || node.info.kind == NodeKind::Notebook { t.strong } else { ui.style().visuals.text_color() };
+        let trailing = if unread { 37.0 } else { 26.0 };
         // A locked page keeps room for its lock beside the name (issue #441).
         let lock_room = if node.info.read_only { 18.0 } else { 0.0 };
         let room = (rect.max.x - trailing - text_pos.x - lock_room).max(0.0);
@@ -4216,17 +4280,18 @@ impl NoteCraftApp {
         // when the whole name fits beside it, and the name is never cut to make room for it.
         let label = if node.info.kind == NodeKind::Page { node.info.format.map(|f| crate::tl!(f.short())) } else { None };
         let label_width = label.map(|l| text_width(ui, l, 10.5) + ROW_LABEL_GAP);
-        let (show_label, name_room) = row_name_room(text_width(ui, &node.info.title, 14.0), label_width, room);
-        let name = fit_to_width(ui, &node.info.title, 14.0, name_room);
+        let width_of_title = |text: &str| crate::bidi::line_width(ui, text, font_size, None);
+        let (show_label, name_room) = row_name_room(width_of_title(&node.info.title), label_width, room);
+        let name = fit_with(&width_of_title, &node.info.title, name_room);
         let text_clip = egui::Rect::from_min_max(rect.min, egui::pos2(text_pos.x + name_room + 1.0, rect.max.y));
         // The tree is on screen all the time, so this is the most visible place the words
         // of an Arabic name would come out backwards. Each row's name decides its own
         // direction; the row keeps its place and its clip either way.
         let clipped = painter.with_clip_rect(text_clip);
-        crate::bidi::line_at(ui, &clipped, text_pos, Align2::LEFT_CENTER, &name, 14.0, text_color, None);
+        crate::bidi::line_at(ui, &clipped, text_pos, Align2::LEFT_CENTER, &name, font_size, text_color, None);
         // A locked page's lock, after its name, with the words of its tooltip for a screen reader too.
         if node.info.read_only {
-            let name_width = text_width(ui, &name, 14.0);
+            let name_width = width_of_title(&name);
             let lock_rect = egui::Rect::from_center_size(egui::pos2(text_pos.x + name_width + 9.0, cy), vec2(13.0, 13.0));
             floating::Glyph::Icon(Icon::Lock).paint(&painter, lock_rect, t);
             let tip = crate::tl_id!("ui.page_is_read_only");
@@ -4243,13 +4308,29 @@ impl NoteCraftApp {
         }
         let enabled = ui.is_enabled();
         let spoken = if unread { crate::i18n::format_message_id("ui.title_unread", &[("title", &node.info.title)]) } else { node.info.title.clone() };
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &spoken));
-        let resp = resp.on_hover_text(self.shown(&node.path));
-        if resp.clicked() {
-            let pos = resp.interact_pointer_pos().unwrap_or_default();
-            if has_kids && chevron_rect.expand2(vec2(2.0, 0.0)).contains(pos) {
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, active, &spoken));
+        if selected || (!pages && active_section) {
+            let last = ui.id().with("revealed-navigation-row");
+            if ui.data(|data| data.get_temp::<PathBuf>(last)).as_ref() != Some(&node.path) {
+                ui.data_mut(|data| data.insert_temp(last, node.path.clone()));
+                resp.scroll_to_me(None);
+            }
+        }
+        if resp.has_focus() && has_kids {
+            let key = if open { Key::ArrowLeft } else { Key::ArrowRight };
+            if ui.input_mut(|input| input.consume_key(Modifiers::NONE, key)) {
                 acts.push(Act::Toggle(node.path.clone()));
-            } else if plus_rect.contains(pos) {
+            }
+        }
+        let tooltip = format!("{spoken}\n{}", self.shown(&node.path));
+        let resp = resp.on_hover_text(tooltip.clone());
+        if resp.has_focus() && name != node.info.title {
+            egui::Tooltip::for_widget(&resp).show(|ui| {
+                ui.label(tooltip);
+            });
+        }
+        if resp.clicked() {
+            if resp.interact_pointer_pos().is_some_and(|pos| plus_rect.contains(pos)) {
                 acts.push(Act::Add(node.path.clone(), node.info.kind));
             } else {
                 acts.push(Act::Select(node.path.clone()));
@@ -4607,13 +4688,7 @@ impl NoteCraftApp {
             self.focus_search = false;
         }
         if resp.changed() && self.search != self.searched {
-            self.searched = self.search.clone();
-            self.hits = match self.session.run("search.query", &params(&[("q", &self.search), ("limit", "20")])) {
-                Ok(Output::Hits(h)) => h,
-                _ => Vec::new(),
-            };
-            self.hit_trails = self.hits.iter().map(|hit| search_trail(self.session.tree(), &hit.path)).collect();
-            self.search_pick = None;
+            self.refresh_search();
         }
         // The query box keeps Enter for navigation rather than leaving the user with a
         // mouse-only result list. Enter opens the result chosen with the arrow keys, or the
@@ -4865,7 +4940,11 @@ impl NoteCraftApp {
                     self.reveal(&root);
                 }
                 backstage::Act::Open(p) => {
-                    self.open_notebook_from_path(&p);
+                    if self.editor.as_ref().is_some_and(|editor| editor.dir.starts_with(&p)) {
+                        self.backstage = None;
+                    } else {
+                        self.open_notebook_from_path(&p);
+                    }
                 }
                 backstage::Act::OpenRecent(p) => {
                     self.open_notebook_from_path(&p);
@@ -8807,6 +8886,29 @@ impl NoteCraftApp {
         self.hits.clear();
         self.hit_trails.clear();
         self.search_pick = None;
+        self.search_scope = SearchScope::All;
+    }
+
+    fn refresh_search(&mut self) {
+        self.searched.clone_from(&self.search);
+        let mut query = params(&[("q", &self.search), ("limit", "20")]);
+        let scope = match self.search_scope {
+            SearchScope::All => None,
+            SearchScope::Notebook => {
+                self.selected.as_ref().and_then(|p| self.session.tree().iter().find(|n| p.starts_with(&n.path))).map(|n| &n.path)
+            }
+            SearchScope::Section => self.current_section(self.session.tree()).map(|n| &n.path),
+            SearchScope::Page => self.editor.as_ref().map(|editor| &editor.dir),
+        };
+        if let Some(scope) = scope {
+            query.insert("scope".into(), path_str(scope));
+        }
+        self.hits = match self.session.run("search.query", &query) {
+            Ok(Output::Hits(hits)) => hits,
+            _ => Vec::new(),
+        };
+        self.hit_trails = self.hits.iter().map(|hit| search_trail(self.session.tree(), &hit.path)).collect();
+        self.search_pick = None;
     }
 
     fn open_search_result(&mut self, ctx: &Context, path: &Path) {
@@ -8830,16 +8932,19 @@ impl NoteCraftApp {
             self.dismiss_search();
             return;
         }
-        if self.search.trim().is_empty() {
+        let field_id = Id::new(("page-search", ctx.viewport_id()));
+        let empty = self.search.trim().is_empty();
+        if empty && !ctx.memory(|memory| memory.has_focus(field_id)) {
             return;
         }
         let mut chosen: Option<PathBuf> = None;
+        let mut scope = self.search_scope;
         let tokens = self.tokens;
         // Issue #370: the results hang from the search box itself, as wide as it or wider, and
         // are kept inside the window, rather than sitting at a fixed place on the right.
         let screen = ctx.viewport_rect();
         let field = ctx.read_response(Id::new(("page-search", ctx.viewport_id()))).map(|response| response.rect);
-        let width = field.map_or(420.0, |f| f.width().max(420.0)).min((screen.width() - 16.0).max(200.0));
+        let width = field.map_or(420.0, |f| f.width().max(420.0)).min((screen.width() - 16.0).max(0.0));
         let (left, top) = match field {
             Some(f) => (f.left().min(screen.right() - width - 8.0).max(screen.left() + 8.0), f.bottom() + 4.0),
             None => (screen.right() - width - 8.0, screen.top() + 44.0),
@@ -8853,10 +8958,28 @@ impl NoteCraftApp {
             before != Some(pick)
         });
         let popup = egui::Area::new(Id::new("search-results")).order(egui::Order::Foreground).fixed_pos(egui::pos2(left, top)).show(ctx, |ui| {
-            egui::Frame::popup(ui.style()).show(ui, |ui| {
-                ui.set_width(width);
-                ui.label(egui::RichText::new(crate::tl_id!("ui.search_scope_all_notebooks")).small().color(tokens.muted));
+            let frame = egui::Frame::popup(ui.style());
+            let content_width = (width - frame.total_margin().sum().x).max(0.0);
+            frame.show(ui, |ui| {
+                ui.set_width(content_width);
+                ui.horizontal_wrapped(|ui| {
+                    let choices = [
+                        (SearchScope::All, crate::tl_id!("ui.tags_scope_all_notebooks"), true),
+                        (SearchScope::Notebook, crate::tl_id!("ui.this_notebook"), self.selected.is_some()),
+                        (SearchScope::Section, crate::tl_id!("ui.this_section"), self.current_section(self.session.tree()).is_some()),
+                        (SearchScope::Page, crate::tl_id!("ui.find_on_this_page"), self.editor.is_some()),
+                    ];
+                    for (choice, label, available) in choices {
+                        if ui.add_enabled(available, egui::Button::selectable(scope == choice, label)).clicked() {
+                            scope = choice;
+                        }
+                    }
+                });
                 ui.add_space(2.0);
+                if empty {
+                    ui.weak(crate::tl_id!("ui.search_prompt"));
+                    return;
+                }
                 if self.hits.is_empty() {
                     ui.weak(crate::tl_id!("ui.no_pages_match"));
                     return;
@@ -8878,6 +9001,9 @@ impl NoteCraftApp {
                             painter.rect_filled(egui::Rect::from_min_size(rect.min, vec2(3.0, rect.height())), 2.0, tokens.accent);
                         } else if row.hovered() {
                             painter.rect_filled(rect, 4.0, tokens.row_hover);
+                        }
+                        if row.has_focus() {
+                            painter.rect_stroke(rect.shrink(1.0), 4.0, egui::Stroke::new(1.0, tokens.accent), egui::StrokeKind::Inside);
                         }
                         let x = rect.min.x + 10.0;
                         let room = (rect.width() - 20.0).max(20.0);
@@ -8902,7 +9028,8 @@ impl NoteCraftApp {
                             line(trail, 11.5, y, tokens.accent);
                         }
                         y += 17.0;
-                        line(&h.snippet, 12.0, y, tokens.muted);
+                        let snippet = fit_to_width(ui, &h.snippet, 12.0, room);
+                        paint_search_snippet(ui, &painter, egui::pos2(x, y), &snippet, &self.searched, &tokens);
                         if current && picked_now {
                             row.scroll_to_me(None);
                         }
@@ -8924,7 +9051,13 @@ impl NoteCraftApp {
                     .interact_pos()
                     .is_some_and(|pos| !popup.response.rect.contains(pos) && !search_rect.is_some_and(|rect| rect.contains(pos)))
         });
-        if outside {
+        if scope != self.search_scope {
+            self.search_scope = scope;
+            self.refresh_search();
+            if empty {
+                ctx.memory_mut(|memory| memory.request_focus(field_id));
+            }
+        } else if outside {
             self.dismiss_search();
         }
         if let Some(p) = chosen {
@@ -9260,7 +9393,7 @@ impl NoteCraftApp {
         let panel = if compact {
             egui::Panel::left("tree-compact").resizable(false).exact_size(ui.available_width())
         } else {
-            egui::Panel::left("tree").resizable(true).default_size(300.0).size_range(200.0..=700.0)
+            egui::Panel::left("tree").resizable(true).show_separator_line(true).default_size(300.0).size_range(200.0..=700.0)
         };
         panel.show(ui, |ui| {
             ui.add_space(4.0);
@@ -9271,7 +9404,7 @@ impl NoteCraftApp {
                 if !compact {
                     split_now = Self::bars_button_at(ui).clicked();
                 }
-                ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_2")).small().color(self.tokens.muted));
+                ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_2")).strong().color(self.tokens.strong));
             });
             ui.horizontal_wrapped(|ui| {
                 if ui.small_button(crate::tl_id!("ui.new_notebook")).clicked() {
@@ -9285,6 +9418,7 @@ impl NoteCraftApp {
                 }
                 self.new_section_button(ui, &mut acts);
             });
+            self.active_notebook_label(ui);
             ui.add_space(2.0);
             // A mouse drag in a pane must not scroll it: in the tree it is a click that
             // slipped. The wheel and the bar still work, and on a touch screen a finger drag
@@ -9385,8 +9519,8 @@ impl NoteCraftApp {
         /// How big the round "+" is. The gap itself is shorter than this on purpose: it is
         /// a thin strip between two pages, and the button stands out of it.
         const PLUS: f32 = 8.0;
-        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 7.0), Sense::click());
-        let hot = resp.hovered();
+        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 10.0), Sense::click());
+        let hot = resp.hovered() || resp.has_focus();
         if hot {
             // The gap is 7 points tall and the circle is 13 across, so the circle has to
             // be drawn outside the strip it belongs to. `painter_at` cannot: it narrows
@@ -9394,7 +9528,7 @@ impl NoteCraftApp {
             // the circle came out a lozenge, flat at the top and the bottom. Painting on
             // the layer starts from the whole window instead.
             let room = (PLUS + 1.0 - rect.height() / 2.0).max(2.0);
-            let painter = ui.ctx().layer_painter(ui.layer_id()).with_clip_rect(rect.expand(room));
+            let painter = ui.ctx().layer_painter(ui.layer_id()).with_clip_rect(rect.expand(room).intersect(ui.clip_rect()));
             let y = rect.center().y;
             let t = &self.tokens;
             painter.line_segment([egui::pos2(rect.min.x + 21.0, y), egui::pos2(rect.max.x - 6.0, y)], egui::Stroke::new(1.5, t.accent));
@@ -9405,7 +9539,9 @@ impl NoteCraftApp {
             let cross = egui::Stroke::new(2.0, t.panel);
             painter.line_segment([c - vec2(4.0, 0.0), c + vec2(4.0, 0.0)], cross);
             painter.line_segment([c - vec2(0.0, 4.0), c + vec2(0.0, 4.0)], cross);
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            if resp.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
         }
         let enabled = ui.is_enabled();
         let name = crate::tl_id!("ui.add_a_page_here");
@@ -9499,6 +9635,20 @@ impl NoteCraftApp {
         resp.on_hover_text(crate::tl_id!("ui.show_or_hide_the_notebooks_column"))
     }
 
+    fn active_notebook_label(&self, ui: &mut Ui) {
+        if let Some(owner) = self.selected.as_ref().and_then(|path| self.session.tree().iter().find(|n| path.starts_with(&n.path))) {
+            let label = &owner.info.title;
+            let room = ui.available_width();
+            let font = 12.0;
+            let fit = fit_with(&|s| crate::bidi::line_width(ui, s, font, None), label, room);
+            let (rect, response) = ui.allocate_exact_size(vec2(room, 18.0), Sense::hover());
+            crate::bidi::line_at(ui, &ui.painter_at(rect), rect.left_center(), Align2::LEFT_CENTER, &fit, font, self.tokens.muted, None);
+            let name = crate::i18n::format_message_id("ui.scope_title", &[("scope", crate::tl_id!("ui.this_notebook")), ("title", label)]);
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &name));
+            response.on_hover_text(label);
+        }
+    }
+
     /// The side panel as two columns: the organisers (notebooks, section groups and
     /// sections) and then the pages of whichever section is chosen, the way OneNote splits
     /// them. The three-bar button in the top bar hides the first column.
@@ -9509,7 +9659,7 @@ impl NoteCraftApp {
         };
         let mut toggle = false;
         if self.organisers {
-            egui::Panel::left("organisers").resizable(true).default_size(240.0).size_range(160.0..=520.0).show(ui, |ui| {
+            egui::Panel::left("organisers").resizable(true).show_separator_line(true).default_size(240.0).size_range(160.0..=520.0).show(ui, |ui| {
                 ui.add_space(4.0);
                 // The three-bar button sits at the top left of the notebooks, where
                 // OneNote keeps it, and hides this column.
@@ -9519,16 +9669,20 @@ impl NoteCraftApp {
                     // it stays put however far the tree is scrolled.
                     ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_2")).size(13.0).strong().color(self.tokens.text));
                 });
-                ui.horizontal(|ui| self.new_section_button(ui, acts));
-                // The notebook that owns the open page, named under the heading, so a long
-                // expanded tree never loses which notebook the visible sections belong to.
-                if let Some(owner) = self.editor.as_ref().and_then(|e| {
-                    self.session.tree().iter().find(|n| n.info.kind == NodeKind::Notebook && e.dir.starts_with(&n.path)).map(|n| n.info.title.clone())
-                }) {
-                    let room = ui.available_width().max(20.0);
-                    let shown = fit_to_width(ui, &owner, 12.0, room);
-                    ui.label(egui::RichText::new(shown).size(12.0).color(self.tokens.muted)).on_hover_text(owner);
-                }
+                ui.horizontal_wrapped(|ui| {
+                    self.new_section_button(ui, acts);
+                    ui.menu_button(crate::tl_id!("ui.more_2"), |ui| {
+                        if ui.button(crate::tl_id!("ui.expand_all")).clicked() {
+                            self.open = self.collect_branches().into_iter().collect();
+                            ui.close();
+                        }
+                        if ui.button(crate::tl_id!("ui.collapse_all")).clicked() {
+                            self.open.clear();
+                            ui.close();
+                        }
+                    });
+                });
+                self.active_notebook_label(ui);
                 ui.add_space(2.0);
                 egui::ScrollArea::vertical().id_salt("organisers").auto_shrink([false, false]).scroll_source(scroll()).show(ui, |ui| {
                     if self.session.tree().is_empty() {
@@ -9542,7 +9696,7 @@ impl NoteCraftApp {
             });
         }
         let section = self.current_section(self.session.tree()).map(|n| (n.path.clone(), n.info.title.clone(), n.children.clone(), n.info.color));
-        egui::Panel::left("pages").resizable(true).default_size(230.0).size_range(150.0..=520.0).show(ui, |ui| {
+        egui::Panel::left("pages").resizable(true).show_separator_line(true).default_size(230.0).size_range(150.0..=520.0).show(ui, |ui| {
             ui.add_space(4.0);
             match &section {
                 Some((path, title, pages, colour)) => {
@@ -9583,6 +9737,7 @@ impl NoteCraftApp {
                         }
                         // A line between every pair, and above the first and below the
                         // last: hovering one offers a page in that place.
+                        ui.add_space(4.0);
                         let mut last: Option<u32> = None;
                         for p in &list {
                             self.page_gap(ui, path, last, Some(p.info.order), acts);
@@ -9590,6 +9745,7 @@ impl NoteCraftApp {
                             last = Some(p.info.order);
                         }
                         self.page_gap(ui, path, last, None, acts);
+                        ui.add_space(4.0);
                         self.empty_space_menu(ui, Some(path), acts);
                     });
                 }
@@ -12998,9 +13154,12 @@ impl NoteCraftApp {
         let ctx = ui.ctx().clone();
         let ctx = &ctx;
         // Search owns Escape before text widgets and the page can consume it.
-        if self.dialog.is_none() && !self.search.is_empty() && ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+        let search_id = Id::new(("page-search", ctx.viewport_id()));
+        if self.dialog.is_none()
+            && (!self.search.is_empty() || ctx.memory(|memory| memory.has_focus(search_id)))
+            && ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape))
+        {
             self.dismiss_search();
-            let search_id = Id::new(("page-search", ctx.viewport_id()));
             ctx.memory_mut(|memory| memory.surrender_focus(search_id));
         }
         if !self.loaders_installed {
@@ -13461,6 +13620,14 @@ mod alert_tests {
         app.open_path(&sample.md_page.to_string_lossy());
         assert!(app.editor.is_some());
         app.open_notebooks_from_folder(away);
+        // The file reader can take longer than OPEN_WAIT on a busy test machine. Drive the
+        // same completion step as a frame until the requested page has had time to open.
+        let ctx = egui::Context::default();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while app.opening.is_some() && Instant::now() < deadline {
+            app.finish_pending_open(&ctx);
+            std::thread::sleep(Duration::from_millis(5));
+        }
         assert_eq!(
             app.editor.as_ref().map(|editor| &editor.dir),
             Some(&std::fs::canonicalize(page).expect("page path")),

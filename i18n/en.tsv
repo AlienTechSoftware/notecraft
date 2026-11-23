@@ -1470,3 +1470,10 @@
 @id	ui.update_prompt.update_and_restart	Update and Restart
 @id	ui.update_prompt.downloading	Downloading and installing update…
 @id	ui.update_prompt.close	Close
+@id	ui.appearance_and_language	Appearance and language
+@id	ui.notebook_storage	Notebook storage
+@id	ui.local_notebook	Local notebook
+@id	ui.expand_navigation_node	Expand {title}
+@id	ui.collapse_navigation_node	Collapse {title}
+@id	ui.find_on_this_page	Find on this page
+@id	ui.search_prompt	Type to find notes.

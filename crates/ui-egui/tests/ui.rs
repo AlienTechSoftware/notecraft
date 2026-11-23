@@ -14315,7 +14315,7 @@ fn search_results_sit_under_the_field_show_where_and_follow_the_arrow_keys() {
     settle(&mut h);
     let picked = h
         .get_all_by_role(egui::accesskit::Role::Button)
-        .filter(|n| n.accesskit_node().label().is_some_and(|l| l.contains("Projects")))
+        .filter(|n| n.accesskit_node().label().is_some_and(|l| l.contains("Work > Projects)")))
         .find(|n| n.accesskit_node().toggled() == Some(egui::accesskit::Toggled::True))
         .and_then(|n| n.accesskit_node().label())
         .expect("a result is chosen");
@@ -14323,6 +14323,64 @@ fn search_results_sit_under_the_field_show_where_and_follow_the_arrow_keys() {
     settle(&mut h);
     let title = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["title"].as_str().unwrap_or_default().to_string();
     assert!(!title.is_empty() && picked.starts_with(&title), "Enter opens the chosen result: {picked} / {title}");
+}
+
+#[test]
+fn search_scope_applies_before_ranking_and_keeps_the_query() {
+    let (_t, app, s) = sample_app("ui-search-scope");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1280.0, 800.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    search_for(&mut h, "Level");
+    assert!(h.query_all_by_label_contains("Work > Projects)").count() > 0);
+    h.get_by_label("This section").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label_contains("Work > Projects)").count(), 0);
+    h.get_by_label("All notebooks").click();
+    settle(&mut h);
+    assert!(h.query_all_by_label_contains("Work > Projects)").count() > 0);
+    review(&mut h, "search_scope");
+}
+
+#[test]
+fn notebook_disclosure_changes_the_tree_without_opening_a_different_page() {
+    let (_t, app, s) = sample_app("ui-notebook-disclosure");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1280.0, 800.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("Collapse Work").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Projects").count(), 0);
+    assert_eq!(look_at(&mut h)["page"]["title"], "Project X");
+    h.get_by_label("Expand Work").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Projects").count(), 1);
+    assert_eq!(look_at(&mut h)["page"]["title"], "Project X");
+    review(&mut h, "notebook_disclosure");
+}
+
+#[test]
+fn file_info_opens_a_notebook_by_its_named_action_and_options_group_settings() {
+    for theme in [LIGHT, DARK] {
+        let (_t, mut app, s) = sample_app("ui-file-navigation");
+        app.open_path(&s.md_page.to_string_lossy());
+        app.open_backstage_page("Info");
+        let mut h = sized_harness(app, theme, egui::vec2(820.0, 760.0));
+        settle(&mut h);
+        h.get_by_label("Back to the notebook");
+        review(&mut h, &format!("file_info_{}", theme.id()));
+        h.get_by_label("Open Archive").click();
+        settle(&mut h);
+        assert_eq!(h.query_all_by_label("Notebook information").count(), 0);
+
+        h.state_mut().open_backstage_page("Options");
+        settle(&mut h);
+        let appearance = h.get_by_role_and_label(egui::accesskit::Role::Label, "Appearance and language").rect();
+        let language = h.get_by_label("Interface language").rect();
+        let storage = h.get_by_role_and_label(egui::accesskit::Role::Label, "Notebook storage").rect();
+        assert!(appearance.bottom() < language.top() && language.bottom() < storage.top());
+        review(&mut h, &format!("file_options_{}", theme.id()));
+    }
 }
 
 /// Issue #369: the tab row has a button listing every section, groups included, so a tab that
