@@ -13620,6 +13620,14 @@ mod alert_tests {
         app.open_path(&sample.md_page.to_string_lossy());
         assert!(app.editor.is_some());
         app.open_notebooks_from_folder(away);
+        // The file reader can take longer than OPEN_WAIT on a busy test machine. Drive the
+        // same completion step as a frame until the requested page has had time to open.
+        let ctx = egui::Context::default();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while app.opening.is_some() && Instant::now() < deadline {
+            app.finish_pending_open(&ctx);
+            std::thread::sleep(Duration::from_millis(5));
+        }
         assert_eq!(
             app.editor.as_ref().map(|editor| &editor.dir),
             Some(&std::fs::canonicalize(page).expect("page path")),
