@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Checks the APK android/build.sh wrote: signed, the app's identity and SDK levels, the native
-# library for arm64, and both Welcome notebook editions with all 13 languages inside.
+# library for arm64, and both Welcome notebook editions with all 14 languages inside.
 #
 #   bash android/test.sh
 set -Eeuo pipefail
@@ -35,7 +35,7 @@ for path in ("html/_node.toml", "html/00-start/welcome/index.html", "cmgfm/_node
     assert path in names, f"the Welcome payload has no {path}"
 for edition in ("html", "cmgfm"):
     languages = {n.split("/")[1] for n in names if n.startswith(edition + "/") and re.fullmatch(r"(1[0-9]|2[0-9])-[a-z][a-z]", n.split("/")[1])}
-    assert len(languages) == 13, f"{edition} has {len(languages)} language folders, expected 13: {sorted(languages)}"
+    assert len(languages) == 14, f"{edition} has {len(languages)} language folders, expected 14: {sorted(languages)}"
 print(f"APK contents checked: {len(names)} payload files, native library {lib.file_size} bytes")
 PY
 echo "android packaging smoke test passed: $APK"

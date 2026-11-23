@@ -121,7 +121,7 @@ Copy-Item (Join-Path $Bin 'notecraft.exe'), (Join-Path $Bin 'notecraft-cli.exe')
     if (-not (Test-Path $FormatRoot -PathType Container)) { throw "required $format demo format is missing: $FormatRoot" }
     if (-not (Test-Path (Join-Path $FormatRoot '_node.toml') -PathType Leaf)) { throw "required $format notebook metadata is missing" }
     $Languages = @(Get-ChildItem -Path $FormatRoot -Directory | Where-Object { $_.Name -match '^(1\d|2\d)-' })
-    if ($Languages.Count -ne 13) { throw "$format demo has $($Languages.Count) language folders, expected 13" }
+    if ($Languages.Count -ne 14) { throw "$format demo has $($Languages.Count) language folders, expected 14" }
   }
   $files = @(Get-ChildItem -Path $DemoSource -File -Recurse)
   if ($files.Count -eq 0) { throw "generated demo formats are empty: $DemoSource" }

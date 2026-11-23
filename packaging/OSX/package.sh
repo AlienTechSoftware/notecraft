@@ -93,7 +93,7 @@ for format in html cmgfm; do
     name="${folder##*/}"
     if [[ "$name" =~ ^(1[0-9]|2[0-9])-[a-z]{2}$ ]]; then languages=$((languages + 1)); fi
   done
-  [[ "$languages" = 13 ]] || { echo "$format demo has $languages language folders, expected 13" >&2; exit 1; }
+  [[ "$languages" = 14 ]] || { echo "$format demo has $languages language folders, expected 14" >&2; exit 1; }
 done
 
 # --no-build accepts only binaries recorded by a successful package build. The record
