@@ -296,6 +296,12 @@ pub fn definitions() -> egui::FontDefinitions {
             fonts.families.entry(family).or_default().push(name.clone());
         }
     }
+    // Where there is no system emoji face, NoteCraft's own Twemoji colour font is the last resort. It goes
+    // before our other faces, which stay last in order.
+    fonts.font_data.insert("twemoji-mozilla".to_owned(), Arc::new(egui::FontData::from_static(notecraft_text::fonts::EMOJI)));
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts.families.entry(family).or_default().push("twemoji-mozilla".to_owned());
+    }
     for (name, bytes) in BUNDLED {
         fonts.font_data.insert(name.to_owned(), Arc::new(egui::FontData::from_static(bytes)));
         // Last in each list: a fallback, used only for characters the faces before it lack.
@@ -481,11 +487,7 @@ mod tests {
             assert!(has(&ctx, w), "{w} should draw, not box");
         }
         assert!(has(&ctx, "Hello"), "Latin must still come from egui's own face");
-        if cfg!(windows) {
-            assert!(has(&ctx, "\u{1F600}"), "Windows' own emoji face draws the emoji");
-        } else {
-            assert!(!has(&ctx, "\u{1F600}"), "no emoji face on this platform; a line that needs one still boxes");
-        }
+        assert!(has(&ctx, "\u{1F600}"), "the bundled emoji face draws the emoji on every platform");
     }
 }
 
@@ -493,10 +495,10 @@ mod tests {
 /// Nothing to rescan where installed fonts cannot be read.
 pub fn rescan_in_background(_ctx: egui::Context) {}
 
-#[cfg(all(test, windows))]
+#[cfg(test)]
 mod emoji_fallback_tests {
-    /// The block header's emoji choices must draw in the app, not panic or box. On Windows the
-    /// emoji faces the system already ships are used as a fallback.
+    /// The block header's emoji choices must draw in the app, not panic or box. The
+    /// bundled Twemoji face is the fallback where the system has none.
     #[test]
     fn the_block_emoji_choices_have_glyphs_once_the_fonts_are_installed() {
         let ctx = egui::Context::default();

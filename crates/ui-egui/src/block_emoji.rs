@@ -161,6 +161,17 @@ pub fn box_first_header_id() -> egui::Id {
     egui::Id::new("box-first-header")
 }
 
+/// Whether the fonts in use can draw this emoji. Where the system has no emoji font they cannot,
+/// and drawing one would fail.
+fn can_draw(ui: &egui::Ui, text: &str) -> bool {
+    ui.ctx().fonts_mut(|f| f.has_glyphs(&egui::FontId::proportional(14.0), text))
+}
+
+/// The English name of a choice, shown in place of its glyph where the glyph cannot be drawn.
+fn name_of(emoji: &str) -> String {
+    CHOICES.iter().position(|c| *c == emoji).and_then(|at| CHOICE_NAMES.get(at)).map_or_else(|| "emoji".to_string(), |n| (*n).to_string())
+}
+
 /// The popup that is open, if any: the block it belongs to. This is view state only; the emoji
 /// themselves belong to the block.
 type Open = Option<(std::path::PathBuf, usize)>;
@@ -204,7 +215,9 @@ pub fn header(ui: &mut egui::Ui, page_dir: &std::path::Path, i: usize, emoji: &[
         }
         for (at, e) in emoji.iter().enumerate() {
             // Clicking an emoji on the block takes it off the block.
-            let chip = ui.add(egui::Label::new(e.as_str()).sense(egui::Sense::click()));
+            // Where the system has no emoji font the glyph cannot be drawn: show the name instead.
+            let shown = if can_draw(ui, e) { e.clone() } else { name_of(e) };
+            let chip = ui.add(egui::Label::new(shown).sense(egui::Sense::click()));
             chip.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, editable, format!("Remove {e} from block {}", i + 1)));
             // The pointing hand says the emoji can be clicked, and clicking takes it off.
             let chip = if editable { chip.on_hover_cursor(egui::CursorIcon::PointingHand) } else { chip };
@@ -263,7 +276,8 @@ pub fn header(ui: &mut egui::Ui, page_dir: &std::path::Path, i: usize, emoji: &[
                             if !needle.is_empty() && !name.contains(needle.as_str()) {
                                 continue;
                             }
-                            if ui.add(egui::Button::new(*c).min_size(egui::vec2(32.0 * zoom, 28.0 * zoom))).clicked() {
+                            let label = if can_draw(ui, c) { c.to_string() } else { name_of(c) };
+                            if ui.add(egui::Button::new(label).min_size(egui::vec2(32.0 * zoom, 28.0 * zoom))).clicked() {
                                 pick = Some(*c);
                             }
                         }

@@ -660,12 +660,14 @@ pub fn show(
         let bar = Rect::from_min_size(at, vec2(frame.width(), handle));
         // A box with nothing in it is only where the cursor was put: it is not drawn, so it has no
         // strip to move it by and no edge to size it from either.
-        let (move_sense, size_sense) = if holds_nothing { (Sense::hover(), Sense::hover()) } else { (Sense::click_and_drag(), Sense::drag()) };
+        // While the caret is in it the box is drawn, so its strip and edge work like any box's.
+        let inert = holds_nothing && !editing;
+        let (move_sense, size_sense) = if inert { (Sense::hover(), Sense::hover()) } else { (Sense::click_and_drag(), Sense::drag()) };
         let drag = ui.interact(bar, ui.id().with(("container-move", i)), move_sense);
-        let drag = if holds_nothing { drag } else { drag.on_hover_cursor(egui::CursorIcon::Move) };
+        let drag = if inert { drag } else { drag.on_hover_cursor(egui::CursorIcon::Move) };
         let edge = Rect::from_min_size(pos2(frame.max.x - grip_width, frame.min.y), vec2(grip_width, frame.height().max(grip_width)));
         let grip = ui.interact(edge, ui.id().with(("container-size", i)), size_sense);
-        let grip = if holds_nothing { grip } else { grip.on_hover_cursor(egui::CursorIcon::ResizeHorizontal) };
+        let grip = if inert { grip } else { grip.on_hover_cursor(egui::CursorIcon::ResizeHorizontal) };
 
         // A click or right click on the handle selects the container, as in OneNote. A right
         // click on the words belongs to the words: the page's menu opens and the box stays
@@ -872,9 +874,9 @@ pub fn show(
         // onto it to drag the box used to make the edges and the strip itself vanish.
         let busy = drag.dragged() || grip.dragged();
         let hovered = hovered || drag.hovered() || grip.hovered();
-        // A box with nothing in it is only where the cursor was put, as in OneNote: no edges and no
-        // strip until something is written in it.
-        if (hovered || editing || busy || is_sel) && !holds_nothing {
+        // A box with nothing in it and no caret is only a place and shows no edges. Once the caret is in it,
+        // the edges and the strip are drawn, so a block made by clicking on the paper is seen as a block.
+        if (hovered || editing || busy || is_sel) && (!holds_nothing || editing) {
             log::trace!("render: i={} image_object={} hovered={} editing={} busy={} is_sel={}", i, image_object, hovered, editing, busy, is_sel);
             // Skip faint stroke for images; the selection affordance shows the picture boundary
             if !image_object {
