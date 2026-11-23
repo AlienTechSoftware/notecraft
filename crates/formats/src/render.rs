@@ -18,18 +18,19 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
         if !out.is_empty() && !(is_item && last_was_item) {
             out.push('\n');
         }
+        write_emoji_marker(&mut out, block.emoji());
         match block {
-            Block::Heading { level, spans } => {
+            Block::Heading { level, spans, .. } => {
                 out.push_str(&"#".repeat(usize::from((*level).clamp(1, 6))));
                 out.push(' ');
                 out.push_str(&spans_to_markdown(spans));
                 out.push('\n');
             }
-            Block::Paragraph(spans) => {
+            Block::Paragraph(spans, _) => {
                 out.push_str(&escape_block_start(&spans_to_markdown(spans)));
                 out.push('\n');
             }
-            Block::Item { ordered, number, task, depth, spans } => {
+            Block::Item { ordered, number, task, depth, spans, .. } => {
                 out.push_str(&"  ".repeat(*depth));
                 if *ordered {
                     out.push_str(&format!("{number}. "));
@@ -42,12 +43,12 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
                 out.push_str(&escape_task_box(&spans_to_markdown(spans)));
                 out.push('\n');
             }
-            Block::Quote(spans) => {
+            Block::Quote(spans, _) => {
                 out.push_str("> ");
                 out.push_str(&spans_to_markdown(spans));
                 out.push('\n');
             }
-            Block::Code { lang, text } => {
+            Block::Code { lang, text, .. } => {
                 let fence = crate::markdown::code_fence(text);
                 out.push_str(&fence);
                 out.push_str(lang);
@@ -59,20 +60,20 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
                 out.push_str(&fence);
                 out.push('\n');
             }
-            Block::MathBlock(tex) => {
+            Block::MathBlock(tex, _) => {
                 out.push_str("$$\n");
                 out.push_str(tex.trim_end_matches('\n'));
                 out.push_str("\n$$\n");
             }
-            Block::Table { head, rows } => {
+            Block::Table { head, rows, .. } => {
                 out.push_str(&row_to_markdown(head));
                 out.push_str(&format!("|{}\n", " --- |".repeat(head.len().max(1))));
                 for r in rows {
                     out.push_str(&row_to_markdown(r));
                 }
             }
-            Block::Rule => out.push_str("---\n"),
-            Block::Image { alt, src, width, height } => {
+            Block::Rule(_) => out.push_str("---\n"),
+            Block::Image { alt, src, width, height, .. } => {
                 if width.is_some() || height.is_some() {
                     // Escaped, so a quote in the text cannot end the attribute (issue #109).
                     let mut img_tag = format!("<img src=\"{}\" alt=\"{}\"", escape(src), escape(alt));
@@ -94,6 +95,20 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
     out
 }
 
+/// Writes the emoji a block holds as a marker line above it, `<!-- nc-emoji: 😀 👍 -->`. A block with
+/// no emoji writes nothing, so a page without them is written as it always was.
+pub fn write_emoji_marker(out: &mut String, emoji: &[String]) {
+    if emoji.is_empty() {
+        return;
+    }
+    out.push_str("<!-- nc-emoji: ");
+    out.push_str(&emoji.join(" "));
+    out.push_str(
+        " -->
+",
+    );
+}
+
 /// Blocks as readable plain text for clipboard consumers that cannot accept rich content.
 /// Formatting marks are omitted, while link targets remain visible when they differ from
 /// their labels. This is deliberately distinct from Markdown source.
@@ -103,8 +118,8 @@ pub fn blocks_to_text(blocks: &[Block]) -> String {
 
 fn block_to_text(block: &Block) -> String {
     match block {
-        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) => spans_to_text(spans),
-        Block::Item { ordered, number, task, depth, spans } => {
+        Block::Heading { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) => spans_to_text(spans),
+        Block::Item { ordered, number, task, depth, spans, .. } => {
             let marker = match task {
                 Some(true) => "[x] ",
                 Some(false) => "[ ] ",
@@ -113,13 +128,13 @@ fn block_to_text(block: &Block) -> String {
             };
             format!("{}{marker}{}", "  ".repeat(*depth), spans_to_text(spans))
         }
-        Block::Code { text, .. } | Block::MathBlock(text) => text.trim_end_matches('\n').to_string(),
-        Block::Table { head, rows } => std::iter::once(head)
+        Block::Code { text, .. } | Block::MathBlock(text, _) => text.trim_end_matches('\n').to_string(),
+        Block::Table { head, rows, .. } => std::iter::once(head)
             .chain(rows.iter())
             .map(|row| row.iter().map(|cell| spans_to_text(cell)).collect::<Vec<_>>().join("\t"))
             .collect::<Vec<_>>()
             .join("\n"),
-        Block::Rule => String::new(),
+        Block::Rule(_) => String::new(),
         Block::Image { alt, src, .. } => readable_link(alt, src),
     }
 }
@@ -453,6 +468,14 @@ fn inline_style(s: &Span, text: String) -> String {
     if styles.is_empty() { text } else { format!("<span style=\"{}\">{text}</span>", styles.join("; ")) }
 }
 
+/// The `data-nc-emoji` attribute that holds a block's emoji, or nothing for a block without any.
+pub fn emoji_attr(emoji: &[String]) -> String {
+    if emoji.is_empty() {
+        return String::new();
+    }
+    format!(" data-nc-emoji=\"{}\"", escape(&emoji.join(" ")))
+}
+
 /// Blocks as the HTML body of a page: the inside of `<body>`, one block per line.
 pub fn blocks_to_html(blocks: &[Block]) -> String {
     let mut out = String::new();
@@ -462,15 +485,16 @@ pub fn blocks_to_html(blocks: &[Block]) -> String {
             render_html_list(blocks, &mut at, *depth, *ordered, &mut out);
             continue;
         }
+        let attr = emoji_attr(block.emoji());
         match block {
-            Block::Heading { level, spans } => {
+            Block::Heading { level, spans, .. } => {
                 let l = (*level).clamp(1, 6);
-                out.push_str(&format!("<h{l}>{}</h{l}>\n", spans_to_html(spans)));
+                out.push_str(&format!("<h{l}{attr}>{}</h{l}>\n", spans_to_html(spans)));
             }
-            Block::Paragraph(spans) => out.push_str(&format!("<p>{}</p>\n", spans_to_html(spans))),
+            Block::Paragraph(spans, _) => out.push_str(&format!("<p{attr}>{}</p>\n", spans_to_html(spans))),
             Block::Item { .. } => {}
-            Block::Quote(spans) => out.push_str(&format!("<blockquote>{}</blockquote>\n", spans_to_html(spans))),
-            Block::Code { lang, text } => {
+            Block::Quote(spans, _) => out.push_str(&format!("<blockquote{attr}>{}</blockquote>\n", spans_to_html(spans))),
+            Block::Code { lang, text, .. } => {
                 // `class="diagram"` is how a page says "this is a Mermaid diagram"; the
                 // reader turns it back into a `mermaid` fence, so the pair agrees.
                 let class = match lang.as_str() {
@@ -478,11 +502,11 @@ pub fn blocks_to_html(blocks: &[Block]) -> String {
                     "mermaid" => " class=\"diagram\"".to_string(),
                     other => format!(" class=\"{}\"", escape(other)),
                 };
-                out.push_str(&format!("<pre{class}>{}</pre>\n", escape(text.trim_end_matches('\n'))));
+                out.push_str(&format!("<pre{class}{attr}>{}</pre>\n", escape(text.trim_end_matches('\n'))));
             }
-            Block::MathBlock(tex) => out.push_str(&format!("<p class=\"math\">{}</p>\n", escape(tex.trim_end_matches('\n')))),
-            Block::Table { head, rows } => {
-                out.push_str("<table>\n");
+            Block::MathBlock(tex, _) => out.push_str(&format!("<p class=\"math\"{attr}>{}</p>\n", escape(tex.trim_end_matches('\n')))),
+            Block::Table { head, rows, .. } => {
+                out.push_str(&format!("<table{attr}>\n"));
                 if !head.is_empty() {
                     out.push_str("<tr>");
                     for c in head {
@@ -499,8 +523,8 @@ pub fn blocks_to_html(blocks: &[Block]) -> String {
                 }
                 out.push_str("</table>\n");
             }
-            Block::Rule => out.push_str("<hr>\n"),
-            Block::Image { alt, src, width, height } => {
+            Block::Rule(_) => out.push_str(&format!("<hr{attr}>\n")),
+            Block::Image { alt, src, width, height, .. } => {
                 let mut img_tag = format!("<img src=\"{}\" alt=\"{}\"", escape(src), escape(alt));
                 if let Some(w) = width {
                     img_tag.push_str(&format!(" width=\"{}\"", *w as i32));
@@ -509,7 +533,7 @@ pub fn blocks_to_html(blocks: &[Block]) -> String {
                     img_tag.push_str(&format!(" height=\"{}\"", *h as i32));
                 }
                 img_tag.push('>');
-                out.push_str(&format!("<p>{}</p>\n", img_tag));
+                out.push_str(&format!("<p{attr}>{}</p>\n", img_tag));
             }
         }
         at += 1;
@@ -520,7 +544,7 @@ pub fn blocks_to_html(blocks: &[Block]) -> String {
 /// Writes one contiguous list level, nesting child items inside their parent list item.
 fn render_html_list(blocks: &[Block], at: &mut usize, depth: usize, ordered: bool, out: &mut String) {
     out.push_str(if ordered { "<ol>\n" } else { "<ul>\n" });
-    while let Some(Block::Item { ordered: item_ordered, task, depth: item_depth, spans, .. }) = blocks.get(*at) {
+    while let Some(Block::Item { ordered: item_ordered, task, depth: item_depth, spans, emoji, .. }) = blocks.get(*at) {
         if *item_depth != depth || *item_ordered != ordered {
             break;
         }
@@ -529,7 +553,7 @@ fn render_html_list(blocks: &[Block], at: &mut usize, depth: usize, ordered: boo
             Some(false) => "&#9744; ",
             None => "",
         };
-        out.push_str(&format!("<li>{box_text}{}", spans_to_html(spans)));
+        out.push_str(&format!("<li{}>{box_text}{}", emoji_attr(emoji), spans_to_html(spans)));
         *at += 1;
         if let Some(Block::Item { depth: child_depth, ordered: child_ordered, .. }) = blocks.get(*at)
             && *child_depth > depth
@@ -617,9 +641,10 @@ mod tests {
                 text: "fn a() {}
 fn b() {}"
                     .into(),
+                emoji: Vec::new(),
             },
-            Block::Code { lang: "123|".into(), text: "plain".into() },
-            Block::Code { lang: "rust".into(), text: "x".into() },
+            Block::Code { lang: "123|".into(), text: "plain".into(), emoji: Vec::new() },
+            Block::Code { lang: "rust".into(), text: "x".into(), emoji: Vec::new() },
         ];
         let md = blocks_to_markdown(&blocks);
         assert!(
@@ -718,7 +743,7 @@ fn b() {}"
             format!("  {}\n{}python\nx\n{}", tick.repeat(5), tick.repeat(4), tick.repeat(4)),
             format!("inline {} only", tick.repeat(3)),
         ] {
-            let original = vec![Block::Code { lang: "markdown".into(), text: text.clone() }];
+            let original = vec![Block::Code { lang: "markdown".into(), text: text.clone(), emoji: Vec::new() }];
             let saved = blocks_to_markdown(&original);
             assert_eq!(parse(&saved), original, "CMGFM:\n{saved}");
             let html = blocks_to_html(&original);
@@ -727,7 +752,7 @@ fn b() {}"
         }
         // A plain block keeps the three backticks it always had.
         assert_eq!(
-            blocks_to_markdown(&[Block::Code { lang: "rust".into(), text: "let x = 1;".into() }]),
+            blocks_to_markdown(&[Block::Code { lang: "rust".into(), text: "let x = 1;".into(), emoji: Vec::new() }]),
             format!("{0}rust\nlet x = 1;\n{0}\n", tick.repeat(3))
         );
         // A shorter fence inside a longer one is code, and a closing fence with words after
@@ -736,7 +761,7 @@ fn b() {}"
         let three = tick.repeat(3);
         assert_eq!(
             parse(&format!("{four}\n{three}\n{three}js\n{four}\n")),
-            vec![Block::Code { lang: String::new(), text: format!("{three}\n{three}js") }]
+            vec![Block::Code { lang: String::new(), text: format!("{three}\n{three}js"), emoji: Vec::new() }]
         );
     }
 
@@ -756,11 +781,14 @@ fn b() {}"
             " ".to_string(),
             "plain".to_string(),
         ] {
-            let original = vec![Block::Paragraph(vec![
-                Span { text: "see ".into(), ..Span::default() },
-                Span { text: text.clone(), code: true, ..Span::default() },
-                Span { text: " here".into(), ..Span::default() },
-            ])];
+            let original = vec![Block::Paragraph(
+                vec![
+                    Span { text: "see ".into(), ..Span::default() },
+                    Span { text: text.clone(), code: true, ..Span::default() },
+                    Span { text: " here".into(), ..Span::default() },
+                ],
+                Vec::new(),
+            )];
             let saved = blocks_to_markdown(&original);
             assert_eq!(parse(&saved), original, "CMGFM {text:?}:\n{saved}");
             // HTML folds a space at the edge of the code into the space before or after it, as a
@@ -774,12 +802,12 @@ fn b() {}"
         }
         // Plain code keeps its one backtick each side.
         assert_eq!(
-            blocks_to_markdown(&[Block::Paragraph(vec![Span { text: "x".into(), code: true, ..Span::default() }])]),
+            blocks_to_markdown(&[Block::Paragraph(vec![Span { text: "x".into(), code: true, ..Span::default() }], Vec::new())]),
             format!("{tick}x{tick}\n")
         );
         // A run with no partner of the same length is text.
         let lone = parse(&format!("a {0}{0} b {0} c\n", tick));
-        assert!(matches!(&lone[..], [Block::Paragraph(spans)] if spans.iter().all(|s| !s.code)), "{lone:?}");
+        assert!(matches!(&lone[..], [Block::Paragraph(spans, _)] if spans.iter().all(|s| !s.code)), "{lone:?}");
     }
 
     /// Issue #108: a link or picture address with parentheses in it is kept whole, in both
@@ -787,14 +815,18 @@ fn b() {}"
     #[test]
     fn link_addresses_with_parentheses_are_kept_whole() {
         let parsed = parse("[file](https://example.test/a(b).pdf)\n");
-        let link = |target: &str| vec![Block::Paragraph(vec![Span { text: "file".into(), link: Some(target.into()), ..Span::default() }])];
+        let link =
+            |target: &str| vec![Block::Paragraph(vec![Span { text: "file".into(), link: Some(target.into()), ..Span::default() }], Vec::new())];
         assert_eq!(parsed, link("https://example.test/a(b).pdf"), "a balanced pair stays in the address");
         assert_eq!(
             parse("[file](a\\(b.pdf) after\n")[0],
-            Block::Paragraph(vec![
-                Span { text: "file".into(), link: Some("a(b.pdf".into()), ..Span::default() },
-                Span { text: " after".into(), ..Span::default() },
-            ]),
+            Block::Paragraph(
+                vec![
+                    Span { text: "file".into(), link: Some("a(b.pdf".into()), ..Span::default() },
+                    Span { text: " after".into(), ..Span::default() },
+                ],
+                Vec::new()
+            ),
             "an escaped parenthesis does not count"
         );
 
@@ -806,7 +838,7 @@ fn b() {}"
             let reread = html::to_markdown(&html);
             assert_eq!(parse(&reread), original, "HTML {target:?}:\n{html}\n--- read as ---\n{reread}");
 
-            let picture = vec![Block::Image { alt: "pic".into(), src: target.into(), width: None, height: None }];
+            let picture = vec![Block::Image { alt: "pic".into(), src: target.into(), width: None, height: None, emoji: Vec::new() }];
             assert_eq!(parse(&blocks_to_markdown(&picture)), picture, "picture {target:?}");
             assert_eq!(parse(&html::to_markdown(&blocks_to_html(&picture))), picture, "HTML picture {target:?}");
         }
@@ -817,10 +849,13 @@ fn b() {}"
         assert_eq!(parse("[file](C:\\Notes\\)\n"), link("C:\\Notes\\"));
         assert_eq!(
             parse("[file](C:\\Notes\\) and (more) text\n")[0],
-            Block::Paragraph(vec![
-                Span { text: "file".into(), link: Some("C:\\Notes\\".into()), ..Span::default() },
-                Span { text: " and (more) text".into(), ..Span::default() },
-            ])
+            Block::Paragraph(
+                vec![
+                    Span { text: "file".into(), link: Some("C:\\Notes\\".into()), ..Span::default() },
+                    Span { text: " and (more) text".into(), ..Span::default() },
+                ],
+                Vec::new()
+            )
         );
     }
 
@@ -831,14 +866,20 @@ fn b() {}"
         for (alt, src) in
             [("a\"b", "assets/a.png"), ("Tom & \"Jerry\" <3", "assets/t&j.png"), ("it's", "assets/q\"uote.png"), ("&amp; literal", "assets/a.png")]
         {
-            let original = vec![Block::Image { alt: alt.into(), src: src.into(), width: Some(100.0), height: Some(80.0) }];
+            let original = vec![Block::Image { alt: alt.into(), src: src.into(), width: Some(100.0), height: Some(80.0), emoji: Vec::new() }];
             let md = blocks_to_markdown(&original);
             assert_eq!(parse(&md), original, "CMGFM:\n{md}");
             let html = blocks_to_html(&original);
             let reread = html::to_markdown(&html);
             assert_eq!(parse(&reread), original, "HTML:\n{html}\n--- read as ---\n{reread}");
         }
-        let md = blocks_to_markdown(&[Block::Image { alt: "a\"b".into(), src: "assets/a.png".into(), width: Some(100.0), height: None }]);
+        let md = blocks_to_markdown(&[Block::Image {
+            alt: "a\"b".into(),
+            src: "assets/a.png".into(),
+            width: Some(100.0),
+            height: None,
+            emoji: Vec::new(),
+        }]);
         assert_eq!(md, "<img src=\"assets/a.png\" alt=\"a&quot;b\" width=\"100\">\n");
     }
 
@@ -871,12 +912,12 @@ fn b() {}"
     #[test]
     fn hostile_blocks_do_not_break_the_writers() {
         let odd = vec![
-            Block::Heading { level: 9, spans: vec![Span { text: "deep".into(), ..Default::default() }] },
-            Block::Item { ordered: true, number: 0, task: Some(true), depth: 40, spans: Vec::new() },
-            Block::Code { lang: "a\"b".into(), text: String::new() },
-            Block::Table { head: Vec::new(), rows: vec![Vec::new()] },
-            Block::MathBlock(String::new()),
-            Block::Paragraph(Vec::new()),
+            Block::Heading { level: 9, spans: vec![Span { text: "deep".into(), ..Default::default() }], emoji: Vec::new() },
+            Block::Item { ordered: true, number: 0, task: Some(true), depth: 40, spans: Vec::new(), emoji: Vec::new() },
+            Block::Code { lang: "a\"b".into(), text: String::new(), emoji: Vec::new() },
+            Block::Table { head: Vec::new(), rows: vec![Vec::new()], emoji: Vec::new() },
+            Block::MathBlock(String::new(), Vec::new()),
+            Block::Paragraph(Vec::new(), Vec::new()),
         ];
         let md = blocks_to_markdown(&odd);
         let html = blocks_to_html(&odd);
@@ -926,7 +967,7 @@ fn b() {}"
         let source = "plain <span style=\"color: #C00000\">red <span style=\"background-color: #ff0\">marked</span></span> \
                       <span style=\"font-size: 18pt; color: #1a5fd0; background-color: #ccffcc\">all three</span>";
         let blocks = parse(source);
-        let Block::Paragraph(spans) = &blocks[0] else { panic!("expected a paragraph") };
+        let Block::Paragraph(spans, _) = &blocks[0] else { panic!("expected a paragraph") };
         let span = |text: &str| spans.iter().find(|s| s.text == text).cloned().unwrap_or_default();
         assert_eq!(span("red ").colour.as_deref(), Some("#c00000"));
         assert_eq!(span("red ").highlight, None);
@@ -947,7 +988,7 @@ fn b() {}"
     fn a_colour_that_is_not_a_plain_hex_value_is_not_taken() {
         for style in ["color: red", "color: rgb(1,2,3)", "color: #12345", "background-color: url(x)"] {
             let blocks = parse(&format!("<span style=\"{style}\">x</span>"));
-            let Block::Paragraph(spans) = &blocks[0] else { panic!("expected a paragraph") };
+            let Block::Paragraph(spans, _) = &blocks[0] else { panic!("expected a paragraph") };
             assert!(spans.iter().all(|s| s.colour.is_none() && s.highlight.is_none()), "{style}: {spans:?}");
         }
     }
@@ -957,7 +998,7 @@ fn b() {}"
         let source = "<span style=\"font-family: DejaVu Sans; font-size: 18pt\"><u>underlined</u> H<sub>2</sub>O x<sup>2</sup></span>";
         let blocks = parse(source);
         assert_eq!(blocks_to_text(&blocks), "underlined H2O x2", "formatting tags are not visible page text");
-        let Block::Paragraph(spans) = &blocks[0] else { panic!("expected a paragraph") };
+        let Block::Paragraph(spans, _) = &blocks[0] else { panic!("expected a paragraph") };
         assert!(spans.iter().all(|span| span.font_family.as_deref() == Some("DejaVu Sans") && span.font_size == Some(18)));
         assert!(spans.iter().any(|span| span.text == "underlined" && span.underline));
         assert!(spans.iter().any(|span| span.text == "2" && span.script == Some(crate::markdown::Script::Subscript)));
@@ -986,7 +1027,7 @@ fn b() {}"
             "Font.Name",
             "東京",
         ] {
-            let blocks = vec![Block::Paragraph(vec![Span { text: "words".into(), font_family: Some(name.into()), ..Span::default() }])];
+            let blocks = vec![Block::Paragraph(vec![Span { text: "words".into(), font_family: Some(name.into()), ..Span::default() }], Vec::new())];
             let markdown = blocks_to_markdown(&blocks);
             let html = blocks_to_html(&blocks);
             assert_eq!(parse(&markdown), blocks, "CMGFM round trip: {name:?}: {markdown}");

@@ -5390,7 +5390,7 @@ impl NoteCraftApp {
             let range = notecraft_model::container::blocks_of(&ed.boxes, index);
             let Some(blocks) = ed.blocks.get(range) else { return pageedit::FontSelection::default() };
             let spans = blocks.iter().flat_map(|block| match block {
-                Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans.as_slice(),
+                Block::Heading { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) | Block::Item { spans, .. } => spans.as_slice(),
                 _ => &[],
             });
             return pageedit::FontSelection::from_spans(spans);
@@ -5462,7 +5462,7 @@ impl NoteCraftApp {
         if range.end > ed.blocks.len() || range.is_empty() {
             return false;
         }
-        let words = |b: &Block| !matches!(b, Block::Code { .. } | Block::MathBlock(_)) && pageedit::is_one_line_of_words(b);
+        let words = |b: &Block| !matches!(b, Block::Code { .. } | Block::MathBlock(_, _)) && pageedit::is_one_line_of_words(b);
         match act {
             ribbon::Act::Clipboard(which) => {
                 crate::containers::ask_clipboard(ctx, *which == "cut");
@@ -5489,7 +5489,7 @@ impl NoteCraftApp {
                 Self::remember_step(ed);
                 let mut changed = false;
                 for block in ed.blocks.get_mut(range).unwrap_or_default() {
-                    if let Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } = block {
+                    if let Block::Heading { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) | Block::Item { spans, .. } = block {
                         changed |= pageedit::format_span_range(spans, 0..usize::MAX, format.clone());
                     }
                 }
@@ -5559,7 +5559,7 @@ impl NoteCraftApp {
                 return true;
             }
             ribbon::Act::Justify(strength) => {
-                let paragraphs: Vec<usize> = range.filter(|i| matches!(ed.blocks.get(*i), Some(Block::Paragraph(_)))).collect();
+                let paragraphs: Vec<usize> = range.filter(|i| matches!(ed.blocks.get(*i), Some(Block::Paragraph(_, _)))).collect();
                 if paragraphs.is_empty() {
                     return true;
                 }
@@ -5666,7 +5666,7 @@ impl NoteCraftApp {
                     // What was written before is kept as it stood, so Undo takes back only the space.
                     Self::remember_step(ed);
                     let at = ed.caret.as_ref().map(|c| c.block + 1).unwrap_or(ed.blocks.len()).min(ed.blocks.len());
-                    ed.blocks.insert(at, notecraft_formats::Block::Paragraph(Vec::new()));
+                    ed.blocks.insert(at, notecraft_formats::Block::Paragraph(Vec::new(), Vec::new()));
                     let marks = ed.blocks_inserted(at, 1);
                     ed.rebuild_body();
                     ed.caret = Some(pageedit::Caret {
@@ -6032,7 +6032,7 @@ impl NoteCraftApp {
         }
         let at = ed.caret.as_ref().map_or(ed.blocks.len().saturating_sub(1), |c| c.block);
         if ed.blocks.is_empty() {
-            ed.blocks.push(notecraft_formats::markdown::Block::Paragraph(Vec::new()));
+            ed.blocks.push(notecraft_formats::markdown::Block::Paragraph(Vec::new(), Vec::new()));
         }
         let before = ed.blocks.len();
         pageedit::paste_at(&mut ed.blocks, &mut ed.caret, at, new);
@@ -6140,6 +6140,7 @@ impl NoteCraftApp {
                 src: link,
                 width: Some(crate::stickers::WIDTH),
                 height: Some(crate::stickers::WIDTH),
+                emoji: Vec::new(),
             },
         );
         let marks = ed.blocks_inserted(at, 1);
@@ -6162,7 +6163,13 @@ impl NoteCraftApp {
                     let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
                     ed.blocks.insert(
                         at,
-                        notecraft_formats::markdown::Block::Image { alt: "Pasted picture".to_string(), src: link, width: None, height: None },
+                        notecraft_formats::markdown::Block::Image {
+                            alt: "Pasted picture".to_string(),
+                            src: link,
+                            width: None,
+                            height: None,
+                            emoji: Vec::new(),
+                        },
                     );
                     let marks = ed.blocks_inserted(at, 1);
                     ed.rebuild_body();
@@ -6320,7 +6327,7 @@ impl NoteCraftApp {
         // goes on the end of the page, so it is counted in the last box.
         for file in &files {
             if !ed.blocks.iter().any(|b| matches!(b, Block::Image { src, .. } if src.trim() == file)) {
-                ed.blocks.push(Block::Image { alt: "Ink".to_string(), src: file.clone(), width: None, height: None });
+                ed.blocks.push(Block::Image { alt: "Ink".to_string(), src: file.clone(), width: None, height: None, emoji: Vec::new() });
                 let at = ed.blocks.len() - 1;
                 ed.count_inserted_in_boxes(at, 1);
                 changed = true;
@@ -6943,7 +6950,7 @@ impl NoteCraftApp {
         let cols = ed.columns.remove_blocks(at..at + 1);
         let justified = ed.justified.remove_blocks(at..at + 1);
         if ed.blocks.is_empty() {
-            ed.blocks.push(Block::Paragraph(Vec::new()));
+            ed.blocks.push(Block::Paragraph(Vec::new(), Vec::new()));
             ed.count_inserted_in_boxes(0, 1);
         }
         pageedit::renumber(&mut ed.blocks);
@@ -7190,7 +7197,7 @@ impl NoteCraftApp {
                     }
                     found = true;
                 }
-                Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => {
+                Block::Heading { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) | Block::Item { spans, .. } => {
                     for span in spans.iter_mut().filter(|s| s.image.as_deref() == Some(src)) {
                         span.image = Some(link.clone());
                         found = true;
@@ -7374,8 +7381,8 @@ impl NoteCraftApp {
                 ed.blocks.get(caret.block),
                 Some(
                     notecraft_formats::Block::Heading { .. }
-                        | notecraft_formats::Block::Paragraph(_)
-                        | notecraft_formats::Block::Quote(_)
+                        | notecraft_formats::Block::Paragraph(_, _)
+                        | notecraft_formats::Block::Quote(_, _)
                         | notecraft_formats::Block::Item { .. }
                 )
             )
@@ -7583,8 +7590,8 @@ impl NoteCraftApp {
                 ed.blocks.get(caret.block),
                 Some(
                     notecraft_formats::Block::Heading { .. }
-                        | notecraft_formats::Block::Paragraph(_)
-                        | notecraft_formats::Block::Quote(_)
+                        | notecraft_formats::Block::Paragraph(_, _)
+                        | notecraft_formats::Block::Quote(_, _)
                         | notecraft_formats::Block::Item { .. }
                 )
             )
@@ -7642,8 +7649,8 @@ impl NoteCraftApp {
                     && matches!(
                         block,
                         notecraft_formats::Block::Heading { .. }
-                            | notecraft_formats::Block::Paragraph(_)
-                            | notecraft_formats::Block::Quote(_)
+                            | notecraft_formats::Block::Paragraph(_, _)
+                            | notecraft_formats::Block::Quote(_, _)
                             | notecraft_formats::Block::Item { .. }
                     )
                     && let Some(caret) = ed.caret.as_mut()
@@ -7704,8 +7711,8 @@ impl NoteCraftApp {
                 ed.blocks.get(caret.block),
                 Some(
                     notecraft_formats::Block::Heading { .. }
-                        | notecraft_formats::Block::Paragraph(_)
-                        | notecraft_formats::Block::Quote(_)
+                        | notecraft_formats::Block::Paragraph(_, _)
+                        | notecraft_formats::Block::Quote(_, _)
                         | notecraft_formats::Block::Item { .. }
                 )
             )
@@ -7737,8 +7744,8 @@ impl NoteCraftApp {
         let spans = match ed.blocks.get_mut(block) {
             Some(
                 notecraft_formats::Block::Heading { spans, .. }
-                | notecraft_formats::Block::Paragraph(spans)
-                | notecraft_formats::Block::Quote(spans)
+                | notecraft_formats::Block::Paragraph(spans, _)
+                | notecraft_formats::Block::Quote(spans, _)
                 | notecraft_formats::Block::Item { spans, .. },
             ) => spans,
             _ => {
@@ -7823,8 +7830,8 @@ impl NoteCraftApp {
                     ed.blocks.get(caret.block),
                     Some(
                         notecraft_formats::Block::Heading { .. }
-                            | notecraft_formats::Block::Paragraph(_)
-                            | notecraft_formats::Block::Quote(_)
+                            | notecraft_formats::Block::Paragraph(_, _)
+                            | notecraft_formats::Block::Quote(_, _)
                             | notecraft_formats::Block::Item { .. }
                     )
                 )
@@ -7860,8 +7867,8 @@ impl NoteCraftApp {
         let spans = match ed.blocks.get_mut(caret.block) {
             Some(
                 notecraft_formats::Block::Heading { spans, .. }
-                | notecraft_formats::Block::Paragraph(spans)
-                | notecraft_formats::Block::Quote(spans)
+                | notecraft_formats::Block::Paragraph(spans, _)
+                | notecraft_formats::Block::Quote(spans, _)
                 | notecraft_formats::Block::Item { spans, .. },
             ) if lo == 0 && hi == len => Some(spans),
             _ => None,
@@ -7961,7 +7968,7 @@ impl NoteCraftApp {
             self.status_is_error = false;
             return;
         };
-        if !matches!(ed.blocks.get(at), Some(notecraft_formats::Block::Paragraph(_))) {
+        if !matches!(ed.blocks.get(at), Some(notecraft_formats::Block::Paragraph(_, _))) {
             self.say(crate::tl_id!("ui.justification_goes_on_a_paragraph_of_text"));
             return;
         }
@@ -7998,7 +8005,7 @@ impl NoteCraftApp {
         use notecraft_formats::Block;
         let Some(ed) = self.editor.as_mut() else { return };
         let text: Vec<usize> =
-            blocks.iter().copied().filter(|i| matches!(ed.blocks.get(*i), Some(Block::Paragraph(_) | Block::Heading { .. }))).collect();
+            blocks.iter().copied().filter(|i| matches!(ed.blocks.get(*i), Some(Block::Paragraph(_, _) | Block::Heading { .. }))).collect();
         if text.is_empty() {
             self.say(crate::tl_id!("ui.alignment_goes_on_a_paragraph_or_a_heading"));
             return;
@@ -8053,7 +8060,7 @@ impl NoteCraftApp {
         };
         let text: Vec<usize> = blocks
             .into_iter()
-            .filter(|i| matches!(ed.blocks.get(*i), Some(Block::Paragraph(_) | Block::Heading { .. } | Block::Item { .. } | Block::Quote(_))))
+            .filter(|i| matches!(ed.blocks.get(*i), Some(Block::Paragraph(_, _) | Block::Heading { .. } | Block::Item { .. } | Block::Quote(_, _))))
             .collect();
         if text.is_empty() {
             self.say(crate::tl_id!("ui.spacing_goes_on_text"));
@@ -8344,7 +8351,7 @@ impl NoteCraftApp {
         pageedit::needs_our_caret(&caret.text)
             && !matches!(
                 ed.blocks.get(caret.block),
-                Some(notecraft_formats::markdown::Block::Code { .. }) | Some(notecraft_formats::markdown::Block::MathBlock(_))
+                Some(notecraft_formats::markdown::Block::Code { .. }) | Some(notecraft_formats::markdown::Block::MathBlock(_, _))
             )
     }
 
@@ -12528,7 +12535,7 @@ impl NoteCraftApp {
                 e.blocks
                     .iter()
                     .filter_map(|b| match b {
-                        notecraft_formats::markdown::Block::Code { lang, text } if lang == "mermaid" => Some(text.clone()),
+                        notecraft_formats::markdown::Block::Code { lang, text, .. } if lang == "mermaid" => Some(text.clone()),
                         _ => None,
                     })
                     .collect()
@@ -14042,7 +14049,7 @@ mod alert_tests {
                     ed.boxes = vec![notecraft_model::container::Container::new(0.0, 0.0, 600.0, ed.blocks.len())];
                 }
                 let line = ed.blocks.len();
-                ed.blocks.push(notecraft_formats::Block::Paragraph(Vec::new()));
+                ed.blocks.push(notecraft_formats::Block::Paragraph(Vec::new(), Vec::new()));
                 ed.boxes = notecraft_model::container::append(&ed.boxes, line, 1, 300.0, 0.0, 0.0);
                 let index = ed.boxes.len() - 1;
                 (ed.boxes[index].x, ed.boxes[index].y) = (400.0, 2000.0);
@@ -14362,7 +14369,7 @@ mod literal_formatting_tests {
         let mut session = Session::new(temp.path(), settings).expect("session");
         let sample = notecraft_engine::sample::create_sample(&mut session, None).expect("sample");
         let text = r"*literal* $5 or $6 [x](y) C:\Users\name";
-        let original = vec![Block::Paragraph(vec![Span { text: text.into(), bold: true, ..Default::default() }])];
+        let original = vec![Block::Paragraph(vec![Span { text: text.into(), bold: true, ..Default::default() }], Vec::new())];
         let body = notecraft_formats::blocks_to_html(&original);
         session.run("page.save", &params(&[("path", &sample.html_page.to_string_lossy()), ("body", &body)])).expect("save");
         let mut app = NoteCraftApp::new(session);
@@ -14373,7 +14380,7 @@ mod literal_formatting_tests {
         app.save_now();
         let page = notecraft_store::page::load_page(&sample.html_page).expect("reopen");
         let blocks = notecraft_formats::boxes::read(page.format, &page.body).0;
-        assert_eq!(blocks, vec![Block::Paragraph(vec![Span { text: text.into(), ..Default::default() }])]);
+        assert_eq!(blocks, vec![Block::Paragraph(vec![Span { text: text.into(), ..Default::default() }], Vec::new())]);
     }
 
     fn opened_literal_page(blocks: &[Block], format: notecraft_model::PageFormat) -> (notecraft_store::testing::TempDir, NoteCraftApp, PathBuf) {
@@ -14402,6 +14409,7 @@ mod literal_formatting_tests {
                     vec![Span { text: "keep".into(), italic: true, ..Default::default() }],
                 ],
                 rows: Vec::new(),
+                emoji: Vec::new(),
             }];
             let (_temp, mut app, path) = opened_literal_page(&original, format);
             let ed = app.editor.as_mut().expect("editor");
@@ -14425,7 +14433,7 @@ mod literal_formatting_tests {
     fn copy_and_cut_keep_one_line_literal_text_and_rich_styles() {
         for format in notecraft_model::PageFormat::ALL {
             let text = "*literal* $5 or $6";
-            let original = vec![Block::Paragraph(vec![Span { text: text.into(), bold: true, ..Default::default() }])];
+            let original = vec![Block::Paragraph(vec![Span { text: text.into(), bold: true, ..Default::default() }], Vec::new())];
             let (_temp, mut app, _path) = opened_literal_page(&original, format);
             let ed = app.editor.as_mut().expect("editor");
             let source = pageedit::caret_text(&ed.blocks[0]);
@@ -14446,8 +14454,8 @@ mod literal_formatting_tests {
     #[test]
     fn copying_across_blocks_keeps_literal_delimiters() {
         let blocks = vec![
-            Block::Paragraph(vec![Span { text: "*left*".into(), ..Default::default() }]),
-            Block::Paragraph(vec![Span { text: "$5 or $6".into(), ..Default::default() }]),
+            Block::Paragraph(vec![Span { text: "*left*".into(), ..Default::default() }], Vec::new()),
+            Block::Paragraph(vec![Span { text: "$5 or $6".into(), ..Default::default() }], Vec::new()),
         ];
         let (_temp, mut app, _path) = opened_literal_page(&blocks, notecraft_model::PageFormat::Html);
         let ed = app.editor.as_mut().expect("editor");
@@ -14605,7 +14613,7 @@ mod structural_undo_tests {
         settle(&mut h);
         let left = blocks(&h);
         assert_eq!(left.len(), 1, "one empty line is left: {left:?}");
-        assert!(matches!(&left[0], Block::Paragraph(spans) if spans.is_empty()), "{left:?}");
+        assert!(matches!(&left[0], Block::Paragraph(spans, _) if spans.is_empty()), "{left:?}");
         assert_eq!(h.state().editor.as_ref().and_then(|e| e.caret.as_ref()).map(|c| c.block), Some(0));
     }
 

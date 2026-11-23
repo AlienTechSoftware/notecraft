@@ -13,6 +13,7 @@
 pub mod app;
 pub mod backstage;
 pub mod bidi;
+pub mod block_emoji;
 pub mod clipboard;
 pub mod codeview;
 pub mod collect;

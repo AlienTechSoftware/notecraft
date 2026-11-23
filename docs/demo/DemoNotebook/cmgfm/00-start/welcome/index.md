@@ -28,6 +28,7 @@ The notebook has one section group per language. Each group holds a section call
 - [中文（简体）](../../16-zh/), Chinese, Simplified
 - [日本語](../../17-ja/), Japanese
 - [한국어](../../18-ko/), Korean
+- [Türkçe](../../19-tr/), Turkish
 - [العربية](../../20-ar/), Arabic, right to left
 - [فارسی](../../21-fa/), Persian, right to left
 - [اردو](../../22-ur/), Urdu, right to left

@@ -74,11 +74,11 @@ impl Ctx<'_, '_> {
                         let ordered = *kind == List::Number;
                         let depth = (*depth).min(8);
                         let number = self.number(ordered, depth);
-                        self.out.blocks.push(Block::Item { ordered, number, task: None, depth, spans });
+                        self.out.blocks.push(Block::Item { ordered, number, task: None, depth, spans, emoji: Vec::new() });
                     }
                     None => {
                         self.numbers.clear();
-                        self.out.blocks.push(Block::Paragraph(spans));
+                        self.out.blocks.push(Block::Paragraph(spans, Vec::new()));
                     }
                 }
             }
@@ -86,8 +86,8 @@ impl Ctx<'_, '_> {
                 self.numbers.clear();
                 if let Some(span) = self.attachment(content) {
                     let block = match span.image.clone() {
-                        Some(src) => Block::Image { alt: span.text, src, width: None, height: None },
-                        None => Block::Paragraph(vec![span]),
+                        Some(src) => Block::Image { alt: span.text, src, width: None, height: None, emoji: Vec::new() },
+                        None => Block::Paragraph(vec![span], Vec::new()),
                     };
                     self.out.blocks.push(block);
                 }
@@ -207,7 +207,7 @@ impl Ctx<'_, '_> {
         }
         let head = if first_row_header && !cells.is_empty() { cells.remove(0) } else { Vec::new() };
         self.out.tables += 1;
-        self.out.blocks.push(Block::Table { head, rows: cells });
+        self.out.blocks.push(Block::Table { head, rows: cells, emoji: Vec::new() });
     }
 
     /// A cell holds lines of its own. A cell here is one run of spans, so the lines are
@@ -367,7 +367,7 @@ mod tests {
         };
         let mut attach = |_: &str, _: &[u8]| None;
         let out = convert_page(&store, &[], &page, false, &mut attach);
-        let Some(Block::Paragraph(spans)) = out.blocks.first() else { panic!("a paragraph") };
+        let Some(Block::Paragraph(spans, _)) = out.blocks.first() else { panic!("a paragraph") };
         let shown: String = spans.iter().map(|s| s.text.as_str()).collect();
         assert_eq!(shown, "see the page and more");
         let linked: Vec<&str> = spans.iter().filter(|s| s.link.is_some()).map(|s| s.text.as_str()).collect();
@@ -415,10 +415,10 @@ mod tests {
         let page = Page { title: "t".into(), level: 1, blocks: vec![Content::Table { rows: vec![vec![cell("a"), cell("b")], vec![cell("c")]] }] };
         let mut attach = |_: &str, _: &[u8]| None;
         let md = convert_page(&store, &[], &page, true, &mut attach);
-        let Some(Block::Table { head, rows }) = md.blocks.first() else { panic!("a table") };
+        let Some(Block::Table { head, rows, .. }) = md.blocks.first() else { panic!("a table") };
         assert_eq!((head.len(), rows.len(), rows[0].len()), (2, 1, 2));
         let html = convert_page(&store, &[], &page, false, &mut attach);
-        let Some(Block::Table { head, rows }) = html.blocks.first() else { panic!("a table") };
+        let Some(Block::Table { head, rows, .. }) = html.blocks.first() else { panic!("a table") };
         assert_eq!((head.len(), rows.len()), (0, 2));
     }
 

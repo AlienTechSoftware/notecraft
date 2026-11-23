@@ -30,7 +30,7 @@ class BundleDemoTests(unittest.TestCase):
                 for fmt in ("html", "cmgfm"):
                     languages = {name.split("/")[1] for name in names if name.startswith(f"{fmt}/") and len(name.split("/")) > 2}
                     languages = {name for name in languages if len(name) == 5 and name[:2].isdigit() and name[2] == "-"}
-                    self.assertEqual(len(languages), 13, f"{fmt} should include every translated notebook")
+                    self.assertEqual(len(languages), 14, f"{fmt} should include every translated notebook")
                 html = bundle.read("html/00-start/welcome/index.html").decode()
                 cmgfm = bundle.read("cmgfm/00-start/welcome/index.md").decode()
                 for page in (html, cmgfm):

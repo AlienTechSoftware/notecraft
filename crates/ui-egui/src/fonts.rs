@@ -37,8 +37,8 @@ pub fn page_families(blocks: &[notecraft_formats::Block]) -> BTreeSet<String> {
     };
     for block in blocks {
         match block {
-            Block::Paragraph(spans) | Block::Heading { spans, .. } | Block::Item { spans, .. } | Block::Quote(spans) => collect(spans),
-            Block::Table { head, rows } => {
+            Block::Paragraph(spans, _) | Block::Heading { spans, .. } | Block::Item { spans, .. } | Block::Quote(spans, _) => collect(spans),
+            Block::Table { head, rows, .. } => {
                 for cell in head.iter().chain(rows.iter().flatten()) {
                     collect(cell);
                 }
@@ -271,9 +271,37 @@ pub fn ensure_page_fonts(ctx: &egui::Context, families: &BTreeSet<String>) -> Ve
     families.iter().cloned().collect()
 }
 
+/// The emoji face the system ships, if it has one. Windows keeps Segoe UI Emoji in its fonts folder.
+#[cfg(windows)]
+fn system_emoji_face() -> Option<Vec<u8>> {
+    let dir = std::env::var_os("SystemRoot").map(std::path::PathBuf::from).unwrap_or_else(|| "C:\\Windows".into());
+    std::fs::read(dir.join("Fonts").join("seguiemj.ttf")).ok()
+}
+
+#[cfg(not(windows))]
+fn system_emoji_face() -> Option<Vec<u8>> {
+    None
+}
+
 /// egui's own definitions plus the faces NoteCraft adds.
 pub fn definitions() -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();
+    // Emoji come from the operating system's own emoji face, read at run time and never
+    // bundled. It goes before our faces, so the faces we ship stay last, in order. On Windows
+    // that is Segoe UI Emoji; elsewhere there is none yet.
+    if let Some(bytes) = system_emoji_face() {
+        let name = "system-emoji".to_owned();
+        fonts.font_data.insert(name.clone(), Arc::new(egui::FontData::from_owned(bytes)));
+        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            fonts.families.entry(family).or_default().push(name.clone());
+        }
+    }
+    // Where there is no system emoji face, NoteCraft's own Twemoji colour font is the last resort. It goes
+    // before our other faces, which stay last in order.
+    fonts.font_data.insert("twemoji-mozilla".to_owned(), Arc::new(egui::FontData::from_static(notecraft_text::fonts::EMOJI)));
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts.families.entry(family).or_default().push("twemoji-mozilla".to_owned());
+    }
     for (name, bytes) in BUNDLED {
         fonts.font_data.insert(name.to_owned(), Arc::new(egui::FontData::from_static(bytes)));
         // Last in each list: a fallback, used only for characters the faces before it lack.
@@ -322,8 +350,8 @@ mod tests {
         use notecraft_formats::markdown::{Block, Span};
         let named = |text: &str, name: &str| Span { text: text.into(), font_family: Some(name.into()), ..Span::default() };
         let blocks = vec![
-            Block::Paragraph(vec![named("text", "No such NoteCraft family 928474")]),
-            Block::Table { head: vec![vec![named("head", "No such NoteCraft family 928474")]], rows: vec![] },
+            Block::Paragraph(vec![named("text", "No such NoteCraft family 928474")], Vec::new()),
+            Block::Table { head: vec![vec![named("head", "No such NoteCraft family 928474")]], rows: vec![], emoji: Vec::new() },
         ];
         let families = page_families(&blocks);
         assert_eq!(families.len(), 1);
@@ -459,10 +487,26 @@ mod tests {
             assert!(has(&ctx, w), "{w} should draw, not box");
         }
         assert!(has(&ctx, "Hello"), "Latin must still come from egui's own face");
-        assert!(!has(&ctx, "\u{1F600}"), "no colour emoji face is bundled; a line that needs one still boxes");
+        assert!(has(&ctx, "\u{1F600}"), "the bundled emoji face draws the emoji on every platform");
     }
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 /// Nothing to rescan where installed fonts cannot be read.
 pub fn rescan_in_background(_ctx: egui::Context) {}
+
+#[cfg(test)]
+mod emoji_fallback_tests {
+    /// The block header's emoji choices must draw in the app, not panic or box. The
+    /// bundled Twemoji face is the fallback where the system has none.
+    #[test]
+    fn the_block_emoji_choices_have_glyphs_once_the_fonts_are_installed() {
+        let ctx = egui::Context::default();
+        super::install_once(&ctx);
+        let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
+        out.textures_delta.clear();
+        for choice in crate::block_emoji::CHOICES {
+            assert!(ctx.fonts_mut(|f| f.has_glyphs(&egui::FontId::proportional(14.0), choice)), "{choice} should draw, not box");
+        }
+    }
+}

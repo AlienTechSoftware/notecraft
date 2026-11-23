@@ -191,8 +191,8 @@ pub fn lines(title: &str, blocks: &[Block], has_ink: bool) -> Vec<Line> {
     for block in blocks {
         match block {
             Block::Heading { spans, .. } => push(Kind::Heading, words(spans)),
-            Block::Paragraph(spans) => push(Kind::Text, words(spans)),
-            Block::Item { ordered, number, task, depth, spans } => {
+            Block::Paragraph(spans, _) => push(Kind::Text, words(spans)),
+            Block::Item { ordered, number, task, depth, spans, .. } => {
                 let mark = match task {
                     Some(true) => "[x] ".to_string(),
                     Some(false) => "[ ] ".to_string(),
@@ -201,20 +201,20 @@ pub fn lines(title: &str, blocks: &[Block], has_ink: bool) -> Vec<Line> {
                 };
                 push(Kind::Item(*depth), format!("{mark}{}", words(spans)));
             }
-            Block::Quote(spans) => push(Kind::Quote, words(spans)),
+            Block::Quote(spans, _) => push(Kind::Quote, words(spans)),
             Block::Code { text, .. } => {
                 for line in text.lines() {
                     push(Kind::Exact, line.to_string());
                 }
             }
-            Block::MathBlock(source) => push(Kind::Exact, source.trim().to_string()),
-            Block::Table { head, rows } => {
+            Block::MathBlock(source, _) => push(Kind::Exact, source.trim().to_string()),
+            Block::Table { head, rows, .. } => {
                 for row in std::iter::once(head).chain(rows.iter()) {
                     let cells: Vec<String> = row.iter().map(|cell| words(cell).trim().to_string()).collect();
                     push(Kind::Exact, cells.join("  |  "));
                 }
             }
-            Block::Rule => {}
+            Block::Rule(_) => {}
             Block::Image { alt, src, .. } => {
                 // The page's own ink is drawn as a layer, not a picture; it is named once below.
                 if crate::inkpad::is_page_ink(src) {
@@ -425,15 +425,19 @@ mod tests {
     #[test]
     fn a_page_reads_in_order_and_names_what_has_no_words() {
         let blocks = vec![
-            Block::Heading { level: 1, spans: parse_inline("Plan") },
-            Block::Paragraph(parse_inline("Some **bold** words")),
-            Block::Item { ordered: true, number: 2, task: None, depth: 1, spans: parse_inline("second") },
-            Block::Item { ordered: false, number: 1, task: Some(true), depth: 0, spans: parse_inline("done") },
-            Block::Image { alt: "A map".into(), src: "map.png".into(), width: None, height: None },
-            Block::Image { alt: String::new(), src: "ink.svg".into(), width: None, height: None },
-            Block::Table { head: vec![parse_inline("A"), parse_inline("B")], rows: vec![vec![parse_inline("1"), parse_inline("2")]] },
-            Block::Rule,
-            Block::Paragraph(Vec::new()),
+            Block::Heading { level: 1, spans: parse_inline("Plan"), emoji: Vec::new() },
+            Block::Paragraph(parse_inline("Some **bold** words"), Vec::new()),
+            Block::Item { ordered: true, number: 2, task: None, depth: 1, spans: parse_inline("second"), emoji: Vec::new() },
+            Block::Item { ordered: false, number: 1, task: Some(true), depth: 0, spans: parse_inline("done"), emoji: Vec::new() },
+            Block::Image { alt: "A map".into(), src: "map.png".into(), width: None, height: None, emoji: Vec::new() },
+            Block::Image { alt: String::new(), src: "ink.svg".into(), width: None, height: None, emoji: Vec::new() },
+            Block::Table {
+                head: vec![parse_inline("A"), parse_inline("B")],
+                rows: vec![vec![parse_inline("1"), parse_inline("2")]],
+                emoji: Vec::new(),
+            },
+            Block::Rule(Vec::new()),
+            Block::Paragraph(Vec::new(), Vec::new()),
         ];
         let read = lines("My page", &blocks, true);
         let texts: Vec<&str> = read.iter().map(|l| l.text.as_str()).collect();
@@ -451,7 +455,7 @@ mod tests {
 
     #[test]
     fn the_settings_stay_within_their_limits_and_the_focus_within_the_page() {
-        let mut r = Reader::new("T", &[Block::Paragraph(parse_inline("a")), Block::Paragraph(parse_inline("b"))], false);
+        let mut r = Reader::new("T", &[Block::Paragraph(parse_inline("a"), Vec::new()), Block::Paragraph(parse_inline("b"), Vec::new())], false);
         for _ in 0..40 {
             r.grow(2.0);
             r.space(0.1);

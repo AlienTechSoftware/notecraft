@@ -1,7 +1,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 //! Builds full HTML and CMGFM Welcome notebooks under `docs/demo/DemoNotebook` from `docs/demo/scripts/content`.
 //!
-//! The two notebooks contain the same tour in thirteen languages. Every page and asset is
+//! The two notebooks contain the same tour in fourteen languages. Every page and asset is
 //! converted to the notebook's one format. Both generated formats are bundled by installers and
 //! refreshed into the app-managed Welcome notebook at startup.
 //!
@@ -50,7 +50,7 @@ struct Language {
     color: &'static str,
 }
 
-/// The thirteen languages the owner chose, left-to-right ones first. The How to titles are
+/// The fourteen languages of the demo, left-to-right ones first. The How to titles are
 /// the plain word for a short guide in each language; a native reader may improve them.
 const LANGUAGES: &[Language] = &[
     Language { code: "en", name: "English", english: "English", how_to: "How to", rtl: false, number: 10, color: "purple" },
@@ -64,6 +64,7 @@ const LANGUAGES: &[Language] = &[
     Language { code: "zh", name: "中文（简体）", english: "Chinese, Simplified", how_to: "使用指南", rtl: false, number: 16, color: "red" },
     Language { code: "ja", name: "日本語", english: "Japanese", how_to: "使い方", rtl: false, number: 17, color: "magenta" },
     Language { code: "ko", name: "한국어", english: "Korean", how_to: "사용 방법", rtl: false, number: 18, color: "gray" },
+    Language { code: "tr", name: "Türkçe", english: "Turkish", how_to: "Nasıl yapılır", rtl: false, number: 19, color: "orange" },
     Language { code: "ar", name: "العربية", english: "Arabic", how_to: "كيف", rtl: true, number: 20, color: "purple" },
     Language { code: "fa", name: "فارسی", english: "Persian", how_to: "راهنما", rtl: true, number: 21, color: "blue" },
     Language { code: "ur", name: "اردو", english: "Urdu", how_to: "طریقہ", rtl: true, number: 22, color: "teal" },
@@ -745,7 +746,7 @@ fn check_justify(path: &Path, line: &str, html: bool, body: &str) -> Result<(), 
     let blocks = notecraft_formats::boxes::read(format, body).0;
     for (at, _) in marked.marks() {
         match blocks.get(*at) {
-            Some(notecraft_formats::Block::Paragraph(_)) => {}
+            Some(notecraft_formats::Block::Paragraph(_, _)) => {}
             Some(other) => return Err(format!("{}: justify names block {at}, which is a {}, not a paragraph", path.display(), name_of(other))),
             None => return Err(format!("{}: justify names block {at}, and the page has {} blocks", path.display(), blocks.len())),
         }
@@ -758,13 +759,13 @@ fn name_of(block: &notecraft_formats::Block) -> &'static str {
     use notecraft_formats::Block;
     match block {
         Block::Heading { .. } => "heading",
-        Block::Paragraph(_) => "paragraph",
+        Block::Paragraph(_, _) => "paragraph",
         Block::Item { .. } => "list item",
-        Block::Quote(_) => "quote",
+        Block::Quote(_, _) => "quote",
         Block::Code { .. } => "code block",
         Block::Table { .. } => "table",
         Block::Image { .. } => "picture",
-        Block::MathBlock(_) => "equation",
+        Block::MathBlock(_, _) => "equation",
         _ => "block of another kind",
     }
 }

@@ -24,6 +24,7 @@ Status: proposal for owner review. Nothing here changes the file format until an
 |---|---|---|---|---|---|---|---|
 | `block.paragraph` | `Paragraph` | `Block::Para` | paragraph | `Paragraph` | `p` | text | model, formats |
 | `block.heading` | `Heading` | paragraph style | heading 1-6 | `Heading` | `h1`-`h6` | `#` | model, formats |
+| `block.emoji` | `Block::emoji()` (a list on any block) | header attribute | emoji on the block header | `emoji` field | `data-nc-emoji` attribute (the list) | `<!-- nc-emoji: ... -->` line above the block | model, formats |
 | `block.item` | `Item` | list paragraph | bullet, number, to-do | `Item` | `ul`, `ol`, `li` | `-`, `1.`, `- [ ]` | model, formats |
 | `block.quote` | `Quote` | paragraph style | quote | `Quote` | `blockquote` | `>` | model, formats |
 | `block.code` | `Code` | paragraph style | code (OneNote has no code block) | `Code` | `pre` | fence | model, formats |

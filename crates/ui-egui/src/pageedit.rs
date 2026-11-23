@@ -24,7 +24,7 @@ fn spans_to_editor(spans: &[Span]) -> String {
 
 fn spans_of(block: &Block) -> Option<&[Span]> {
     match block {
-        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => Some(spans),
+        Block::Heading { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) | Block::Item { spans, .. } => Some(spans),
         _ => None,
     }
 }
@@ -122,12 +122,14 @@ impl Caret {
             return None;
         }
         match block {
-            Block::Code { lang, .. } => Some(vec![Block::Code { lang: lang.clone(), text: self.text.chars().skip(a).take(b - a).collect() }]),
-            Block::MathBlock(_) => Some(vec![Block::MathBlock(self.text.chars().skip(a).take(b - a).collect())]),
+            Block::Code { lang, .. } => {
+                Some(vec![Block::Code { lang: lang.clone(), text: self.text.chars().skip(a).take(b - a).collect(), emoji: Vec::new() }])
+            }
+            Block::MathBlock(_, _) => Some(vec![Block::MathBlock(self.text.chars().skip(a).take(b - a).collect(), Vec::new())]),
             _ => {
                 let mut caret = self.clone();
                 let spans = caret.ensure_inline(block).selected(&self.text, a..b)?;
-                Some(vec![Block::Paragraph(spans)])
+                Some(vec![Block::Paragraph(spans, Vec::new())])
             }
         }
     }
@@ -740,7 +742,7 @@ pub fn toggle_mark(blocks: &mut [Block], range: std::ops::Range<usize>, mark: &s
     };
     let mut targets: Vec<&mut Vec<Span>> = Vec::new();
     for b in blocks.get_mut(range).unwrap_or_default() {
-        if let Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } = b {
+        if let Block::Heading { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) | Block::Item { spans, .. } = b {
             targets.push(spans);
         }
     }
@@ -834,23 +836,23 @@ pub fn insert_at_caret(text: &str, selection: (usize, usize), insert: &str) -> (
 /// words. Returns false when there is nothing to change.
 /// Applies `kind` to one line of a code block: the lines before and after stay code.
 pub fn split_code_line(blocks: &mut Vec<Block>, at: usize, line: usize, kind: &str) -> bool {
-    let Some(Block::Code { lang, text }) = blocks.get(at).cloned() else { return false };
+    let Some(Block::Code { lang, text, .. }) = blocks.get(at).cloned() else { return false };
     let lines: Vec<&str> = text.split('\n').collect();
     if line >= lines.len() {
         return false;
     }
     // The caret's line becomes the new kind; the lines around it stay code with the same language.
-    let mut current = vec![Block::Paragraph(parse_inline(lines[line]))];
+    let mut current = vec![Block::Paragraph(parse_inline(lines[line]), Vec::new())];
     if !set_kind(&mut current, 0, kind) {
         return false;
     }
     let mut out = Vec::new();
     if line > 0 {
-        out.push(Block::Code { lang: lang.clone(), text: lines[..line].join("\n") });
+        out.push(Block::Code { lang: lang.clone(), text: lines[..line].join("\n"), emoji: Vec::new() });
     }
     out.extend(current);
     if line + 1 < lines.len() {
-        out.push(Block::Code { lang, text: lines[line + 1..].join("\n") });
+        out.push(Block::Code { lang, text: lines[line + 1..].join("\n"), emoji: Vec::new() });
     }
     blocks.splice(at..at + 1, out);
     true
@@ -860,7 +862,7 @@ pub fn split_code_line(blocks: &mut Vec<Block>, at: usize, line: usize, kind: &s
 /// A collapsed selection targets the caret line; a non-empty selection includes
 /// the line containing its first and last selected characters.
 pub fn split_code_selection(blocks: &mut Vec<Block>, at: usize, selection: (usize, usize), kind: &str) -> bool {
-    let Some(Block::Code { lang, text }) = blocks.get(at).cloned() else { return false };
+    let Some(Block::Code { lang, text, .. }) = blocks.get(at).cloned() else { return false };
     // Keep trailing empty lines. In the live editor, every trailing newline can
     // represent a blank line the user just created, and the caret can sit there.
     let lines: Vec<&str> = text.split('\n').collect();
@@ -882,17 +884,17 @@ pub fn split_code_selection(blocks: &mut Vec<Block>, at: usize, selection: (usiz
 
     let mut out = Vec::new();
     if first > 0 {
-        out.push(Block::Code { lang: lang.clone(), text: lines[..first].join("\n") });
+        out.push(Block::Code { lang: lang.clone(), text: lines[..first].join("\n"), emoji: Vec::new() });
     }
     for line in &lines[first..=last] {
-        let mut converted = vec![Block::Paragraph(parse_inline(line))];
+        let mut converted = vec![Block::Paragraph(parse_inline(line), Vec::new())];
         if !set_kind(&mut converted, 0, kind) {
             return false;
         }
         out.extend(converted);
     }
     if last + 1 < lines.len() {
-        out.push(Block::Code { lang, text: lines[last + 1..].join("\n") });
+        out.push(Block::Code { lang, text: lines[last + 1..].join("\n"), emoji: Vec::new() });
     }
     blocks.splice(at..at + 1, out);
     true
@@ -925,44 +927,53 @@ pub fn set_kind(blocks: &mut [Block], at: usize, kind: &str) -> bool {
         return false;
     }
     // Code stays code with its words as they are; only whether its lines are numbered changes.
-    if let (Block::Code { lang, text }, "codeblock" | "codenumbers") = (block, kind)
+    if let (Block::Code { lang, text, .. }, "codeblock" | "codenumbers") = (block, kind)
         && block_kind(block) != kind
     {
         let language = notecraft_formats::markdown::code_lang(lang).1.to_string();
         let lang = if kind == "codenumbers" { format!("{}{language}", notecraft_formats::markdown::NUMBERED) } else { language };
         let text = text.clone();
         if let Some(b) = blocks.get_mut(at) {
-            *b = Block::Code { lang, text };
+            *b = Block::Code { lang, text, emoji: Vec::new() };
         }
         return true;
     }
     let spans = match block {
-        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans.clone(),
+        Block::Heading { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) | Block::Item { spans, .. } => spans.clone(),
         _ => vec![Span { text: block_text(block), ..Default::default() }],
     };
     let new = match kind {
-        "h1" => Block::Heading { level: 1, spans },
-        "h2" => Block::Heading { level: 2, spans },
-        "h3" => Block::Heading { level: 3, spans },
-        "h4" => Block::Heading { level: 4, spans },
-        "h5" => Block::Heading { level: 5, spans },
-        "h6" => Block::Heading { level: 6, spans },
-        "quote" => Block::Quote(spans),
+        "h1" => Block::Heading { level: 1, spans, emoji: Vec::new() },
+        "h2" => Block::Heading { level: 2, spans, emoji: Vec::new() },
+        "h3" => Block::Heading { level: 3, spans, emoji: Vec::new() },
+        "h4" => Block::Heading { level: 4, spans, emoji: Vec::new() },
+        "h5" => Block::Heading { level: 5, spans, emoji: Vec::new() },
+        "h6" => Block::Heading { level: 6, spans, emoji: Vec::new() },
+        "quote" => Block::Quote(spans, Vec::new()),
         // Code blocks number their lines by default (owner, 2026-11-11).
-        "codeblock" => Block::Code { lang: notecraft_formats::markdown::NUMBERED.to_string(), text: spans.iter().map(|s| s.text.as_str()).collect() },
-        "codenumbers" => {
-            Block::Code { lang: notecraft_formats::markdown::NUMBERED.to_string(), text: spans.iter().map(|s| s.text.as_str()).collect() }
-        }
-        "bullet" => Block::Item { ordered: false, number: 0, task: None, depth: 0, spans },
-        "number" => Block::Item { ordered: true, number: 1, task: None, depth: 0, spans },
-        "todo" => Block::Item { ordered: false, number: 0, task: Some(false), depth: 0, spans },
-        _ => Block::Paragraph(spans),
+        "codeblock" => Block::Code {
+            lang: notecraft_formats::markdown::NUMBERED.to_string(),
+            text: spans.iter().map(|s| s.text.as_str()).collect(),
+            emoji: Vec::new(),
+        },
+        "codenumbers" => Block::Code {
+            lang: notecraft_formats::markdown::NUMBERED.to_string(),
+            text: spans.iter().map(|s| s.text.as_str()).collect(),
+            emoji: Vec::new(),
+        },
+        "bullet" => Block::Item { ordered: false, number: 0, task: None, depth: 0, spans, emoji: Vec::new() },
+        "number" => Block::Item { ordered: true, number: 1, task: None, depth: 0, spans, emoji: Vec::new() },
+        "todo" => Block::Item { ordered: false, number: 0, task: Some(false), depth: 0, spans, emoji: Vec::new() },
+        _ => Block::Paragraph(spans, Vec::new()),
     };
     // Asking for what it already is turns it back into ordinary text, like a toggle.
     let same = std::mem::discriminant(&new) == std::mem::discriminant(block) && block_kind(block) == kind;
     if let Some(b) = blocks.get_mut(at) {
         *b = if same {
-            Block::Paragraph(spans_of(&new).map(<[Span]>::to_vec).unwrap_or_else(|| vec![Span { text: block_text(&new), ..Default::default() }]))
+            Block::Paragraph(
+                spans_of(&new).map(<[Span]>::to_vec).unwrap_or_else(|| vec![Span { text: block_text(&new), ..Default::default() }]),
+                Vec::new(),
+            )
         } else {
             new
         };
@@ -985,7 +996,11 @@ pub fn set_tag(blocks: &mut [Block], at: usize, tag: Tag) -> bool {
         let text = inline.text().to_owned();
         let spans = inline.parse(&text);
         if let Some(b) = blocks.get_mut(at) {
-            *b = if already { Block::Paragraph(spans) } else { Block::Item { ordered: false, number: 0, task: Some(false), depth: 0, spans } };
+            *b = if already {
+                Block::Paragraph(spans, Vec::new())
+            } else {
+                Block::Item { ordered: false, number: 0, task: Some(false), depth: 0, spans, emoji: Vec::new() }
+            };
         }
         renumber(blocks);
         return true;
@@ -1057,7 +1072,7 @@ pub fn indent(blocks: &mut [Block], at: usize, deeper: bool) -> bool {
 /// Removes inline formatting without interpreting literal text as Markdown source.
 pub fn clear_marks(block: &mut Block) {
     let spans = match block {
-        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans,
+        Block::Heading { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) | Block::Item { spans, .. } => spans,
         _ => return,
     };
     clear_span_marks(spans);
@@ -1097,9 +1112,10 @@ pub fn insert_block(blocks: &mut Vec<Block>, at: usize, what: &str) -> bool {
         "table" => Block::Table {
             head: vec![cell("A"), cell("B"), cell("C")],
             rows: vec![vec![cell("1"), cell("2"), cell("3")], vec![cell(""), cell(""), cell("")]],
+            emoji: Vec::new(),
         },
-        "diagram" => Block::Code { lang: "mermaid".into(), text: "graph TD;\n  A-->B;".into() },
-        "rule" => Block::Rule,
+        "diagram" => Block::Code { lang: "mermaid".into(), text: "graph TD;\n  A-->B;".into(), emoji: Vec::new() },
+        "rule" => Block::Rule(Vec::new()),
         _ => return false,
     };
     let at = at.min(blocks.len());
@@ -1124,7 +1140,7 @@ pub fn links_in(blocks: &[Block]) -> Vec<String> {
     for block in blocks {
         match block {
             Block::Image { src, .. } => keep(src),
-            Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => {
+            Block::Heading { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) | Block::Item { spans, .. } => {
                 for span in spans {
                     if let Some(link) = &span.link {
                         keep(link);
@@ -1134,7 +1150,7 @@ pub fn links_in(blocks: &[Block]) -> Vec<String> {
                     }
                 }
             }
-            Block::Table { head, rows } => {
+            Block::Table { head, rows, .. } => {
                 for cell in head.iter().chain(rows.iter().flatten()) {
                     for span in cell {
                         if let Some(link) = &span.link {
@@ -1164,7 +1180,7 @@ pub fn is_title_echo(blocks: &[Block], i: usize, title: &str) -> bool {
         return false;
     }
     match blocks.first() {
-        Some(Block::Heading { level: 1, spans }) => {
+        Some(Block::Heading { level: 1, spans, .. }) => {
             let words: String = spans.iter().map(|s| s.text.as_str()).collect();
             words.trim() == title.trim()
         }
@@ -1186,7 +1202,7 @@ pub fn is_page_stamp(blocks: &[Block], i: usize) -> bool {
     // The words themselves, not the marks round them: a page written before the stamp was
     // plain has its date in italics, and it is still the date.
     match blocks.get(i) {
-        Some(Block::Paragraph(spans)) => {
+        Some(Block::Paragraph(spans, _)) => {
             let words: String = spans.iter().map(|s| s.text.as_str()).collect();
             notecraft_model::time::is_long_date(&words)
         }
@@ -1202,7 +1218,7 @@ pub fn is_page_stamp(blocks: &[Block], i: usize) -> bool {
 pub(crate) fn text_for_caret(blocks: &[Block], i: usize) -> String {
     let Some(block) = blocks.get(i) else { return String::new() };
     if is_page_stamp(blocks, i) {
-        let Block::Paragraph(spans) = block else { return caret_text(block) };
+        let Block::Paragraph(spans, _) = block else { return caret_text(block) };
         return spans.iter().map(|s| s.text.as_str()).collect();
     }
     caret_text(block)
@@ -1221,7 +1237,7 @@ pub const TABLE_MAX_COLUMNS: usize = 30;
 pub fn insert_table(blocks: &mut Vec<Block>, at: usize, rows: usize, columns: usize) -> bool {
     let (rows, columns) = (rows.clamp(1, TABLE_MAX_ROWS), columns.clamp(1, TABLE_MAX_COLUMNS));
     let row = || vec![Vec::new(); columns];
-    let block = Block::Table { head: row(), rows: (1..rows).map(|_| row()).collect() };
+    let block = Block::Table { head: row(), rows: (1..rows).map(|_| row()).collect(), emoji: Vec::new() };
     blocks.insert(at.min(blocks.len()), block);
     true
 }
@@ -1235,7 +1251,7 @@ pub fn block_kind(block: &Block) -> &'static str {
         Block::Heading { level: 4, .. } => "h4",
         Block::Heading { level: 5, .. } => "h5",
         Block::Heading { .. } => "h6",
-        Block::Quote(_) => "quote",
+        Block::Quote(_, _) => "quote",
         Block::Code { lang, .. } if notecraft_formats::markdown::code_lang(lang).0 => "codenumbers",
         Block::Code { .. } => "codeblock",
         Block::Item { task: Some(_), .. } => "todo",
@@ -1276,11 +1292,11 @@ fn formatting_key(ui: &Ui, id: egui::Id) -> Option<&'static str> {
 /// The text of a block as it is edited: the inline marks only.
 pub fn block_text(block: &Block) -> String {
     match block {
-        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans_to_editor(spans),
+        Block::Heading { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) | Block::Item { spans, .. } => spans_to_editor(spans),
         Block::Code { text, .. } => text.clone(),
-        Block::MathBlock(tex) => tex.clone(),
+        Block::MathBlock(tex, _) => tex.clone(),
         Block::Image { alt, .. } => alt.clone(),
-        Block::Table { .. } | Block::Rule => String::new(),
+        Block::Table { .. } | Block::Rule(_) => String::new(),
     }
 }
 
@@ -1374,7 +1390,7 @@ fn table(
     zoom: f32,
     live: bool,
 ) -> Option<Action> {
-    let Block::Table { head, rows } = block else { return None };
+    let Block::Table { head, rows, .. } = block else { return None };
     // Borders belong to the table, not to the app: this one is told, the others are not (issue #161).
     let borders = !cols.borders_hidden(i);
     let mut action = None;
@@ -1838,24 +1854,24 @@ pub fn set_caret_text(block: &mut Block, text: &str) {
 pub fn set_block_text(block: &mut Block, text: &str) {
     let spans = InlineEdit::new(block, false).parse_source(text);
     match block {
-        Block::Heading { spans: s, .. } | Block::Paragraph(s) | Block::Quote(s) | Block::Item { spans: s, .. } => *s = spans,
+        Block::Heading { spans: s, .. } | Block::Paragraph(s, _) | Block::Quote(s, _) | Block::Item { spans: s, .. } => *s = spans,
         Block::Code { text: t, .. } => *t = text.to_string(),
-        Block::MathBlock(tex) => *tex = text.to_string(),
+        Block::MathBlock(tex, _) => *tex = text.to_string(),
         Block::Image { alt, .. } => *alt = text.to_string(),
-        Block::Table { .. } | Block::Rule => {}
+        Block::Table { .. } | Block::Rule(_) => {}
     }
 }
 
 /// True for a block the caret can sit in. A table, a rule and a picture are moved and
 /// deleted as a whole for now; writing in them comes with the next step (see gaps.md).
 pub fn is_writable(block: &Block) -> bool {
-    !matches!(block, Block::Rule | Block::Image { .. })
+    !matches!(block, Block::Rule(_) | Block::Image { .. })
 }
 
 fn contains_inline_image(block: &Block) -> bool {
     matches!(
         block,
-        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. }
+        Block::Heading { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) | Block::Item { spans, .. }
             if spans.iter().any(|span| span.image.is_some())
     )
 }
@@ -1910,17 +1926,20 @@ fn previous_whole_block_image(blocks: &[Block], from: usize, shown_title: &str) 
 /// table into a heading and lose it - which is what `set_kind` would have done for as
 /// long as it asked `is_writable` instead.
 pub fn is_one_line_of_words(block: &Block) -> bool {
-    matches!(block, Block::Heading { .. } | Block::Paragraph(_) | Block::Quote(_) | Block::Item { .. } | Block::Code { .. } | Block::MathBlock(_))
+    matches!(
+        block,
+        Block::Heading { .. } | Block::Paragraph(_, _) | Block::Quote(_, _) | Block::Item { .. } | Block::Code { .. } | Block::MathBlock(_, _)
+    )
 }
 
 /// The words of one cell, as they are written: (0, c) is a heading cell.
 fn cell_spans(block: &Block, (row, column): (usize, usize)) -> Option<&[Span]> {
-    let Block::Table { head, rows } = block else { return None };
+    let Block::Table { head, rows, .. } = block else { return None };
     if row == 0 { head.get(column).map(Vec::as_slice) } else { rows.get(row - 1)?.get(column).map(Vec::as_slice) }
 }
 
 fn cell_spans_mut(block: &mut Block, (row, column): (usize, usize)) -> Option<&mut Vec<Span>> {
-    let Block::Table { head, rows } = block else { return None };
+    let Block::Table { head, rows, .. } = block else { return None };
     if row == 0 { head.get_mut(column) } else { rows.get_mut(row - 1)?.get_mut(column) }
 }
 
@@ -1944,7 +1963,7 @@ pub fn markup_visible_len(text: &str) -> usize {
 /// and ends in the caret's visible characters, its words and its address. `None` when the
 /// caret is not on a link. For a table cell the cell's spans answer, not the block's.
 pub fn link_at_caret(block: &Block, caret: &Caret) -> Option<(usize, usize, String, String)> {
-    if matches!(block, Block::Code { .. } | Block::MathBlock(_)) {
+    if matches!(block, Block::Code { .. } | Block::MathBlock(_, _)) {
         return None;
     }
     let edit = caret
@@ -2104,7 +2123,7 @@ impl SortKey {
 
 /// How many cells a table has, as (rows including the heading, columns).
 pub fn table_size(block: &Block) -> Option<(usize, usize)> {
-    let Block::Table { head, rows } = block else { return None };
+    let Block::Table { head, rows, .. } = block else { return None };
     let columns = head.len().max(rows.iter().map(Vec::len).max().unwrap_or(0));
     Some((rows.len() + 1, columns))
 }
@@ -2141,7 +2160,7 @@ pub enum TableEdit {
 /// nothing could be done - which is how the rules say no: the heading row stays, and a
 /// table keeps at least one column.
 pub fn edit_table(block: &mut Block, cell: (usize, usize), what: TableEdit) -> Option<(usize, usize)> {
-    let Block::Table { head, rows } = block else { return None };
+    let Block::Table { head, rows, .. } = block else { return None };
     let columns = head.len().max(rows.iter().map(Vec::len).max().unwrap_or(0)).max(1);
     // Every row the same width, so an edit cannot leave a ragged table behind.
     head.resize(columns, Vec::new());
@@ -2199,7 +2218,7 @@ fn size_of(block: &Block) -> (f32, bool) {
             true,
         ),
         // As big as the finished block draws it (preview.rs), or the text jumps when the caret arrives.
-        Block::Code { .. } | Block::MathBlock(_) => (14.5, false),
+        Block::Code { .. } | Block::MathBlock(_, _) => (14.5, false),
         _ => (14.5, false),
     }
 }
@@ -2208,9 +2227,9 @@ fn size_of(block: &Block) -> (f32, bool) {
 pub fn next_block(after: &Block) -> Block {
     match after {
         Block::Item { ordered, number, task, depth, .. } => {
-            Block::Item { ordered: *ordered, number: *number + 1, task: task.map(|_| false), depth: *depth, spans: Vec::new() }
+            Block::Item { ordered: *ordered, number: *number + 1, task: task.map(|_| false), depth: *depth, spans: Vec::new(), emoji: Vec::new() }
         }
-        _ => Block::Paragraph(Vec::new()),
+        _ => Block::Paragraph(Vec::new(), Vec::new()),
     }
 }
 
@@ -2339,6 +2358,13 @@ pub fn show_blocks(
         // And the painter's own hit tests and caret measure against the same lines, for as
         // long as this block is the one being worked on.
         let _floor = preview::hold_floor(justified, i, zoom);
+        // The header strip with the emoji `+` sits above the block. The page's date stamp
+        // has none.
+        let drawn_above_box = ui.data(|d| d.get_temp::<Option<usize>>(crate::block_emoji::box_first_header_id()).flatten()) == Some(i);
+        if !drawn_above_box && let Some(next) = crate::block_emoji::header(ui, page_dir, i, blocks[i].emoji(), true, zoom) {
+            blocks[i].set_emoji(next);
+            changed.blocks = true;
+        }
         // Where this block starts, so a frame can be drawn around it afterwards: the block
         // the caret is in gets one, the way a container is outlined in OneNote.
         let top = ui.cursor().min.y;
@@ -2401,12 +2427,12 @@ pub fn show_blocks(
             // A paragraph or heading set against an edge or the middle keeps its place while it
             // is written in, so the line does not jump when the caret arrives (issue #258).
             let align = match (&block, justified.align_of(i)) {
-                (Block::Paragraph(_) | Block::Heading { .. }, Some(a)) => preview::egui_align(a),
+                (Block::Paragraph(_, _) | Block::Heading { .. }, Some(a)) => preview::egui_align(a),
                 _ => natural,
             };
             // A line with right-to-left text in it is written in by NoteCraft's own caret;
             // everything else stays with egui's text box, which does it well.
-            let ours = needs_our_caret(&c.text) && !matches!(block, Block::Code { .. } | Block::MathBlock(_));
+            let ours = needs_our_caret(&c.text) && !matches!(block, Block::Code { .. } | Block::MathBlock(_, _));
             if ours {
                 let mut wrote = None;
                 let resp = ui
@@ -2492,7 +2518,7 @@ pub fn show_blocks(
                     if let Some(done) = lead(ui, &block, t) {
                         ticked = Some(done);
                     }
-                    let multiline = matches!(block, Block::Code { .. } | Block::MathBlock(_));
+                    let multiline = matches!(block, Block::Code { .. } | Block::MathBlock(_, _));
                     // A caret moved into this block by a key lands where the move asked (the start from Down),
                     // not at the end the text field kept from before.
                     // The text field moves its cursor to the end when it gains focus, a frame after the
@@ -2599,6 +2625,9 @@ pub fn show_blocks(
                                 .show(ui)
                         })
                     };
+                    // The text box is named for the block it writes in, so tests and screen
+                    // readers can find it.
+                    out.response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextInput, true, format!("Block {}", i + 1)));
                     #[cfg(feature = "voice")]
                     remember_caret_anchor(ui, &out, c);
                     let mut cursor_range = out.cursor_range;
@@ -2668,7 +2697,7 @@ pub fn show_blocks(
             // plain click only moves the caret, which is how Word and OneNote do it.
             if resp.clicked()
                 && ui.input(|i| i.modifiers.command)
-                && !matches!(block, Block::Code { .. } | Block::MathBlock(_))
+                && !matches!(block, Block::Code { .. } | Block::MathBlock(_, _))
                 && let Some((a, _)) = selection
                 && let Some((_, _, _, href)) = c.inline.as_ref().and_then(|inline| inline_edit::link_span(inline.spans(), a))
             {
@@ -2724,7 +2753,7 @@ pub fn show_blocks(
                     i.key_pressed(Key::ArrowLeft),
                 )
             });
-            let multiline = matches!(block, Block::Code { .. } | Block::MathBlock(_));
+            let multiline = matches!(block, Block::Code { .. } | Block::MathBlock(_, _));
             if up || down || left || right || enter || backspace || escape {
                 log::debug!(
                     "caret keys: block={i} kind={} multiline={multiline} focus={} up={up} down={down} left={left} right={right} enter={enter} backspace={backspace} escape={escape}",
@@ -2961,8 +2990,8 @@ pub fn copied_span(blocks: &[Block], across: Across) -> Option<Vec<Block>> {
         let Some((a, b)) = across.covering(index, text.len()) else { continue };
         let picked = text.get(a..b)?;
         let fragment = match block {
-            Block::Code { lang, .. } => Block::Code { lang: lang.clone(), text: picked.to_owned() },
-            Block::MathBlock(_) => Block::MathBlock(picked.to_owned()),
+            Block::Code { lang, .. } => Block::Code { lang: lang.clone(), text: picked.to_owned(), emoji: Vec::new() },
+            Block::MathBlock(_, _) => Block::MathBlock(picked.to_owned(), Vec::new()),
             _ => {
                 // The covering bytes are serialized-source offsets; the spans' selection is
                 // in visible characters.
@@ -2971,7 +3000,7 @@ pub fn copied_span(blocks: &[Block], across: Across) -> Option<Vec<Block>> {
                 let edit = InlineEdit::new(block, false);
                 let prefix = text.chars().count() - Tag::split(&text).1.chars().count();
                 let range = edit.visible_pos_of_source(a).saturating_sub(prefix)..edit.visible_pos_of_source(b).saturating_sub(prefix);
-                Block::Paragraph(edit.slice(range).spans().to_vec())
+                Block::Paragraph(edit.slice(range).spans().to_vec(), Vec::new())
             }
         };
         result.push(fragment);
@@ -3315,14 +3344,14 @@ pub fn pasted_blocks(p: Pasted) -> Vec<Block> {
         // The same path an HTML page takes when it is opened, so a pasted table keeps its
         // cells and a pasted sentence keeps its bold and its links.
         Pasted::Markup(html) => notecraft_formats::markdown::parse(&notecraft_formats::html::to_markdown(&html)),
-        Pasted::Paragraphs(lines) => lines.into_iter().map(|l| Block::Paragraph(parse_inline(&l))).collect(),
+        Pasted::Paragraphs(lines) => lines.into_iter().map(|l| Block::Paragraph(parse_inline(&l), Vec::new())).collect(),
         Pasted::Table(mut rows) => {
             if rows.is_empty() {
                 return Vec::new();
             }
             let head = rows.remove(0).iter().map(|c| parse_inline(c)).collect();
             let rows = rows.into_iter().map(|r| r.iter().map(|c| parse_inline(c)).collect()).collect();
-            vec![Block::Table { head, rows }]
+            vec![Block::Table { head, rows, emoji: Vec::new() }]
         }
     }
 }
@@ -3679,7 +3708,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
             // Enter on an empty list item ends the list, as it does in every editor.
             if matches!(blocks.get(at), Some(Block::Item { spans, .. }) if spans.is_empty()) {
                 if let Some(b) = blocks.get_mut(at) {
-                    *b = Block::Paragraph(Vec::new());
+                    *b = Block::Paragraph(Vec::new(), Vec::new());
                 }
                 *caret =
                     Some(Caret { block: at, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None, inline: None });
@@ -3700,12 +3729,12 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
                 .unwrap_or_default();
             let mut left = source.slice(0..cut);
             let mut right = source.slice(cut..text.chars().count());
-            let mut new = blocks.get(at).map(next_block).unwrap_or(Block::Paragraph(Vec::new()));
+            let mut new = blocks.get(at).map(next_block).unwrap_or(Block::Paragraph(Vec::new(), Vec::new()));
             if let Some(b) = blocks.get_mut(at) {
                 left.write(b, &before);
                 // A heading splits into a heading and a paragraph, as it does in Word.
                 if matches!(b, Block::Heading { .. }) {
-                    new = Block::Paragraph(Vec::new());
+                    new = Block::Paragraph(Vec::new(), Vec::new());
                 }
             }
             right.write(&mut new, &after);
@@ -3730,7 +3759,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
                 // The first block: a heading becomes a paragraph, nothing is lost.
                 if let Some(Block::Heading { .. }) = blocks.first() {
                     if let Some(b) = blocks.get_mut(0) {
-                        *b = Block::Paragraph(spans_of(b).unwrap_or_default().to_vec());
+                        *b = Block::Paragraph(spans_of(b).unwrap_or_default().to_vec(), Vec::new());
                     }
                     *caret = Some(Caret { block: 0, text, focus: true, selection: (0, 0), place: None, cell: None, span: None, inline: None });
                     changed.blocks = true;
@@ -3803,7 +3832,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
             }
         }
         Action::AddRow(i) => {
-            if let Some(Block::Table { head, rows }) = blocks.get_mut(i) {
+            if let Some(Block::Table { head, rows, .. }) = blocks.get_mut(i) {
                 let columns = head.len().max(rows.iter().map(Vec::len).max().unwrap_or(1)).max(1);
                 rows.push(vec![Vec::new(); columns]);
                 changed.blocks = true;
@@ -3849,7 +3878,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
                     });
                 }
                 _ => {
-                    blocks.push(Block::Paragraph(Vec::new()));
+                    blocks.push(Block::Paragraph(Vec::new(), Vec::new()));
                     *caret = Some(Caret {
                         block: blocks.len() - 1,
                         text: String::new(),
@@ -3904,7 +3933,7 @@ fn char_under_drawn(
     zoom: f32,
 ) -> Option<usize> {
     let spans = match block {
-        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans,
+        Block::Heading { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) | Block::Item { spans, .. } => spans,
         _ => return None,
     };
     if spans.iter().any(|s| s.math || s.image.is_some()) {
@@ -3974,7 +4003,7 @@ fn over_marks(spans: &[Span], drawn: usize) -> usize {
 /// and equations hold no links. A block the bidi painter drew is not mapped this way (see
 /// `link_under`).
 fn link_in(block: &Block, at: usize, page: Option<notecraft_model::Dir>) -> Option<String> {
-    if matches!(block, Block::Code { .. } | Block::MathBlock(_)) {
+    if matches!(block, Block::Code { .. } | Block::MathBlock(_, _)) {
         return None;
     }
     let edit = InlineEdit::new(block, true);
@@ -4011,7 +4040,7 @@ pub fn link_under(
 fn lead_width(block: &Block) -> f32 {
     match block {
         Block::Item { depth, .. } => 8.0 + *depth as f32 * 18.0 + 22.0,
-        Block::Quote(_) => 18.0,
+        Block::Quote(_, _) => 18.0,
         _ => 0.0,
     }
 }
@@ -4049,7 +4078,7 @@ fn lead(ui: &mut Ui, block: &Block, t: &Tokens) -> Option<bool> {
                 }
             }
         }
-        Block::Quote(_) => {
+        Block::Quote(_, _) => {
             ui.add_space(6.0);
             ui.label(egui::RichText::new(crate::tl_id!("ui.text_122")).color(t.quote_bar));
         }
@@ -4115,7 +4144,7 @@ mod tests {
         assert_eq!(link_markup("", "https://example.test"), "[https://example.test](https://example.test)", "no words: the address shows");
         assert_eq!(link_markup("a [b] c", "x(1)"), "[a b c](x%281%29)");
         let spans = notecraft_formats::markdown::parse(&link_markup("go [now]", "../other page/")).remove(0);
-        let Block::Paragraph(spans) = spans else { panic!("a paragraph") };
+        let Block::Paragraph(spans, _) = spans else { panic!("a paragraph") };
         assert_eq!(spans.len(), 1, "one link: {spans:?}");
         assert_eq!(spans[0].link.as_deref(), Some("../other%20page/"));
 
@@ -4293,7 +4322,7 @@ mod tests {
         assert!(format_span_range(&mut spans, 3..6, InlineFormat::Underline));
         assert!(format_span_range(&mut spans, 3..6, InlineFormat::Family("Noto Sans".into())));
         assert!(format_span_range(&mut spans, 3..6, InlineFormat::Size(18)));
-        let original = vec![Block::Paragraph(spans)];
+        let original = vec![Block::Paragraph(spans, Vec::new())];
         for format in [PageFormat::Html, PageFormat::Cmgfm] {
             let body = to_body(format, &original);
             assert_eq!(preview::blocks_for(format, &body), original, "{format:?}: {body}");
@@ -4326,7 +4355,7 @@ mod tests {
         // The same selection takes and loses a mark like it does inside one block.
         let bold = format_across(&mut b, next, InlineFormat::Bold).expect("bold");
         assert!(format_across(&mut b, bold, InlineFormat::Bold).is_some());
-        assert!(matches!(&b[2], Block::Paragraph(spans) if spans.iter().all(|s| !s.bold)));
+        assert!(matches!(&b[2], Block::Paragraph(spans, _) if spans.iter().all(|s| !s.bold)));
     }
 
     /// The bands a cross-paragraph selection paints are measured in the words on the
@@ -4493,7 +4522,7 @@ mod tests {
         assert!(matches!(blocks.first(), Some(Block::Table { .. })), "a table came back: {blocks:?}");
         let inline_html = "<strong>bold</strong> <a href=\"https://example.com\">linked</a>";
         let blocks = pasted_blocks(pasted(inline_html));
-        let keeps_format = matches!(blocks.first(), Some(Block::Paragraph(spans)) if spans.iter().any(|s| s.bold && s.text == "bold") && spans.iter().any(|s| s.link.as_deref() == Some("https://example.com")));
+        let keeps_format = matches!(blocks.first(), Some(Block::Paragraph(spans, _)) if spans.iter().any(|s| s.bold && s.text == "bold") && spans.iter().any(|s| s.link.as_deref() == Some("https://example.com")));
         assert!(keeps_format, "rich inline clipboard keeps emphasis and links: {blocks:?}");
         // Plain words that merely start with a bracket are not markup.
         assert_eq!(pasted("<- look at that\nand this"), Pasted::Paragraphs(vec!["<- look at that".into(), "and this".into()]));
@@ -4755,13 +4784,13 @@ A note to self.
 
     #[test]
     fn enter_adds_the_right_kind_of_block() {
-        assert!(matches!(next_block(&Block::Paragraph(Vec::new())), Block::Paragraph(_)));
-        let item = Block::Item { ordered: true, number: 2, task: None, depth: 1, spans: Vec::new() };
+        assert!(matches!(next_block(&Block::Paragraph(Vec::new(), Vec::new())), Block::Paragraph(_, _)));
+        let item = Block::Item { ordered: true, number: 2, task: None, depth: 1, spans: Vec::new(), emoji: Vec::new() };
         match next_block(&item) {
             Block::Item { ordered, number, depth, .. } => assert_eq!((ordered, number, depth), (true, 3, 1)),
             other => panic!("{other:?}"),
         }
-        let task = Block::Item { ordered: false, number: 1, task: Some(true), depth: 0, spans: Vec::new() };
+        let task = Block::Item { ordered: false, number: 1, task: Some(true), depth: 0, spans: Vec::new(), emoji: Vec::new() };
         match next_block(&task) {
             Block::Item { task, .. } => assert_eq!(task, Some(false), "a new to-do starts unticked"),
             other => panic!("{other:?}"),
@@ -4771,7 +4800,7 @@ A note to self.
     #[test]
     fn numbers_follow_the_list() {
         let mut b = blocks("1. one\n2. two\n3. three\n");
-        b.insert(1, Block::Item { ordered: true, number: 99, task: None, depth: 0, spans: parse_inline("new") });
+        b.insert(1, Block::Item { ordered: true, number: 99, task: None, depth: 0, spans: parse_inline("new"), emoji: Vec::new() });
         renumber(&mut b);
         let numbers: Vec<usize> = b
             .iter()
@@ -4870,7 +4899,7 @@ A note to self.
             Some(Caret { block: 0, text: "Title".into(), focus: false, selection: (5, 5), place: None, cell: None, span: None, inline: None });
         apply(Action::Split(0), &mut head, &mut caret, &mut changed);
         assert!(matches!(head.first(), Some(Block::Heading { .. })));
-        assert!(matches!(head.get(1), Some(Block::Paragraph(_))), "{:?}", head.get(1));
+        assert!(matches!(head.get(1), Some(Block::Paragraph(_, _))), "{:?}", head.get(1));
 
         apply(Action::Indent(1, true), &mut b, &mut caret, &mut changed);
         assert!(matches!(b.get(1), Some(Block::Item { depth: 1, .. })));
@@ -4879,7 +4908,7 @@ A note to self.
 
         // Enter on the empty item ends the list.
         apply(Action::Split(1), &mut b, &mut caret, &mut changed);
-        assert!(matches!(b.get(1), Some(Block::Paragraph(_))), "{:?}", b.get(1));
+        assert!(matches!(b.get(1), Some(Block::Paragraph(_, _))), "{:?}", b.get(1));
 
         // Backspace at the start joins the text onto the block above.
         let mut two = blocks("first\n\nsecond\n");
@@ -4895,7 +4924,7 @@ A note to self.
         let mut caret =
             Some(Caret { block: 0, text: "Title".into(), focus: false, selection: (0, 0), place: None, cell: None, span: None, inline: None });
         apply(Action::JoinBack(0), &mut head, &mut caret, &mut changed);
-        assert!(matches!(head.first(), Some(Block::Paragraph(_))));
+        assert!(matches!(head.first(), Some(Block::Paragraph(_, _))));
         assert_eq!(block_text(head.first().expect("one")), "Title");
     }
 
@@ -4959,10 +4988,10 @@ A note to self.
         let mut b = blocks("```rust\nfirst\nsecond\nthird\n```\n");
         assert!(split_code_line(&mut b, 0, 1, "p"));
         assert_eq!(b.len(), 3, "{b:?}");
-        assert!(matches!(&b[0], Block::Code { lang, text } if lang == "rust" && text == "first"), "{:?}", b[0]);
+        assert!(matches!(&b[0], Block::Code { lang, text, .. } if lang == "rust" && text == "first"), "{:?}", b[0]);
         assert_eq!(block_kind(&b[1]), "p");
         assert_eq!(block_text(&b[1]), "second");
-        assert!(matches!(&b[2], Block::Code { lang, text } if lang == "rust" && text == "third"), "{:?}", b[2]);
+        assert!(matches!(&b[2], Block::Code { lang, text, .. } if lang == "rust" && text == "third"), "{:?}", b[2]);
     }
 
     #[test]
@@ -5001,7 +5030,7 @@ A note to self.
         assert!(split_code_selection(&mut b, 0, (6, 6), "p"));
         assert_eq!(b.len(), 3, "{b:?}");
         assert!(matches!(&b[0], Block::Code { text, .. } if text == "first"));
-        assert!(matches!(&b[1], Block::Paragraph(spans) if spans.is_empty()));
+        assert!(matches!(&b[1], Block::Paragraph(spans, _) if spans.is_empty()));
         assert!(matches!(&b[2], Block::Code { text, .. } if text == "third"));
     }
 
@@ -5011,28 +5040,28 @@ A note to self.
         assert!(split_code_selection(&mut b, 0, (0, 12), "p"));
         assert_eq!(b.len(), 4, "{b:?}");
         assert_eq!(block_text(&b[0]), "first");
-        assert!(matches!(&b[1], Block::Paragraph(spans) if spans.is_empty()));
+        assert!(matches!(&b[1], Block::Paragraph(spans, _) if spans.is_empty()));
         assert_eq!(block_text(&b[2]), "third");
         assert!(matches!(&b[3], Block::Code { text, .. } if text == "fourth"));
     }
 
     #[test]
     fn normal_at_the_caret_after_a_newline_converts_the_new_blank_line() {
-        let mut b = vec![Block::Code { lang: "123|rust".into(), text: "first\nsecond\n".into() }];
+        let mut b = vec![Block::Code { lang: "123|rust".into(), text: "first\nsecond\n".into(), emoji: Vec::new() }];
         assert!(split_code_selection(&mut b, 0, (13, 13), "p"));
         assert_eq!(b.len(), 2, "{b:?}");
         assert!(matches!(&b[0], Block::Code { text, .. } if text == "first\nsecond"));
-        assert!(matches!(&b[1], Block::Paragraph(spans) if spans.is_empty()));
+        assert!(matches!(&b[1], Block::Paragraph(spans, _) if spans.is_empty()));
     }
 
     #[test]
     fn normal_on_a_selection_reaching_the_end_includes_the_trailing_blank_line() {
-        let mut b = vec![Block::Code { lang: "123|rust".into(), text: "first\nsecond\n".into() }];
+        let mut b = vec![Block::Code { lang: "123|rust".into(), text: "first\nsecond\n".into(), emoji: Vec::new() }];
         assert!(split_code_selection(&mut b, 0, (6, 13), "p"));
         assert_eq!(b.len(), 3, "{b:?}");
         assert!(matches!(&b[0], Block::Code { text, .. } if text == "first"));
         assert_eq!(block_text(&b[1]), "second");
-        assert!(matches!(&b[2], Block::Paragraph(spans) if spans.is_empty()));
+        assert!(matches!(&b[2], Block::Paragraph(spans, _) if spans.is_empty()));
     }
 
     #[test]
@@ -5045,7 +5074,7 @@ A note to self.
         );
         assert_eq!(block_kind(&b[0]), "codeblock");
         assert!(set_kind(&mut b, 0, "codenumbers"));
-        assert!(matches!(&b[0], Block::Code { lang, text } if lang == "123|rust" && text == "*not italic*"), "{:?}", b[0]);
+        assert!(matches!(&b[0], Block::Code { lang, text, .. } if lang == "123|rust" && text == "*not italic*"), "{:?}", b[0]);
         assert_eq!(block_kind(&b[0]), "codenumbers");
         assert!(set_kind(&mut b, 0, "codeblock"));
         assert!(matches!(&b[0], Block::Code { lang, .. } if lang == "rust"));
@@ -5137,7 +5166,7 @@ code
             assert!(toggle_mark(&mut blocks, 0..2, mark));
             for block in &blocks {
                 let spans = match block {
-                    Block::Paragraph(spans) => spans,
+                    Block::Paragraph(spans, _) => spans,
                     _ => panic!("paragraph"),
                 };
                 assert!(spans.iter().all(|span| if mark == "underline" { span.underline } else { span.script == script }), "{mark}: {spans:?}");
@@ -5147,7 +5176,7 @@ code
         }
         let mut blocks = blocks("<sub>before</sub> plain\n");
         assert!(toggle_mark(&mut blocks, 0..1, "superscript"));
-        let Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph") };
+        let Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph") };
         assert!(spans.iter().all(|span| span.script == Some(Script::Superscript)));
     }
 
@@ -5290,7 +5319,7 @@ code
     #[test]
     fn pasting_blocks_takes_the_place_of_an_empty_line_and_goes_after_a_full_one() {
         let new = notecraft_formats::markdown::parse("# Title\n\nbody\n");
-        let mut blocks = vec![Block::Paragraph(Vec::new())];
+        let mut blocks = vec![Block::Paragraph(Vec::new(), Vec::new())];
         let mut caret = None;
         paste_at(&mut blocks, &mut caret, 0, new.clone());
         assert_eq!(blocks.len(), 2, "the empty line is replaced by the two blocks");
