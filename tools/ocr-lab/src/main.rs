@@ -50,7 +50,7 @@ fn main() -> eframe::Result {
         follow_system: saved.follow_system,
     });
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1400.0, 900.0]).with_title("NoteCraft OCR lab"),
+        viewport: egui::ViewportBuilder::default().with_inner_size([1400.0, 900.0]).with_title("NoteCraft OCR lab").with_decorations(false),
         ..Default::default()
     };
     eframe::run_native(

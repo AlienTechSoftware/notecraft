@@ -341,8 +341,23 @@ impl Lab {
         let band = self.theme.tokens().band;
         egui::Panel::top("header").frame(egui::Frame::new().fill(band)).show_separator_line(false).show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.heading("NoteCraft OCR lab");
+                // The header is the window's title bar (the window has no system frame): dragging
+                // the title moves the window, and the buttons at the right close, shrink and grow it.
+                let title = ui.heading("NoteCraft OCR lab");
+                if title.interact(egui::Sense::drag()).dragged() {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(" ✕ ").on_hover_text("Close").clicked() {
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    let maximized = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+                    if ui.button(if maximized { " ❐ " } else { " □ " }).on_hover_text("Maximize").clicked() {
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                    }
+                    if ui.button(" – ").on_hover_text("Minimize").clicked() {
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                    }
                     self.theme_button(ui);
                     self.health_light(ui);
                 });
