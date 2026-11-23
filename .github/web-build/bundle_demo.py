@@ -19,8 +19,8 @@ def bundle_demo(source: Path, destination: Path, version: str) -> None:
         if not (required_root / "_node.toml").is_file():
             raise ValueError(f"official demo format is missing metadata: {required_root}")
         language_folders = [path for path in required_root.iterdir() if path.is_dir() and re.fullmatch(r"(?:1\d|2\d)-[a-z]{2}", path.name)]
-        if len(language_folders) != 13:
-            raise ValueError(f"official {required_root.name} demo has {len(language_folders)} language folders, expected 13")
+        if len(language_folders) != 14:
+            raise ValueError(f"official {required_root.name} demo has {len(language_folders)} language folders, expected 14")
     for format_name, required_files in REQUIRED_FILES.items():
         format_root = source / format_name
         for relative in required_files:
