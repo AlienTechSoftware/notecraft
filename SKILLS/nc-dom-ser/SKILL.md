@@ -73,6 +73,30 @@ Page_assets/
 
 ---
 
+## Page Properties (Head Metadata)
+
+A page property is an attribute of the page object (`store::page::Page`), not of a block. It is
+written in the page's head, never in the body, and it is read in the same read as the body.
+
+| Property (object field) | HTML head (`<meta>`) | CMGFM front matter | Value | Absent means |
+|---|---|---|---|---|
+| `justify` | `notecraft:justify` | `justify` | list of block positions | nothing justified |
+| `columns` | `notecraft:columns` | `columns` | table widths | default widths |
+| `read_only` | `notecraft:read-only` | `read-only` | `true` | editable |
+
+Rules for every page property:
+
+1. **Default is absent.** A page that never set a property has no line for it. Setting the default
+   removes the line, so an unlocked page is the same file it was before it was locked.
+2. **Only one value is written.** Read-only writes `true`. Anything else reads as the default.
+3. **A body save keeps it.** Saving the words must not drop a property (`save_body` preserves the
+   head). Each property has a test that saves a body and reads the property back.
+4. **Both formats, both ways.** A property is written and read in HTML and in CMGFM, with a
+   round-trip test for each format, and `crates/formats/tests/format_parity.rs` lists its key so the
+   two editions cannot drift.
+5. **Engine command.** The window changes a property only through an engine command (for
+   `read_only`, `page.read_only`), with a test.
+
 ## Round-Trip Testing (Required)
 
 Every format must serialize losslessly:
@@ -121,7 +145,7 @@ fn md_round_trip() {
 
 ---
 
-**Last updated:** 2026-10-24 | **Blocking requirement:** Yes
+**Last updated:** 2026-11-23 | **Blocking requirement:** Yes
 
 ## Reference: WordCraft and NoteCraft document models
 

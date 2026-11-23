@@ -515,6 +515,11 @@
 @id	ui.notebook_recycle_bin_2	Not defteri geri dönüşüm kutusu
 @id	ui.notebook_recycle_bin_3	Not Defteri\nGeri Dönüşüm Kutusu
 @id	ui.notebooks_2	NOT DEFTERLERİ
+@id	ui.lock_read_only	Salt okunur olarak kilitle
+@id	ui.unlock_read_only	Kilidi aç
+@id	ui.page_locked_read_only	Sayfa salt okunur olarak kilitlendi
+@id	ui.page_unlocked	Sayfanın kilidi açıldı
+@id	ui.page_unlocked_reopen_to_edit	Sayfanın kilidi açıldı. Düzenlemek için sayfayı yeniden açın.
 @id	ui.notebooks_and_pages_in_their_own_columns	Not defterleri ve sayfalar kendi sütunlarında
 @id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	Not defterleri ve bölümler bir sütunda, sayfalar bir sonrakinde
 @id	ui.notebooks_folder_folder	Not defterleri klasörü: {folder}

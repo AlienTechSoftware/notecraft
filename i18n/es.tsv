@@ -438,6 +438,11 @@
 @id	ui.notebook_recycle_bin_2	Papelera de cuernos
 @id	ui.notebook_recycle_bin_3	Papelera \ndel cuaderno
 @id	ui.notebooks_2	CUADERNOS
+@id	ui.lock_read_only	Bloquear como solo lectura
+@id	ui.unlock_read_only	Desbloquear
+@id	ui.page_locked_read_only	Página bloqueada como solo lectura
+@id	ui.page_unlocked	Página desbloqueada
+@id	ui.page_unlocked_reopen_to_edit	Página desbloqueada. Vuelva a abrirla para editarla.
 @id	ui.notebooks_and_pages_in_their_own_columns	Cuadernos y páginas en sus propias columnas
 @id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	Cuadernos y secciones en una columna, páginas en la siguiente
 @id	ui.notebooks_folder_folder	Carpeta de cuadernos: {folder}

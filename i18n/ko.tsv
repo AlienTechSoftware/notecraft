@@ -438,6 +438,11 @@
 @id	ui.notebook_recycle_bin_2	노트북 휴지통
 @id	ui.notebook_recycle_bin_3	노트북 \n 휴지통
 @id	ui.notebooks_2	노트북
+@id	ui.lock_read_only	읽기 전용으로 잠그기
+@id	ui.unlock_read_only	잠금 해제
+@id	ui.page_locked_read_only	페이지를 읽기 전용으로 잠갔습니다
+@id	ui.page_unlocked	페이지 잠금을 해제했습니다
+@id	ui.page_unlocked_reopen_to_edit	잠금을 해제했습니다. 편집하려면 페이지를 다시 여세요.
 @id	ui.notebooks_and_pages_in_their_own_columns	노트북과 페이지를 각각의 열에 표시
 @id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	노트북과 섹션을 하나의 열에, 페이지를 다음 열에 표시
 @id	ui.notebooks_folder_folder	노트북 폴더: {folder}

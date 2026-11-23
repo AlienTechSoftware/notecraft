@@ -44,6 +44,20 @@ pub fn set_meta(text: &str, name: &str, value: &str) -> String {
     }
 }
 
+/// Removes `<meta name="NAME" content="...">` from the head, with its line. Unchanged if absent.
+pub fn remove_meta(text: &str, name: &str) -> String {
+    let tag = format!("<meta name=\"{name}\" content=\"");
+    let Some(start) = text.find(&tag) else { return text.to_string() };
+    let Some(end) = text.get(start..).and_then(|t| t.find('>')).map(|e| start + e + 1) else { return text.to_string() };
+    let line_start = text
+        .get(..start)
+        .and_then(|t| t.rfind('\n').map(|i| i + 1))
+        .filter(|i| text.get(*i..start).is_some_and(|s| s.trim().is_empty()))
+        .unwrap_or(start);
+    let line_end = if text.as_bytes().get(end) == Some(&b'\n') { end + 1 } else { end };
+    format!("{}{}", text.get(..line_start).unwrap_or(""), text.get(line_end..).unwrap_or(""))
+}
+
 /// The content of `<meta name="NAME" content="...">`, if present.
 pub fn meta(text: &str, name: &str) -> Option<String> {
     let marker = format!("name=\"{name}\" content=\"");
@@ -902,5 +916,21 @@ mod tests {
         for junk in ["<", "<<>>", "<p", "</p></p></div>", "<li>x", "&", "<script>never closed"] {
             let _ = to_markdown(junk);
         }
+    }
+}
+
+#[cfg(test)]
+mod remove_meta_tests {
+    use super::*;
+
+    /// Locking adds one meta line to the head, and unlocking takes exactly that line back out, so
+    /// the file reads as it did before the lock.
+    #[test]
+    fn removing_a_meta_line_leaves_the_head_as_it_was() {
+        let before = "<!doctype html>\n<html><head><meta charset=\"utf-8\">\n<title>T</title>\n</head>\n<body><p>x</p></body></html>\n";
+        let locked = set_meta(before, "notecraft:read-only", "true");
+        assert_eq!(meta(&locked, "notecraft:read-only").as_deref(), Some("true"));
+        assert_eq!(remove_meta(&locked, "notecraft:read-only"), before);
+        assert_eq!(remove_meta(before, "notecraft:read-only"), before, "absent is unchanged");
     }
 }

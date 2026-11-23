@@ -143,6 +143,8 @@ fn name(icon: Icon) -> &'static str {
         Icon::ListBullet => "list-bullet",
         Icon::ListNumber => "list-number",
         Icon::Todo => "todo",
+        Icon::Lock => "lock",
+        Icon::Unlock => "unlock",
         Icon::Table => "table",
         Icon::Picture => "picture",
         Icon::Attach => "attach",
@@ -411,6 +413,13 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
             seg((10.0, 18.0), (20.0, 18.0)),
         ],
         Icon::Todo => vec![closed(&[(4.0, 5.0), (20.0, 5.0), (20.0, 19.0), (4.0, 19.0)]), open(&[(7.5, 12.0), (10.5, 15.5), (16.5, 8.5)])],
+        Icon::Lock => vec![
+            closed(&[(5.0, 11.0), (19.0, 11.0), (19.0, 20.5), (5.0, 20.5)]),
+            open(&[(8.0, 11.0), (8.0, 7.5), (12.0, 4.0), (16.0, 7.5), (16.0, 11.0)]),
+        ],
+        Icon::Unlock => {
+            vec![closed(&[(5.0, 11.0), (19.0, 11.0), (19.0, 20.5), (5.0, 20.5)]), open(&[(8.0, 11.0), (8.0, 7.5), (12.0, 4.0), (16.0, 7.5)])]
+        }
         Icon::Table => vec![
             closed(&[(3.5, 5.0), (20.5, 5.0), (20.5, 19.0), (3.5, 19.0)]),
             seg((3.5, 9.5), (20.5, 9.5)),

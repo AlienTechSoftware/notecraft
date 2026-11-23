@@ -28,7 +28,7 @@ fn id() -> egui::Id {
 
 /// Draws the page's menu when the page has been right-clicked, and puts what was picked
 /// into `acts`.
-pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens) {
+pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens, locked: bool) {
     // A right click on a container belongs to the container's own menu. Close this one if it
     // was open, and leave the click alone.
     if crate::containers::took_right_click(ui.ctx()) {
@@ -51,16 +51,40 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens) {
             egui::Frame::popup(ui.style()).inner_margin(egui::Margin::same(4)).show(ui, |ui| {
                 ui.set_width(floating::MENU_W);
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-                picked = items(ui, acts, true, t);
+                // A locked page offers only what can still be done to it: Copy, and Unlock below
+                // (issue #441). Paste, Cut and the insertions are edits, so they are not offered.
+                picked = if locked {
+                    let copied = floating::menu_row(ui, Some(Glyph::Mark(Mark::Copy)), "Copy", t).clicked();
+                    if copied {
+                        acts.push(Act::Clipboard("copy"));
+                    }
+                    copied
+                } else {
+                    items(ui, acts, true, t)
+                };
+                // The page's lock, as the navigator's menus offer it (issue #441).
+                let (label, icon) =
+                    if locked { (crate::tl_id!("ui.unlock_read_only"), Icon::Unlock) } else { (crate::tl_id!("ui.lock_read_only"), Icon::Lock) };
+                floating::menu_separator(ui, t);
+                if floating::menu_row(ui, Some(Glyph::Icon(icon)), label, t).clicked() {
+                    acts.push(Act::SetReadOnly(!locked));
+                    picked = true;
+                }
             });
         })
         .response;
     // The mini toolbar floats over the menu, as it does in OneNote.
     let fonts = ui.ctx().data(|d| d.get_temp::<floating::FontBoxes>(egui::Id::new(floating::FONT_BOXES_KEY))).unwrap_or_default();
-    let bar = floating::show_bar(ui.ctx(), id().with("bar"), area.rect, &floating::text_bar_with_fonts(fonts), t, acts);
-    picked |= bar.picked;
+    // A locked page has no formatting bar: its buttons are edits (issue #441).
+    let (bar_picked, bar_rect) = if locked {
+        (false, egui::Rect::NOTHING)
+    } else {
+        let bar = floating::show_bar(ui.ctx(), id().with("bar"), area.rect, &floating::text_bar_with_fonts(fonts), t, acts);
+        (bar.picked, bar.rect)
+    };
+    picked |= bar_picked;
 
-    let away = |p: egui::Pos2| !area.rect.contains(p) && !bar.rect.contains(p);
+    let away = |p: egui::Pos2| !area.rect.contains(p) && !bar_rect.contains(p);
     let out = ui.input(|i| i.pointer.any_click()) && !opened_now && away(pointer.unwrap_or_default());
     if picked || out || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         ui.data_mut(|d| d.remove::<egui::Pos2>(id()));

@@ -438,6 +438,11 @@
 @id	ui.notebook_recycle_bin_2	ノートブックのゴミ箱
 @id	ui.notebook_recycle_bin_3	ノートブック\nゴミ箱
 @id	ui.notebooks_2	ノートブック
+@id	ui.lock_read_only	読み取り専用にロック
+@id	ui.unlock_read_only	ロックを解除
+@id	ui.page_locked_read_only	ページを読み取り専用にロックしました
+@id	ui.page_unlocked	ページのロックを解除しました
+@id	ui.page_unlocked_reopen_to_edit	ロックを解除しました。編集するにはページを開き直してください。
 @id	ui.notebooks_and_pages_in_their_own_columns	ノートブックとページを別々の列に表示
 @id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	ノートブックとセクションを1つの列に、ページを次の列に表示
 @id	ui.notebooks_folder_folder	ノートブックフォルダ: {folder}

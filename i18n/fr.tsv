@@ -438,6 +438,11 @@
 @id	ui.notebook_recycle_bin_2	Corbeille du cahier
 @id	ui.notebook_recycle_bin_3	\n Corbeille des cahiers
 @id	ui.notebooks_2	BLOCS-NOTES
+@id	ui.lock_read_only	Verrouiller en lecture seule
+@id	ui.unlock_read_only	Déverrouiller
+@id	ui.page_locked_read_only	Page verrouillée en lecture seule
+@id	ui.page_unlocked	Page déverrouillée
+@id	ui.page_unlocked_reopen_to_edit	Page déverrouillée. Rouvrez-la pour la modifier.
 @id	ui.notebooks_and_pages_in_their_own_columns	Cahiers et pages dans leurs propres colonnes
 @id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	Cahiers et sections dans une colonne, pages dans la suivante
 @id	ui.notebooks_folder_folder	Dossier du cahier : {folder}

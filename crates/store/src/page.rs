@@ -27,6 +27,8 @@ pub struct Page {
     /// Which way the whole page reads, if the writer said. `None` means each line decides
     /// for itself, from its own first letter.
     pub dir: Option<Dir>,
+    /// Whether the page is locked read only, as its own head says (issue #441).
+    pub read_only: bool,
 }
 
 /// A saved copy of a page file, newest first. The page's own format and assets remain
@@ -52,7 +54,8 @@ pub fn load_page(dir: &Path) -> Result<Page> {
     let body = body_of(format, &text);
     let has_title = raw_title(format, &text).is_some();
     let title = read_node(dir).map(|i| i.title).unwrap_or_default();
-    Ok(Page { format, title, has_title, body, dir: read_direction(&text, format) })
+    let read_only = read_only_in(format, &text);
+    Ok(Page { format, title, has_title, body, dir: read_direction(&text, format), read_only })
 }
 
 /// Saved versions of the page's main file, newest first.
@@ -514,6 +517,49 @@ pub fn set_table_columns(dir: &Path, widths: &tablecols::Widths) -> Result<()> {
     write_atomic(&file, &out)
 }
 
+const READ_ONLY_KEY: &str = "read-only";
+const READ_ONLY_META: &str = "notecraft:read-only";
+
+/// Whether the page is locked read only (a page property, not a document property). The lock is
+/// written in the page's own head, so every program that reads the file sees it.
+pub fn read_only(dir: &Path) -> Result<bool> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    Ok(read_only_in(format, &text))
+}
+
+/// The lock as a page file's text says it: only the value `true` locks, so a line that is
+/// missing or says anything else leaves the page editable.
+pub(crate) fn read_only_in(format: PageFormat, text: &str) -> bool {
+    let raw = match format {
+        PageFormat::Html => html::meta(text, READ_ONLY_META),
+        PageFormat::Cmgfm => frontmatter::value(&frontmatter::split_front(text).0, READ_ONLY_KEY),
+    };
+    raw.is_some_and(|v| v.trim() == "true")
+}
+
+/// Locks the page read only, or unlocks it. Unlocking removes the line, so an unlocked page
+/// is the same file it was before it was locked.
+pub fn set_read_only(dir: &Path, locked: bool) -> Result<()> {
+    let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    let out = match format {
+        PageFormat::Html => {
+            if locked {
+                html::set_meta(&text, READ_ONLY_META, "true")
+            } else {
+                html::remove_meta(&text, READ_ONLY_META)
+            }
+        }
+        PageFormat::Cmgfm => {
+            let (front, rest) = frontmatter::split_front(&text);
+            let front = if locked { frontmatter::set_value(&front, READ_ONLY_KEY, "true") } else { frontmatter::remove_value(&front, READ_ONLY_KEY) };
+            format!("{front}{rest}")
+        }
+    };
+    write_atomic(&file, &out)
+}
+
 const JUSTIFY_KEY: &str = "justify";
 const JUSTIFY_META: &str = "notecraft:justify";
 
@@ -588,6 +634,10 @@ fn save_body_inner(dir: &Path, body: &str, author: Option<&str>) -> Result<Strin
     }
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    // A locked page keeps its words until it is unlocked (issue #441).
+    if read_only_in(format, &text) {
+        return Err(StoreError::invalid("this page is locked read only"));
+    }
     let now = iso_now();
     let out = match format {
         PageFormat::Html => html::set_meta(&html::replace_inner(&text, body), "notecraft:updated", &now),
@@ -1018,5 +1068,80 @@ mod tests {
         let body = "caf\u{e9} \u{1F600}\r\nline two\n\n    indented\n--- not front matter\n";
         save_body(&page, body).expect("save");
         assert_eq!(load_page(&page).expect("load").body, body);
+    }
+
+    /// A page can be locked read only. The flag is a line in the page's own head, so it travels
+    /// with the page and survives a save of its words, in both formats (issue #441 request).
+    #[test]
+    fn a_read_only_page_keeps_its_lock_through_a_save_in_both_formats() {
+        for format in [PageFormat::Cmgfm, PageFormat::Html] {
+            let (_t, dir) = setup("read-only", format);
+            assert!(!read_only(&dir).expect("read"), "{format:?}: a new page is editable");
+            let body = match format {
+                PageFormat::Html => "<p>One</p>",
+                PageFormat::Cmgfm => {
+                    "One
+"
+                }
+            };
+            save_body(&dir, body).expect("save while editable");
+
+            set_read_only(&dir, true).expect("lock");
+            assert!(read_only(&dir).expect("read"), "{format:?}: locked");
+            assert!(load_page(&dir).expect("load").read_only, "{format:?}: the loaded page carries the lock");
+
+            assert!(save_body(&dir, "Locked edit").is_err(), "{format:?}: a locked page refuses its own body save");
+            assert!(read_only(&dir).expect("read"), "{format:?}: the refused save keeps the lock");
+            assert_eq!(load_page(&dir).expect("load").body, body, "{format:?}: the words are the same");
+
+            set_read_only(&dir, false).expect("unlock");
+            assert!(!read_only(&dir).expect("read"), "{format:?}: unlocked");
+            assert!(!load_page(&dir).expect("load").read_only, "{format:?}: the loaded page is editable again");
+            let text = std::fs::read_to_string(dir.join(match format {
+                PageFormat::Html => "index.html",
+                PageFormat::Cmgfm => "index.md",
+            }))
+            .expect("file");
+            assert!(!text.contains("read-only") && !text.contains("read_only"), "{format:?}: unlocking leaves no line behind");
+        }
+    }
+
+    /// A locked page is read only in every way the store can write it: its title and its
+    /// words stay as they were, in both formats, until it is unlocked (issue #441).
+    #[test]
+    fn a_locked_page_refuses_a_new_title_and_a_new_body() {
+        for format in [PageFormat::Cmgfm, PageFormat::Html] {
+            let (_t, dir) = setup("locked-refuses", format);
+            save_body(
+                &dir,
+                match format {
+                    PageFormat::Html => "<p>Kept</p>",
+                    PageFormat::Cmgfm => {
+                        "Kept
+"
+                    }
+                },
+            )
+            .expect("save");
+            set_read_only(&dir, true).expect("lock");
+            let before = std::fs::read_to_string(dir.join(match format {
+                PageFormat::Html => "index.html",
+                PageFormat::Cmgfm => "index.md",
+            }))
+            .expect("file");
+
+            assert!(ops::set_title(&dir, "Renamed").is_err(), "{format:?}: a locked page keeps its title");
+            assert!(save_body(&dir, "Changed").is_err(), "{format:?}: a locked page keeps its words");
+            let after = std::fs::read_to_string(dir.join(match format {
+                PageFormat::Html => "index.html",
+                PageFormat::Cmgfm => "index.md",
+            }))
+            .expect("file");
+            assert_eq!(after, before, "{format:?}: nothing was written");
+
+            set_read_only(&dir, false).expect("unlock");
+            ops::set_title(&dir, "Renamed").expect("an unlocked page takes its title again");
+            save_body(&dir, "Changed").expect("and its words");
+        }
     }
 }

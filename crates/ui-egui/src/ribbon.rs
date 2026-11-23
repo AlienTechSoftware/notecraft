@@ -153,6 +153,8 @@ fn paint_mic(painter: &egui::Painter, center: egui::Pos2, colour: egui::Color32)
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Act {
     NewWindow,
+    /// Lock the page open in the editor read only, or unlock it (issue #441).
+    SetReadOnly(bool),
     QuickNote,
     /// Start dictating at the caret, or finish.
     #[cfg(feature = "voice")]

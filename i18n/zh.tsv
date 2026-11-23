@@ -439,6 +439,11 @@
 @id	ui.notebook_recycle_bin_2	笔记本回收站
 @id	ui.notebook_recycle_bin_3	Notebook\nRecycle Bin
 @id	ui.notebooks_2	笔记本
+@id	ui.lock_read_only	锁定为只读
+@id	ui.unlock_read_only	解锁
+@id	ui.page_locked_read_only	页面已锁定为只读
+@id	ui.page_unlocked	页面已解锁
+@id	ui.page_unlocked_reopen_to_edit	已解锁。请重新打开页面进行编辑。
 @id	ui.notebooks_and_pages_in_their_own_columns	笔记本和页面各自独立成列
 @id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	笔记本和章节在同一列，页面在下一列
 @id	ui.notebooks_folder_folder	笔记本文件夹：{folder}

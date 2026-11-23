@@ -438,6 +438,11 @@
 @id	ui.notebook_recycle_bin_2	Корзина блокнота
 @id	ui.notebook_recycle_bin_3	Корзина блокнота\n
 @id	ui.notebooks_2	БЛОКНОТЫ
+@id	ui.lock_read_only	Заблокировать только для чтения
+@id	ui.unlock_read_only	Разблокировать
+@id	ui.page_locked_read_only	Страница заблокирована только для чтения
+@id	ui.page_unlocked	Страница разблокирована
+@id	ui.page_unlocked_reopen_to_edit	Страница разблокирована. Откройте её снова, чтобы редактировать.
 @id	ui.notebooks_and_pages_in_their_own_columns	Блокноты и страницы в отдельных колонках
 @id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	Блокноты и разделы в одной колонке, страницы — в следующей
 @id	ui.notebooks_folder_folder	Папка блокнотов: {folder}

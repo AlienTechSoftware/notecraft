@@ -517,6 +517,11 @@
 @id	ui.notebook_recycle_bin_2	Notebook recycle bin
 @id	ui.notebook_recycle_bin_3	Notebook\nRecycle Bin
 @id	ui.notebooks_2	NOTEBOOKS
+@id	ui.lock_read_only	Lock read only
+@id	ui.unlock_read_only	Unlock
+@id	ui.page_locked_read_only	Page locked read only
+@id	ui.page_unlocked	Page unlocked
+@id	ui.page_unlocked_reopen_to_edit	Page unlocked. Reopen it to edit.
 @id	ui.notebooks_and_pages_in_their_own_columns	Notebooks and pages in their own columns
 @id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	Notebooks and sections in one column, pages in the next
 @id	ui.notebooks_folder_folder	Notebooks folder: {folder}

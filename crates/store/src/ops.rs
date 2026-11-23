@@ -655,6 +655,10 @@ pub fn set_title(dir: &Path, title: &str) -> Result<()> {
         // how a page reads as untitled, and its heading is left as it is (issue #132).
         let title = if title.trim().is_empty() { String::new() } else { clean_title(title)? };
         let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+        // A locked page keeps its title until it is unlocked (issue #441).
+        if crate::page::read_only_in(format, &text) {
+            return Err(StoreError::invalid("this page is locked read only"));
+        }
         let was = tree::raw_title(format, &text).unwrap_or_default();
         let renamed = write_page_title(format, &text, &title);
         let out = if title.is_empty() { renamed } else { retitle_heading(&renamed, &was, &title, format) };

@@ -680,6 +680,9 @@ struct Editor {
     /// False when the page holds markup the block editor would drop: it is then read here
     /// and changed in its source.
     writable: bool,
+    /// Whether the page is locked read only (issue #441), as its own head says. A lock stops
+    /// edits; `writable` also stays false for markup the editor cannot keep.
+    locked: bool,
     /// Which way the whole page reads, if the writer said so. A line with no letters of its
     /// own follows it.
     page_dir: Option<notecraft_model::Dir>,
@@ -869,8 +872,10 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
         // was cut off at the page's edge on a phone. The title is still one line of text:
         // Enter finishes it rather than breaking it, and a line break pasted in becomes a space.
         let finish = ui.memory(|m| m.has_focus(title_id)) && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+        // A locked page's title cannot be typed in: the box keeps its text (issue #441).
         let out = egui::TextEdit::multiline(&mut ed.title_buf)
             .id(title_id)
+            .interactive(ed.writable)
             .frame(egui::Frame::NONE)
             .font(egui::FontId::proportional(26.0 * zoom))
             .horizontal_align(align)
@@ -907,7 +912,7 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextInput, true, &name));
         egui::AtomLayoutResponse::empty(resp.on_hover_cursor(egui::CursorIcon::Text))
     };
-    if r.lost_focus() {
+    if r.lost_focus() && ed.writable {
         let typed = ed.title_buf.trim();
         if typed.is_empty() {
             // Clearing the title of a page that had one makes it untitled, as the blank title
@@ -1164,6 +1169,8 @@ enum ImportMessage {
 
 enum Act {
     Toggle(PathBuf),
+    /// Lock a page read only, or unlock it (the page's own head says which).
+    SetReadOnly(PathBuf, bool),
     Select(PathBuf),
     Add(PathBuf, NodeKind),
     /// A page in this section at this place in the order, from the line between two pages.
@@ -2584,6 +2591,34 @@ impl NoteCraftApp {
         &self.status
     }
 
+    /// Locks a page read only, or unlocks it, through the engine's command. The page open in
+    /// the editor follows at once: a lock stops its edits, and an unlock reopens it for them.
+    fn set_read_only(&mut self, path: &Path, locked: bool) {
+        let arg = if locked { "true" } else { "false" };
+        if self.run("page.read_only", &params(&[("path", &path_str(path)), ("locked", arg)])).is_none() {
+            return;
+        }
+        let shown = self.editor.as_ref().is_some_and(|ed| ed.dir == path);
+        if shown {
+            let clean = self.editor.as_ref().is_some_and(|ed| ed.dirty_since.is_none() && ed.saving.is_none());
+            if locked {
+                if let Some(ed) = self.editor.as_mut() {
+                    ed.writable = false;
+                    ed.locked = true;
+                }
+            } else if clean {
+                if let Some(ed) = self.editor.as_mut() {
+                    ed.locked = false;
+                }
+                self.open_page(path);
+            } else {
+                self.say(crate::tl_id!("ui.page_unlocked_reopen_to_edit"));
+                return;
+            }
+        }
+        self.say(if locked { crate::tl_id!("ui.page_locked_read_only") } else { crate::tl_id!("ui.page_unlocked") });
+    }
+
     fn say(&mut self, msg: impl Into<String>) {
         self.status = msg.into();
         self.status_is_error = false;
@@ -3250,7 +3285,8 @@ impl NoteCraftApp {
                 .unwrap_or((None, None));
             let attachments = notecraft_store::assets::list(dir);
             let page_body = page.body.clone();
-            let writable = pageedit::round_trips(page.format, &page.body);
+            // A page locked read only (issue #441) opens read only, whatever its markup allows.
+            let writable = pageedit::round_trips(page.format, &page.body) && !page.read_only;
             // A page with no title of its own starts with a blank title area, not with
             // "Untitled page" sitting there as if it had been typed. `title` keeps the
             // display fallback, so losing focus on an empty box is correctly seen as "no
@@ -3275,6 +3311,7 @@ impl NoteCraftApp {
                 pending_format: None,
                 restore_format_selection: None,
                 writable,
+                locked: page.read_only,
                 page_dir: page.dir,
                 boxes,
                 arranged,
@@ -3904,6 +3941,7 @@ impl NoteCraftApp {
                 }
             }
             Act::NewPage(parent) => self.create_page_in(&parent),
+            Act::SetReadOnly(path, locked) => self.set_read_only(&path, locked),
             Act::Rename(path, title) => self.dialog = Some(Dialog::Rename { path, title }),
             Act::MoveOrCopy(path) => self.open_move_or_copy(&path),
             Act::MakeSubpage(path) => self.reparent_page(&path, "node.demote"),
@@ -4248,6 +4286,16 @@ impl NoteCraftApp {
                 }
             }
             floating::menu_separator(ui, t);
+            if node.info.kind == NodeKind::Page {
+                // Read from the page's head only while this menu is open, so no row pays for it.
+                let locked = notecraft_store::page::read_only(&node.path).unwrap_or(false);
+                let (label, icon) =
+                    if locked { (crate::tl_id!("ui.unlock_read_only"), Icon::Unlock) } else { (crate::tl_id!("ui.lock_read_only"), Icon::Lock) };
+                if floating::menu_row(ui, Some(floating::Glyph::Icon(icon)), label, t).clicked() {
+                    acts.push(Act::SetReadOnly(node.path.clone(), !locked));
+                    ui.close();
+                }
+            }
             if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Page)), crate::tl_id!("ui.rename_ellipsis"), t).clicked() {
                 acts.push(Act::Rename(node.path.clone(), node.info.title.clone()));
                 ui.close();
@@ -5843,6 +5891,11 @@ impl NoteCraftApp {
             ribbon::Act::Tag(tag) => self.apply_tag(tag),
             ribbon::Act::Clipboard(which) => self.clipboard(which),
             ribbon::Act::Paste => self.paste_here(),
+            ribbon::Act::SetReadOnly(locked) => {
+                if let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) {
+                    self.set_read_only(&dir, locked);
+                }
+            }
             ribbon::Act::Indent(deeper) => self.indent_block(deeper),
             ribbon::Act::ClearFormatting => self.clear_formatting(),
             ribbon::Act::Direction(d) => self.apply_direction(d),
@@ -9169,6 +9222,21 @@ impl NoteCraftApp {
         }
     }
 
+    /// The lock entry of an empty-space menu: it acts on the page open in the editor, so the
+    /// navigator's blank space and the pages' blank space both reach the same page (issue #441).
+    /// The page's head is read only while the menu is open.
+    fn lock_menu_row(&self, ui: &mut Ui, acts: &mut Vec<Act>) {
+        let Some(ed) = self.editor.as_ref() else { return };
+        let locked = notecraft_store::page::read_only(&ed.dir).unwrap_or(false);
+        let (label, icon) =
+            if locked { (crate::tl_id!("ui.unlock_read_only"), Icon::Unlock) } else { (crate::tl_id!("ui.lock_read_only"), Icon::Lock) };
+        ui.separator();
+        if floating::menu_row(ui, Some(floating::Glyph::Icon(icon)), label, &self.tokens).clicked() {
+            acts.push(Act::SetReadOnly(ed.dir.clone(), !locked));
+            ui.close();
+        }
+    }
+
     /// The empty space under the rows of a column, with a menu of its own: right-clicking
     /// where there is no row is how a new notebook or a new page is started in OneNote.
     fn empty_space_menu(&self, ui: &mut Ui, section: Option<&Path>, acts: &mut Vec<Act>) {
@@ -9188,6 +9256,7 @@ impl NoteCraftApp {
                         acts.push(Act::AddKind(path.to_path_buf(), NodeKind::Section, NodeKind::Page));
                         ui.close();
                     }
+                    self.lock_menu_row(ui, acts);
                 }
                 // Under the notebooks: a notebook, and the ways into the folder itself.
                 None => {
@@ -9204,6 +9273,7 @@ impl NoteCraftApp {
                         reveal = true;
                         ui.close();
                     }
+                    self.lock_menu_row(ui, acts);
                 }
             }
         });
@@ -10047,7 +10117,7 @@ impl NoteCraftApp {
                                 // carry a context menu at all. So the secondary click is
                                 // watched for directly and the menu drawn where it fell.
                                 crate::imagemenu::show(ui, body, &mut page_acts, &tokens);
-                                crate::pagemenu::show(ui, body, &mut page_acts, &tokens);
+                                crate::pagemenu::show(ui, body, &mut page_acts, &tokens, ed.locked);
                             }
                             if moved.changed.blocks {
                                 ed.rebuild_body();
@@ -10078,14 +10148,19 @@ impl NoteCraftApp {
                             if let Some(href) = preview::show_zoomed(ui, &ed.blocks, &ed.dir, &tokens, page_dir, &ed.justified, zoom_scale) {
                                 *follow = Some(href);
                             }
+                            // A locked page is read here, and its menu still offers the lock (issue #441).
+                            crate::pagemenu::show(ui, ui.min_rect(), &mut page_acts, &tokens, ed.locked);
                             ui.add_space(14.0);
                             ui.label(
                                 egui::RichText::new(crate::tl_id!("ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92"))
                                     .small()
                                     .color(tokens.muted),
                             );
-                        } else if let Some(href) = preview::show_zoomed(ui, &ed.blocks, &ed.dir, &tokens, page_dir, &ed.justified, zoom_scale) {
-                            *follow = Some(href);
+                        } else {
+                            if let Some(href) = preview::show_zoomed(ui, &ed.blocks, &ed.dir, &tokens, page_dir, &ed.justified, zoom_scale) {
+                                *follow = Some(href);
+                            }
+                            crate::pagemenu::show(ui, ui.min_rect(), &mut page_acts, &tokens, ed.locked);
                         }
                     });
                 });

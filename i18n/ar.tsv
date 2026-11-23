@@ -438,6 +438,11 @@
 @id	ui.notebook_recycle_bin_2	سلة محذوفات الدفتر
 @id	ui.notebook_recycle_bin_3	سلة محذوفات\nالدفتر
 @id	ui.notebooks_2	الدفترة
+@id	ui.lock_read_only	قفل للقراءة فقط
+@id	ui.unlock_read_only	إلغاء القفل
+@id	ui.page_locked_read_only	تم قفل الصفحة للقراءة فقط
+@id	ui.page_unlocked	تم إلغاء قفل الصفحة
+@id	ui.page_unlocked_reopen_to_edit	تم إلغاء القفل. أعد فتح الصفحة للتحرير.
 @id	ui.notebooks_and_pages_in_their_own_columns	الدفترة والصفحات في أعمتها الخاصة
 @id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	الدفترة والأقسام في عمود واحد، الصفحات في العمود التالي
 @id	ui.notebooks_folder_folder	مجلد الدفترة: {folder}

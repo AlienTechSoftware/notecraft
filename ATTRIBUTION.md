@@ -95,6 +95,7 @@ source material.
 | `assets/demo/import-folder.svg` | Synthetic OneNote folder import walkthrough | NoteCraft project | MIT OR Apache-2.0 |
 | `assets/demo/import-file.svg` | Synthetic OneNote file import walkthrough | NoteCraft project | MIT OR Apache-2.0 |
 | `assets/demo/import-open.png` | NoteCraft open screen showing the import actions | Rendered by `ui_shot` from NoteCraft with the Welcome notebook demo, in the default theme | MIT OR Apache-2.0 |
+| `assets/demo/page-menu.png` | The navigator's menu for a page, with Lock read only, shown in the demo notebook's menus page | Rendered by the UI test harness from NoteCraft, with a sample notebook, in the default light theme | MIT OR Apache-2.0 |
 | `assets/demo/imported-notebook.png` | NoteCraft imported notebook view using synthetic fixture data | Rendered by `ui_shot` from NoteCraft; no personal notebook data | MIT OR Apache-2.0 |
 | `assets/demo/import-progress.png` | NoteCraft import progress dialog using synthetic fixture data | Rendered by `ui_shot` from NoteCraft with the Welcome notebook demo, in the default theme; no personal notebook data | MIT OR Apache-2.0 |
 
