@@ -3,7 +3,7 @@
 //! to also write review pictures of key screens to that folder (see `docs/testing.md`).
 
 use egui_kittest::Harness;
-use egui_kittest::kittest::{NodeT, Queryable};
+use egui_kittest::kittest::Queryable;
 use notecraft_engine::sample::{Sample, create_sample};
 use notecraft_engine::{Output, Params, Session};
 use notecraft_store::Settings;
@@ -14585,7 +14585,7 @@ fn the_page_body_menu_locks_and_unlocks_the_page() {
 /// greyed out and do nothing; Copy and Unlock stay enabled. The ribbon has buttons with the same
 /// words, so only the entries drawn where the menu opened are checked.
 #[test]
-fn a_locked_page_body_menu_opens_with_only_copy_and_unlock_enabled() {
+fn a_locked_page_body_menu_offers_only_unlock() {
     let (_t, app, s) = sample_app("ui-locked-body-menu");
     notecraft_store::page::set_read_only(&s.md_page, true).expect("lock the page on disk");
     let mut h = harness(app, LIGHT);
@@ -14593,20 +14593,18 @@ fn a_locked_page_body_menu_opens_with_only_copy_and_unlock_enabled() {
     settle(&mut h);
     ask(&mut h, "ui.click", json!({"x": 820.0, "y": 470.0, "button": "right"})).expect("right-click the body");
     settle(&mut h);
-    let in_menu = |h: &mut Harness<'_, NoteCraftApp>, label: &str| -> Vec<bool> {
-        h.query_all_by_label(label).filter(|n| n.rect().min.y >= 470.0 - 4.0).map(|n| n.accesskit_node().is_disabled()).collect()
-    };
-    assert_eq!(in_menu(&mut h, "Unlock"), vec![false], "the menu opens and offers Unlock");
-    assert_eq!(in_menu(&mut h, "Copy"), vec![false], "Copy stays enabled");
-    for edit in ["Paste", "Cut", "Table", "Link", "Equation", "Date and time", "Picture from a file", "Attach a file"] {
-        assert_eq!(in_menu(&mut h, edit), vec![true], "{edit} is shown greyed out on a locked page");
+    // The ribbon has buttons with the same words, so only entries drawn where the menu opened count.
+    let in_menu = |h: &mut Harness<'_, NoteCraftApp>, label: &str| h.query_all_by_label(label).filter(|n| n.rect().min.y >= 470.0 - 4.0).count();
+    assert_eq!(in_menu(&mut h, "Unlock"), 1, "the menu opens and offers Unlock");
+    for other in ["Copy", "Paste", "Cut", "Table", "Link", "Equation", "Date and time", "Picture from a file", "Attach a file"] {
+        assert_eq!(in_menu(&mut h, other), 0, "{other} is not in a locked page's menu");
     }
 }
 
 /// Issue #441: a locked page's navigator menu still opens. Rename, Move, Delete and the other
 /// changes to the page are greyed out; Unlock, Copy link and Page versions stay enabled.
 #[test]
-fn a_locked_page_navigator_menu_greys_out_its_edits() {
+fn a_locked_page_navigator_menu_offers_only_unlock() {
     let (_t, app, s) = sample_app("ui-locked-nav-menu");
     notecraft_store::page::set_read_only(&s.md_page, true).expect("lock the page on disk");
     let mut h = harness(app, LIGHT);
@@ -14621,14 +14619,10 @@ fn a_locked_page_navigator_menu_greys_out_its_edits() {
         .expect("page row in the navigator");
     h.get_all_by_label(&title).find(|n| n.rect() == row).expect("row").click_secondary();
     settle(&mut h);
-    assert_eq!(h.query_all_by_label("Unlock").count(), 1, "the row menu opens on a locked page");
-    for edit in ["Rename...", "Move or Copy...", "Delete..."] {
-        let disabled: Vec<bool> = h.query_all_by_label(edit).map(|n| n.accesskit_node().is_disabled()).collect();
-        assert!(!disabled.is_empty() && disabled.iter().all(|d| *d), "{edit} is greyed out on a locked page: {disabled:?}");
-    }
-    for kept in ["Unlock", "Copy link to page", "Page versions"] {
-        let disabled: Vec<bool> = h.query_all_by_label(kept).map(|n| n.accesskit_node().is_disabled()).collect();
-        assert!(disabled.iter().any(|d| !*d), "{kept} stays enabled: {disabled:?}");
+    // Only the row menu is open, so each label is counted across the whole window.
+    assert_eq!(h.query_all_by_label("Unlock").count(), 1, "the row menu offers Unlock");
+    for other in ["New page", "Add a sub-page", "Rename...", "Move or Copy...", "Copy link to page", "Open folder", "Page versions", "Delete..."] {
+        assert_eq!(h.query_all_by_label(other).count(), 0, "{other} is not in a locked page's row menu");
     }
 }
 

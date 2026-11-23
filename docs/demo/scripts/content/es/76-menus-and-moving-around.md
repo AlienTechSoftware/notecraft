@@ -11,7 +11,7 @@ El clic derecho muestra lo que puede hacer a continuación, y las opciones depen
 | Dónde hace clic derecho | Lo que ofrece el menú |
 |---|---|
 | Una página en el navegador | Nueva página, Añadir subpágina, Bloquear como solo lectura o Desbloquear, Cambiar nombre, Mover o copiar, Copiar enlace a la página, Abrir carpeta, Versiones de la página, Eliminar |
-| El texto de la página | Pegar, Cortar y Copiar, las inserciones (tabla, enlace, ecuación, fecha y hora, imagen, archivo), y Bloquear como solo lectura o Desbloquear. Una página bloqueada solo ofrece Copiar y Desbloquear |
+| El texto de la página | Pegar, Cortar y Copiar, las inserciones (tabla, enlace, ecuación, fecha y hora, imagen, archivo), y Bloquear como solo lectura o Desbloquear. Una página bloqueada solo ofrece Desbloquear |
 | Espacio vacío en la lista de páginas | Nueva página, y Bloquear como solo lectura o Desbloquear para la página abierta |
 | Espacio vacío en el navegador | Nuevo cuaderno, Abrir una carpeta, Mostrar la carpeta de cuadernos, y Bloquear como solo lectura o Desbloquear para la página abierta |
 

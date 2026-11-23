@@ -14,7 +14,7 @@ Le clic droit propose ce que vous pouvez faire ensuite, et les choix dépendent 
 | Où faire un clic droit | Ce que propose le menu |
 |---|---|
 | Une page dans la navigation | Nouvelle page, Ajouter une sous-page, Verrouiller en lecture seule ou Déverrouiller, Renommer, Déplacer ou copier, Copier le lien vers la page, Ouvrir le dossier, Versions de la page, Supprimer |
-| Le texte de la page | Coller, Couper et Copier, les insertions (tableau, lien, équation, date et heure, image, fichier), et Verrouiller en lecture seule ou Déverrouiller. Une page verrouillée ne propose que Copier et Déverrouiller |
+| Le texte de la page | Coller, Couper et Copier, les insertions (tableau, lien, équation, date et heure, image, fichier), et Verrouiller en lecture seule ou Déverrouiller. Une page verrouillée ne propose que Déverrouiller |
 | Espace vide dans la liste des pages | Nouvelle page, et Verrouiller en lecture seule ou Déverrouiller pour la page ouverte |
 | Espace vide dans la navigation | Nouveau carnet, Ouvrir un dossier, Afficher le dossier des carnets, et Verrouiller en lecture seule ou Déverrouiller pour la page ouverte |
 

@@ -51,9 +51,10 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens, lock
             egui::Frame::popup(ui.style()).inner_margin(egui::Margin::same(4)).show(ui, |ui| {
                 ui.set_width(floating::MENU_W);
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-                // A locked page keeps its menu: the edit entries are greyed out, and Copy and
-                // Unlock stay enabled (issue #441).
-                picked = items_with(ui, acts, true, t, !locked);
+                // A locked page's menu offers only Unlock for now (issue #441).
+                if !locked {
+                    picked = items_with(ui, acts, true, t, true);
+                }
                 // The page's lock, as the navigator's menus offer it (issue #441).
                 let (label, icon) =
                     if locked { (crate::tl_id!("ui.unlock_read_only"), Icon::Unlock) } else { (crate::tl_id!("ui.lock_read_only"), Icon::Lock) };

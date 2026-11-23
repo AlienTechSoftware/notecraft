@@ -11,7 +11,7 @@ Right-click offers what you can do next, and the choices depend on where you cli
 | Where you right-click | What the menu offers |
 |---|---|
 | A page in the navigator | New page, Add a sub-page, Lock read only or Unlock, Rename, Move or Copy, Copy link to page, Open folder, Page versions, Delete |
-| The page's text | Paste, Cut and Copy, the insertions (table, link, equation, date and time, picture, file), and Lock read only or Unlock. A locked page offers only Copy and Unlock |
+| The page's text | Paste, Cut and Copy, the insertions (table, link, equation, date and time, picture, file), and Lock read only or Unlock. A locked page offers only Unlock |
 | Empty space in the page list | New page, and Lock read only or Unlock for the open page |
 | Empty space in the navigator | New notebook, Open a folder, Show the notebooks folder, and Lock read only or Unlock for the open page |
 

@@ -14,7 +14,7 @@ Der Rechtsklick zeigt, was Sie als Nächstes tun können. Die Auswahl hängt dav
 | Wo Sie rechtsklicken | Was das Menü anbietet |
 |---|---|
 | Eine Seite im Navigator | Neue Seite, Unterseite hinzufügen, Nur-Lesen sperren oder Entsperren, Umbenennen, Verschieben oder Kopieren, Link zur Seite kopieren, Ordner öffnen, Seitenversionen, Löschen |
-| Der Text der Seite | Einfügen, Ausschneiden und Kopieren, die Einfügungen (Tabelle, Link, Gleichung, Datum und Uhrzeit, Bild, Datei) sowie Nur-Lesen sperren oder Entsperren. Eine gesperrte Seite bietet nur Kopieren und Entsperren |
+| Der Text der Seite | Einfügen, Ausschneiden und Kopieren, die Einfügungen (Tabelle, Link, Gleichung, Datum und Uhrzeit, Bild, Datei) sowie Nur-Lesen sperren oder Entsperren. Eine gesperrte Seite bietet nur Entsperren |
 | Leerer Raum in der Seitenliste | Neue Seite sowie Nur-Lesen sperren oder Entsperren für die geöffnete Seite |
 | Leerer Raum im Navigator | Neues Notizbuch, Ordner öffnen, Notizbuch-Ordner anzeigen sowie Nur-Lesen sperren oder Entsperren für die geöffnete Seite |
 
