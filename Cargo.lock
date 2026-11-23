@@ -3436,6 +3436,9 @@ version = "0.0.18"
 [[package]]
 name = "notecraft-search"
 version = "0.0.18"
+dependencies = [
+ "unicode-normalization",
+]
 
 [[package]]
 name = "notecraft-setup"
