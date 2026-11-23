@@ -50,6 +50,8 @@ const LAYERS: &[(&str, u8)] = &[
     ("notecraft-ink", 1),
     ("notecraft-input-language", 1),
     ("notecraft-onenote", 1),
+    ("notecraft-ocr", 1),
+    ("notecraft-search", 1),
     ("notecraft-formats", 1),
     ("notecraft-text", 1),
     ("notecraft-store", 2),
@@ -394,7 +396,10 @@ fn demo_copy(root: &Path, args: &[String]) -> Result<(), String> {
         Err(e) => return Err(format!("inspect {}: {e}", notebooks.display())),
     }
 
-    let target = notebooks.join("welcome-notebook");
+    // Each edition has its own local folder, so both can be kept: HTML in welcome-notebook (the default),
+    // CMGFM in welcome-notebook-cmgfm.
+    let folder_name = if format == "cmgfm" { "welcome-notebook-cmgfm" } else { "welcome-notebook" };
+    let target = notebooks.join(folder_name);
     match fs::symlink_metadata(&target) {
         Ok(meta) if meta.file_type().is_symlink() => return Err(format!("refusing to replace a symlink: {}", target.display())),
         Ok(meta) if !meta.is_dir() => return Err(format!("not a folder: {}", target.display())),
@@ -418,7 +423,7 @@ fn demo_copy(root: &Path, args: &[String]) -> Result<(), String> {
         return Err(format!("temporary copy folder already exists: {}", staging.display()));
     }
     fs::create_dir(&staging).map_err(|e| format!("create {}: {e}", staging.display()))?;
-    let staged_notebook = staging.join("welcome-notebook");
+    let staged_notebook = staging.join(folder_name);
     if let Err(e) = copy_directory(&source, &staged_notebook) {
         return Err(match fs::remove_dir_all(&staging) {
             Ok(()) => e,
@@ -557,6 +562,24 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
     }
 }
 
+/// The OCR checks a developer can run in one command: the OCR lab's unit tests, and, when the
+/// models are set (NOTECRAFT_OCR_MODELS, the folder with the two ONNX files), a headless read of the
+/// smoke fixtures. Without models the second part is skipped and says so.
+fn ocr_check(root: &Path, options: &[String]) -> Result<(), String> {
+    if !options.is_empty() {
+        return Err("usage: cargo xtask ocr-check".into());
+    }
+    cargo(root, &["test", "-p", "notecraft-ocr-lab"])?;
+    let Some(models) = std::env::var_os("NOTECRAFT_OCR_MODELS") else {
+        println!("ocr-check: models not set (NOTECRAFT_OCR_MODELS); skipped the headless read of the smoke fixtures");
+        return Ok(());
+    };
+    let folder = root.join("crates").join("ocr").join("tests").join("fixtures").join("mvp-smoke");
+    let folder = folder.to_string_lossy().into_owned();
+    let models = models.to_string_lossy().into_owned();
+    cargo(root, &["run", "-q", "-p", "notecraft-ocr-lab", "--", "--check", "--folder", &folder, "--models", &models])
+}
+
 fn run_task(root: &Path, task: &str, options: &[String]) -> Result<(), String> {
     match task {
         "fmt" => cargo(root, &["fmt", "--all", "--", "--check"]),
@@ -577,6 +600,7 @@ fn run_task(root: &Path, task: &str, options: &[String]) -> Result<(), String> {
             }
             text(root, fix)
         }
+        "ocr-check" => ocr_check(root, options),
         "screenshots" => screenshots(root),
         "coverage" => coverage::run(root, options),
         "check-branch" => quality::check_branch(root, options),
@@ -587,19 +611,32 @@ fn run_task(root: &Path, task: &str, options: &[String]) -> Result<(), String> {
         // The Welcome notebook (docs/demo/DemoNotebook) from its content, and the check that
         // the checked-in copy is current.
         "demo" => {
-            let selection = match options {
-                [] => "both".to_string(),
-                [format] if ["html", "cmgfm", "both"].contains(&format.as_str()) => format.clone(),
-                _ => return Err("usage: cargo xtask demo [html|cmgfm|both] (default: both)".into()),
-            };
-            cargo(root, &["run", "--quiet", "-p", "notecraft-demo", "--", "build", &selection])?;
-            // The scratch copy is always replaced from docs/demo: the source is the one truth.
-            if selection == "both" {
-                demo_copy(root, &["html".into(), "--replace".into()])?;
-                demo_copy(root, &["cmgfm".into(), "--replace".into()])
-            } else {
-                demo_copy(root, &[selection, "--replace".into()])
+            // cargo xtask demo [html|cmgfm|both] [--copy html|cmgfm]: builds the editions chosen, then
+            // copies one edition (HTML by default) into the local dev copy my-notebooks/welcome-notebook.
+            let mut selection = "both".to_string();
+            let mut copy = vec!["html".to_string()];
+            let usage = "usage: cargo xtask demo [html|cmgfm|both] [--copy html|cmgfm|both] (defaults: both, --copy html)";
+            let mut rest = options.iter();
+            if let Some(first) = options.first().filter(|f| !f.starts_with("--")) {
+                if !["html", "cmgfm", "both"].contains(&first.as_str()) {
+                    return Err(usage.into());
+                }
+                selection = first.clone();
+                rest.next();
             }
+            while let Some(arg) = rest.next() {
+                match (arg.as_str(), rest.next()) {
+                    ("--copy", Some(format)) if format == "both" => copy = vec!["html".to_string(), "cmgfm".to_string()],
+                    ("--copy", Some(format)) if ["html", "cmgfm"].contains(&format.as_str()) => copy = vec![format.clone()],
+                    _ => return Err(usage.into()),
+                }
+            }
+            cargo(root, &["run", "--quiet", "-p", "notecraft-demo", "--", "build", &selection])?;
+            // The scratch copy is replaced from docs/demo: the source is the one truth.
+            for format in copy {
+                demo_copy(root, &[format, "--replace".into()])?;
+            }
+            Ok(())
         }
         "demo-check" => cargo(root, &["run", "--quiet", "-p", "notecraft-demo", "--", "check"]),
         "demo-copy" => Err("demo-copy accepts options; use `cargo xtask demo-copy [html|cmgfm] [--replace]`".into()),

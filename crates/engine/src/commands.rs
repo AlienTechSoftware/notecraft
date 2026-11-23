@@ -7,7 +7,6 @@ use notecraft_store::check::Report;
 use notecraft_store::page::Page;
 use notecraft_store::page::Version;
 use notecraft_store::recycle::Recycled;
-use notecraft_store::search::Hit;
 use notecraft_store::tags::Tagged;
 use notecraft_store::{StoreError, assets, check, ops, page, page_templates, recycle, search, tags, tree};
 use std::collections::BTreeMap;
@@ -24,7 +23,7 @@ pub enum Output {
     Page(Page),
     Versions(Vec<Version>),
     Recycled(Vec<Recycled>),
-    Hits(Vec<Hit>),
+    Hits(Vec<search::Ranked>),
     Tagged(Vec<Tagged>),
     Report(Report),
     Count(usize),
@@ -366,6 +365,68 @@ fn default_format_set(s: &mut Session, p: &Params) -> Result<Output, EngineError
     Ok(Output::None)
 }
 
+/// The picture file names a page holds (png, jpg and jpeg), in name order.
+fn picture_names(page: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = notecraft_store::assets::list(page)
+        .into_iter()
+        .map(|(name, _)| name)
+        .filter(|name| {
+            let lower = name.to_ascii_lowercase();
+            [".png", ".jpg", ".jpeg"].iter().any(|ext| lower.ends_with(ext))
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+/// Reads the text and boxes of each picture in a page, when the picture changed (criteria A4 and
+/// A5). The models come from the setting `ocr_models`: a folder with text-detection.onnx and
+/// text-recognition.onnx. Nothing is downloaded.
+fn ocr_refresh(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let page = s.resolve(req(p, "path")?)?;
+    let folder = s.settings.get("ocr_models").filter(|v| !v.trim().is_empty()).ok_or_else(|| {
+        EngineError::BadParam("OCR is not set up: set ocr_models to the folder with text-detection.onnx and text-recognition.onnx".into())
+    })?;
+    let reader = cached_ocr_reader(std::path::Path::new(&folder))?;
+    let (mut read, mut unchanged) = (0usize, 0usize);
+    for name in picture_names(&page) {
+        match notecraft_ocr::refresh_companion(reader.as_ref(), &page.join("assets").join(&name)) {
+            Ok(notecraft_ocr::Refresh::Rewritten) => read += 1,
+            Ok(notecraft_ocr::Refresh::Unchanged) => unchanged += 1,
+            Err(e) => return Err(EngineError::BadParam(format!("{name}: {e:?}"))),
+        }
+    }
+    Ok(Output::Text(format!("{read} read, {unchanged} unchanged")))
+}
+
+/// The OCR reader for a models folder, loaded the first time and kept while the setting names the same
+/// folder. Loading the two models takes long enough to notice, and every page open used to pay it.
+fn cached_ocr_reader(models: &std::path::Path) -> Result<std::sync::Arc<notecraft_ocr::OcrsReader>, EngineError> {
+    use std::sync::{Arc, Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<Option<(std::path::PathBuf, Arc<notecraft_ocr::OcrsReader>)>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(None));
+    let mut slot = cache.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((folder, reader)) = slot.as_ref()
+        && folder == models
+    {
+        return Ok(Arc::clone(reader));
+    }
+    let reader = Arc::new(
+        notecraft_ocr::OcrsReader::from_model_files(&models.join("text-detection.onnx"), &models.join("text-recognition.onnx"))
+            .map_err(|e| EngineError::BadParam(format!("the OCR models did not load: {e:?}")))?,
+    );
+    *slot = Some((models.to_path_buf(), Arc::clone(&reader)));
+    Ok(reader)
+}
+
+/// Writes the alt text of a picture in a page. An empty text removes it.
+fn alt_set(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let page = s.resolve(req(p, "path")?)?;
+    let text = p.get("text").map(String::as_str).unwrap_or("");
+    notecraft_store::assets::set_alt_text(&page, req(p, "picture")?, text)?;
+    Ok(Output::None)
+}
+
 fn search_query(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let limit = match p.get("limit") {
         Some(l) => l.trim().parse::<usize>().map_err(|_| EngineError::BadParam("limit must be a number".into()))?.min(500),
@@ -373,7 +434,7 @@ fn search_query(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     };
     // Every open notebook, the ones opened from another folder too: the window calls this
     // Search all pages (issue #127).
-    Ok(Output::Hits(search::search_in(s.root(), s.opened_elsewhere(), req(p, "q")?, limit)))
+    Ok(Output::Hits(search::ranked(s.root(), s.opened_elsewhere(), req(p, "q")?, limit)))
 }
 
 /// The tagged notes in a scope: what Find Tags lists in its Tags Summary (issue #166).
@@ -863,6 +924,23 @@ blocks (optional): the justified paragraphs' positions among the page's blocks, 
         run: default_format_set,
     },
     CommandSpec {
+        id: "ocr.refresh",
+        label: "Read the text and boxes of the pictures in a page",
+        params: "path (required): the page, relative to the notebooks folder
+Needs the setting ocr_models: a folder with text-detection.onnx and text-recognition.onnx. A picture is read again only when its bytes changed",
+        changes_tree: false,
+        run: ocr_refresh,
+    },
+    CommandSpec {
+        id: "alt.set",
+        label: "Write the alt text of a picture in a page",
+        params: "path (required): the page, relative to the notebooks folder
+picture (required): the picture's file name in the page's assets
+text (optional): the alt text; empty removes it",
+        changes_tree: false,
+        run: alt_set,
+    },
+    CommandSpec {
         id: "search.query",
         label: "Search all pages",
         params: "q (required): text to find\nlimit (optional): at most this many hits (default 40, at most 500)",
@@ -1288,6 +1366,86 @@ mod tests {
         // What is not a notebook is refused, and so is nothing at all.
         assert!(s.run("notebook.open", &p(&[("path", &t.path().join("away").to_string_lossy())])).is_err());
         assert!(s.run("notebook.open", &p(&[("path", "no/such/folder")])).is_err());
+    }
+
+    /// A notebook with one page, and that page's folder as a string.
+    fn one_page(t: &TempDir) -> (Session, String) {
+        let settings = Settings::at(t.path().join("settings").join("s.toml"));
+        let mut s = Session::new(&t.path().join("notebooks"), settings).expect("session");
+        let made = path_of(s.run("notebook.create", &p(&[("name", "Here")])).expect("notebook"));
+        let page = made.join("new-section-1").join("untitled-page");
+        (s, page.to_string_lossy().into_owned())
+    }
+
+    /// Attaches a picture and shows it in the page, so there is an `<img>` for its alt text.
+    fn show_picture(s: &mut Session, page: &str, name: &str) {
+        s.attach_bytes(page, name, b"not really a picture").expect("picture");
+        let body = format!("<p>Notes</p><img src=\"assets/{name}\">");
+        notecraft_store::page::save_body(std::path::Path::new(page), &body).expect("the page shows the picture");
+    }
+
+    #[test]
+    fn alt_text_is_written_into_the_page_markup_and_cleared_when_empty() {
+        let t = TempDir::new("engine-alt-text");
+        let (mut s, page) = one_page(&t);
+        show_picture(&mut s, &page, "receipt.png");
+        s.run("alt.set", &p(&[("path", &page), ("picture", "receipt.png"), ("text", "  a bakery receipt  ")])).expect("alt text");
+        let body = || notecraft_store::page::load_page(std::path::Path::new(&page)).expect("the page").body;
+        assert!(body().contains(r#"<img src="assets/receipt.png" alt="a bakery receipt">"#), "trimmed, in the img tag: {}", body());
+        assert!(!std::path::Path::new(&page).join("assets").join("receipt.png.alt.txt").exists(), "no alt file beside the picture");
+        s.run("alt.set", &p(&[("path", &page), ("picture", "receipt.png"), ("text", "")])).expect("cleared");
+        assert!(body().contains(r#"alt="""#), "an empty text leaves an empty alt: {}", body());
+    }
+
+    #[test]
+    fn alt_text_must_name_a_picture_the_page_shows() {
+        let t = TempDir::new("engine-alt-missing");
+        let (mut s, page) = one_page(&t);
+        show_picture(&mut s, &page, "receipt.png");
+        assert!(s.run("alt.set", &p(&[("path", &page), ("picture", "missing.png"), ("text", "x")])).is_err(), "no such picture");
+        assert!(s.run("alt.set", &p(&[("path", &page), ("picture", "../escape.png"), ("text", "x")])).is_err(), "a name, not a path");
+        s.attach_bytes(&page, "unshown.png", b"not really a picture").expect("picture");
+        assert!(s.run("alt.set", &p(&[("path", &page), ("picture", "unshown.png"), ("text", "x")])).is_err(), "a picture the page does not show");
+    }
+
+    #[test]
+    fn alt_text_is_found_by_search_once_it_is_written() {
+        let t = TempDir::new("engine-alt-search");
+        let (mut s, page) = one_page(&t);
+        show_picture(&mut s, &page, "receipt.png");
+        s.run("alt.set", &p(&[("path", &page), ("picture", "receipt.png"), ("text", "a bakery receipt")])).expect("alt text");
+        let hits = match s.run("search.query", &p(&[("q", "bakery")])).expect("search") {
+            Output::Hits(h) => h,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(hits.len(), 1, "the page with the picture is found by its alt text");
+        assert_eq!(hits[0].source, notecraft_store::search::Source::Alt);
+    }
+
+    #[test]
+    fn ocr_says_how_to_set_up_the_models_when_none_are_set() {
+        let t = TempDir::new("engine-ocr-setup");
+        let (mut s, page) = one_page(&t);
+        let err = s.run("ocr.refresh", &p(&[("path", &page)])).expect_err("no models set");
+        assert!(format!("{err:?}").contains("ocr_models"), "the message names the setting: {err:?}");
+    }
+
+    /// The real OCR job on a picture in the repository's demo art: the first run reads it, the
+    /// second run keeps the result. Needs NOTECRAFT_OCR_MODELS (the folder with the two ONNX files).
+    #[test]
+    #[ignore = "needs NOTECRAFT_OCR_MODELS; run with --ignored"]
+    fn ocr_reads_a_picture_once_and_keeps_it_when_it_is_unchanged() {
+        let models = std::env::var("NOTECRAFT_OCR_MODELS").expect("set NOTECRAFT_OCR_MODELS");
+        let t = TempDir::new("engine-ocr-run");
+        let (mut s, page) = one_page(&t);
+        s.settings.set("ocr_models", &models).expect("the models setting");
+        let picture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("assets").join("demo").join("ocr-receipt.png");
+        s.attach_bytes(&page, "receipt.png", &std::fs::read(&picture).expect("the demo picture")).expect("picture");
+        let first = text_of(s.run("ocr.refresh", &p(&[("path", &page)])).expect("first read"));
+        assert_eq!(first, "1 read, 0 unchanged");
+        assert!(std::path::Path::new(&page).join("assets").join("receipt.png.lines").is_file(), "the boxes file is written");
+        let second = text_of(s.run("ocr.refresh", &p(&[("path", &page)])).expect("second read"));
+        assert_eq!(second, "0 read, 1 unchanged");
     }
 
     #[test]

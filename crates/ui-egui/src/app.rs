@@ -24,7 +24,7 @@ use crate::theme::{Accent, Mode, ModePref, Theme, Tokens};
 use egui::{Align2, Color32, Context, Id, Key, Modifiers, Sense, Ui, vec2};
 use notecraft_engine::{EngineError, Output, Params, Session};
 use notecraft_model::{NodeColor, NodeKind, PageFormat};
-use notecraft_store::search::Hit;
+use notecraft_store::search::Ranked;
 use notecraft_store::tree::Node;
 use serde_json::{Value, json};
 use std::collections::{HashSet, VecDeque};
@@ -1306,7 +1306,7 @@ pub struct NoteCraftApp {
     session_only_storage: bool,
     search: String,
     searched: String,
-    hits: Vec<Hit>,
+    hits: Vec<Ranked>,
     /// Where each search result is, as its notebook and section titles (issue #370).
     hit_trails: Vec<String>,
     /// The result chosen with the arrow keys, if any (issue #370).
@@ -3084,7 +3084,19 @@ impl NoteCraftApp {
             self.remember_recent_notebook(&notebook);
         }
         self.nav.visit(dir);
+        self.read_pictures(dir);
         self.open_page_inner(dir);
+    }
+
+    /// Reads the text and boxes of the pictures of a page, once OCR is set up (the setting
+    /// ocr_models). A picture that did not change is not read again; with no setting nothing runs.
+    fn read_pictures(&mut self, dir: &Path) {
+        if self.session.settings.get("ocr_models").is_some_and(|v| !v.trim().is_empty()) {
+            let page = dir.to_string_lossy().into_owned();
+            if let Err(e) = self.session.run("ocr.refresh", &params(&[("path", &page)])) {
+                log::warn!("picture text was not read for {page}: {e:?}");
+            }
+        }
     }
 
     /// Opens the page asked for whose files were still on their way, once they are in.
@@ -4519,7 +4531,7 @@ impl NoteCraftApp {
             && right.input(|input| input.key_pressed(Key::Enter))
             && let Some(path) = self.hits.get(self.search_pick.unwrap_or(0)).or(self.hits.first()).map(|hit| hit.path.clone())
         {
-            self.open_search_result(&path);
+            self.open_search_result(ui.ctx(), &path);
         }
         if resp.has_focus() && !self.hits.is_empty() {
             let (down, up) = right.input_mut(|i| (i.consume_key(Modifiers::NONE, Key::ArrowDown), i.consume_key(Modifiers::NONE, Key::ArrowUp)));
@@ -6159,6 +6171,7 @@ impl NoteCraftApp {
         match notecraft_store::assets::attach_bytes(dir, &name, &picture.png) {
             Ok(link) => {
                 log::debug!("clipboard image paste attached: name={name:?} link={link:?}");
+                self.read_pictures(dir);
                 if let Some(ed) = self.editor.as_mut() {
                     let at = ed.caret.as_ref().map_or(ed.blocks.len(), |c| c.block + 1).min(ed.blocks.len());
                     ed.blocks.insert(
@@ -8699,7 +8712,18 @@ impl NoteCraftApp {
         self.search_pick = None;
     }
 
-    fn open_search_result(&mut self, path: &Path) {
+    fn open_search_result(&mut self, ctx: &Context, path: &Path) {
+        // A hit on a picture's text outlines the matching lines when the page shows the picture.
+        let highlight = self.hits.iter().find(|hit| hit.path == path).and_then(|hit| {
+            let picture = hit.picture.as_ref()?;
+            if hit.boxes.is_empty() {
+                return None;
+            }
+            let name = picture.file_name()?.to_string_lossy().into_owned();
+            let pixels = image::image_dimensions(picture).ok()?;
+            Some(crate::preview::PictureHighlight { page_dir: path.to_path_buf(), src: format!("assets/{name}"), pixels, boxes: hit.boxes.clone() })
+        });
+        crate::preview::set_picture_highlight(ctx, highlight);
         self.expand_to(path);
         self.open_page_soon(path);
     }
@@ -8807,7 +8831,7 @@ impl NoteCraftApp {
             self.dismiss_search();
         }
         if let Some(p) = chosen {
-            self.open_search_result(&p);
+            self.open_search_result(ctx, &p);
         }
     }
 
@@ -13175,7 +13199,7 @@ fn first_page_under(tree: &[Node], at: &Path) -> Option<PathBuf> {
 
 /// The 14 swatches and the switch that follows the system, shared by the sun or moon button
 /// and the ribbon's Theme button.
-fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, follow: &mut bool) {
+pub fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, follow: &mut bool) {
     egui::Grid::new("theme-grid").spacing([6.0, 6.0]).show(ui, |ui| {
         for mode in [Mode::Light, Mode::Dark] {
             ui.label(crate::tl!(mode.label()));

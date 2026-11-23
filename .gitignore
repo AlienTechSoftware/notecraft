@@ -51,3 +51,9 @@ MEMORY.md
 
 # The vendored winit is its own workspace for its tests (vendor/winit/NOTECRAFT.md).
 /vendor/winit/Cargo.lock
+
+# OCR lab (tools/ocr-lab): its logs and reports are per-machine.
+/tools/ocr-lab/local/
+# OCR fixtures: runs and labels made by the OCR lab are per-machine, not test data.
+crates/ocr/tests/fixtures/**/*.ocr-run.json
+crates/ocr/tests/fixtures/**/*.label.json

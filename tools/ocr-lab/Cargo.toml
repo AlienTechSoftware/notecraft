@@ -1,0 +1,24 @@
+[package]
+name = "notecraft-ocr-lab"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "NoteCraft OCR lab: a manual test and label tool that runs the product's OCR on test pictures. Testing only, never shipped"
+
+[lints]
+workspace = true
+
+[dependencies]
+notecraft-ocr = { workspace = true }
+eframe = { workspace = true }
+egui = { workspace = true }
+image = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = { workspace = true }
+rfd = { workspace = true }
+notecraft-ui-egui = { workspace = true }
+sha2 = "0.10"
+ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier"] }
+sysinfo = "0.40"

@@ -142,3 +142,20 @@ data.
 
 | \crates/ui-egui/assets/fluent/*.svg\ | Selected Fluent UI System Icons used by the ribbon | Microsoft Fluent UI System Icons, MIT licensed; source: https://github.com/microsoft/fluentui-system-icons | Microsoft Corporation and contributors |
 | \crates/ui-egui/assets/fluent-color/*.svg\ | Selected Fluent UI System Icons colour versions (calendar, clock, link, image, table, video, mic, document) used by the ribbon | Microsoft Fluent UI System Icons, MIT licensed; source: https://github.com/microsoft/fluentui-system-icons (`assets/<Name>/SVG/ic_fluent_<name>_24_color.svg`) | Microsoft Corporation and contributors |
+
+## OCR demo pictures
+
+| File | What | Origin | Licence status |
+|---|---|---|---|
+| `assets/demo/ocr-receipt.png` | A printed receipt for the OCR demo | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
+| `assets/demo/ocr-scan.png` | A scanned page of meeting minutes for the OCR demo | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
+| `assets/demo/ocr-receipt-ar.png` | An Arabic receipt for the OCR demo | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
+| `assets/demo/ocr-flow.svg` | Three boxes joined by arrows, for the alt text page | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
+| `assets/demo/ocr-chart.png` | A bar chart for the OCR demo | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
+| `assets/demo/ocr-sketch.png` | A whiteboard sketch for the OCR demo | Drawn for the NoteCraft OCR proof of concept by the project | Project's own material, MIT, as the repository |
+| `assets/demo/ocr-dax-query.png` | A query editor screenshot (fictional data) | DashCraft project, `docs/images/dashcraft-dax.png`, unchanged | MIT or Apache-2.0, as the DashCraft repository; credit given on the page |
+| `assets/demo/ocr-data-grid.png` | A data table screenshot (fictional data) | DashCraft project, `docs/images/dashcraft-table.png`, unchanged | MIT or Apache-2.0, as the DashCraft repository; credit given on the page |
+| `assets/demo/ocr-receipt-ar-photo.jpg` | A photo of a printed Arabic restaurant receipt with a handwritten total | Humans in the Loop, Arabic Documents OCR Dataset, class Receipt (`Receipt/img/001.jpg`), unchanged | CC0 1.0 (public domain dedication by Humans in the Loop); the page has no credit line, which CC0 does not require. Source: https://www.kaggle.com/datasets/humansintheloop/arabic-documents-ocr-dataset |
+| `assets/demo/ocr-letter-ar.jpg` | A handwritten Arabic page with a date at the top | Humans in the Loop, Arabic Documents OCR Dataset, class Handwritten text (`Handwritten text/img/001.jpg`), unchanged | CC0 1.0 (public domain dedication by Humans in the Loop); the page has no credit line, which CC0 does not require. Source: https://www.kaggle.com/datasets/humansintheloop/arabic-documents-ocr-dataset |
+| `assets/demo/ocr-letter-en.png` | A ruled sheet with a short handwritten English letter and crossed-out words | if-this-finds-you, `docs/writing/the-writing-page.png`, unchanged | MIT (the project's own writing interaction); letter forms may derive from volunteer tracings under CC BY 4.0 (see its LICENSES.md); credit given on the page |
+| `assets/demo/ocr-crossing-out-en.png` | The word "terribly" crossed out in four stages | if-this-finds-you, `docs/writing/crossing-out-again.png`, unchanged | MIT (the project's own writing interaction); letter forms may derive from volunteer tracings under CC BY 4.0 (see its LICENSES.md); credit given on the page |

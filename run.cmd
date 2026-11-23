@@ -28,6 +28,10 @@ REM   run.cmd --open Notes/Work            open a page given with --open
 REM   run.cmd --expand-all                 start with all tree items expanded
 REM   run.cmd --control 9100               start the control channel on port 9100
 REM   run.cmd --version                    print the app version and exit
+REM   run.cmd --fresh-demo                 rebuild the demo notebook and replace my-notebooks\welcome-notebook
+REM   run.cmd --ocr-lab                   start the OCR test and label tool (tools\ocr-lab) instead of NoteCraft
+REM   run.cmd --ocr-lab --folder <dir> --models <dir>
+REM                                        the same, on your own test folder and OCR model folder
 REM
 REM ARGUMENTS
 REM   Anything you type after run.cmd is passed on to notecraft unchanged (the
@@ -104,4 +108,26 @@ REM or run.cmd --new-version, to show a newer version in Options without downloa
 REM Test an update from a local folder (SHA256SUMS.txt + a signed installer), no publishing:
 REM run.cmd --set-version 0.0.8 --update-from <folder>
 @REM  cargo run --release -p notecraft -- --notebooks .\my-notebooks %*
+REM --fresh-demo: rebuild the demo notebook (HTML) and replace the test copy in
+REM my-notebooks\welcome-notebook. The old copy is removed only after the new one is staged.
+set FRESH_DEMO=0
+for %%A in (%*) do if /i "%%A"=="--fresh-demo" set FRESH_DEMO=1
+if "%FRESH_DEMO%"=="1" (
+    echo Rebuilding the demo notebook and replacing my-notebooks\welcome-notebook...
+    cargo xtask demo html
+    if errorlevel 1 exit /b %errorlevel%
+    cargo xtask demo-copy html --replace
+    if errorlevel 1 exit /b %errorlevel%
+)
+REM --ocr-lab: start the OCR test and label tool instead of NoteCraft. Its own arguments
+REM (--folder, --models) are passed through; the notebooks folder is not used.
+set OCR_TOOL=0
+for %%A in (%*) do if /i "%%A"=="--ocr-lab" set OCR_TOOL=1
+REM A goto, not a parenthesised block: %errorlevel% inside a block is read before the command runs.
+if "%OCR_TOOL%"=="1" goto ocr_lab
 cargo run -p notecraft -- --notebooks .\my-notebooks %*
+exit /b %errorlevel%
+
+:ocr_lab
+cargo run -p notecraft-ocr-lab -- %*
+exit /b %errorlevel%

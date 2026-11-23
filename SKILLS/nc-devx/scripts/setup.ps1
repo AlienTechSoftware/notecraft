@@ -12,6 +12,8 @@
 #   -SkipBuild   do not build xtask
 #   -Packaging   also check what packaging/windows/package.ps1 needs
 #   -CheckOnly   report what is missing, change nothing
+#   -OcrModels   also fetch the OCR models for the OCR lab (about 12 MB, checked by size and
+#                SHA-256). Off by default: the model weights are CC BY-SA 4.0 (see the OCR skill).
 #
 # Installing the build tools or the .NET SDK asks for administrator rights (a UAC prompt).
 # Exit status: 0 when everything needed is there, 1 otherwise.
@@ -20,7 +22,8 @@ param(
     [switch]$SkipRust,
     [switch]$SkipBuild,
     [switch]$Packaging,
-    [switch]$CheckOnly
+    [switch]$CheckOnly,
+    [switch]$OcrModels
 )
 
 # Not 'Stop': Windows PowerShell 5.1 turns any stderr line from a native tool (rustup, wix) into
@@ -180,6 +183,52 @@ if (-not $SkipBuild -and -not $CheckOnly) {
         if ($LASTEXITCODE -eq 0) { Ok "builds" } else { Bad "cargo build -p xtask failed" }
     } else {
         Bad "cargo is not on PATH, so xtask was not built"
+    }
+}
+
+# The OCR models are optional: OCR is not needed to build or run the app. The lab
+# (tools/ocr-lab) reads the same folder and reports its state; the sizes and checksums below match
+# tools/ocr-lab/src/models.rs and must change together with it.
+Step "OCR models (optional)"
+$modelDir = Join-Path $Root 'tools\ocr-lab\local\models'
+$models = @(
+    @{ Name = 'text-detection.onnx'; Url = 'https://ocrs-models.s3-accelerate.amazonaws.com/text-detection.onnx'; Size = 2499479; Sha = 'a917b23dbd9524b465df7e922641b3ff2981623df4ded5a0234004ef2fee7cfe' },
+    @{ Name = 'text-recognition.onnx'; Url = 'https://ocrs-models.s3-accelerate.amazonaws.com/text-recognition.onnx'; Size = 9713177; Sha = '86c145c2edb96c8caed5b1ebb8f44d706408922211451c309c625157dd6061c5' }
+)
+function Model-Good($model, $path) {
+    if (-not (Test-Path $path)) { return $false }
+    if ((Get-Item $path).Length -ne $model.Size) { return $false }
+    return ((Get-FileHash -Algorithm SHA256 $path).Hash.ToLower() -eq $model.Sha)
+}
+$allGood = $true
+foreach ($model in $models) {
+    if (-not (Model-Good $model (Join-Path $modelDir $model.Name))) { $allGood = $false }
+}
+if ($allGood) {
+    Ok "present and intact in tools\ocr-lab\local\models"
+} elseif (-not $OcrModels) {
+    Info "not fetched. Run with -OcrModels to fetch them, or press Download models in the OCR lab"
+} elseif ($CheckOnly) {
+    Bad "OCR models missing or damaged (run without -CheckOnly to fetch them)"
+} else {
+    New-Item -ItemType Directory -Force -Path $modelDir | Out-Null
+    foreach ($model in $models) {
+        $target = Join-Path $modelDir $model.Name
+        if (Model-Good $model $target) { continue }
+        $part = "$target.part"
+        try {
+            Invoke-WebRequest -UseBasicParsing -Uri $model.Url -OutFile $part
+        } catch {
+            Bad "could not download $($model.Name): $($_.Exception.Message)"
+            continue
+        }
+        if (Model-Good $model $part) {
+            Move-Item -Force $part $target
+            Ok "fetched $($model.Name)"
+        } else {
+            Remove-Item -Force $part -ErrorAction SilentlyContinue
+            Bad "$($model.Name) came back with the wrong size or checksum; nothing was saved"
+        }
     }
 }
 

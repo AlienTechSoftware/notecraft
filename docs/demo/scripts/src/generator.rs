@@ -31,6 +31,10 @@ const DATE: &str = "2026-10-18T00:00:00Z";
 const START_FOLDER: &str = "00-start";
 const START_TITLE: &str = "Start here";
 const HOW_TO_FOLDER: &str = "how-to";
+/// The optional OCR section of a language group: its content is `content/<language>/ocr/`.
+const OCR_FOLDER: &str = "ocr";
+const OCR_TITLE: &str = "OCR";
+const OCR_ORDER: u32 = 20;
 /// Put into the start page where the list of languages goes.
 const LANGUAGES_MARK: &str = "{{languages}}";
 
@@ -342,9 +346,62 @@ fn build_variant(content: &Path, out: &Path, art: &Path, target_format: notecraf
             }
             built.pages += 1;
         }
+        if let Some(pages) = ocr_pages(&content.join(lang.code))? {
+            // OCR is one section. Each top page is a file NN-slug.md in it; the pages nested under
+            // it are the files of the folder NN-slug/ beside that file.
+            let ocr = group.join(OCR_FOLDER);
+            fs::create_dir_all(&ocr).map_err(|e| format!("cannot create {}: {e}", ocr.display()))?;
+            write(
+                &ocr.join("_node.toml"),
+                &node_toml("section", OCR_TITLE, &id_for(&format!("{}/{OCR_FOLDER}", lang.folder())), OCR_ORDER, None, None),
+            )?;
+            let default_dir = if lang.rtl { Some("rtl") } else { None };
+            for (top, subs) in &pages {
+                let page_dir = ocr.join(&top.slug);
+                let top_id = id_for(&format!("{}/{OCR_FOLDER}/{}", lang.folder(), top.slug));
+                let top_path =
+                    content.join(lang.code).join(OCR_FOLDER).join(format!("{}-{}.{}", top.order, top.slug, if top.html { "html" } else { "md" }));
+                let top_source = convert_source(top.clone(), target_format, &top_path)?;
+                write_page(&page_dir, &top_source, &top_id, default_dir, art)?;
+                built.pages += 1;
+                for s in subs {
+                    let id = id_for(&format!("{}/{OCR_FOLDER}/{}/{}", lang.folder(), top.slug, s.slug));
+                    let sub_path = content.join(lang.code).join(OCR_FOLDER).join(format!("{}-{}", top.order, top.slug)).join(format!(
+                        "{}-{}.{}",
+                        s.order,
+                        s.slug,
+                        if s.html { "html" } else { "md" }
+                    ));
+                    let sub_source = convert_source(s.clone(), target_format, &sub_path)?;
+                    write_page(&page_dir.join(&sub_source.slug), &sub_source, &id, default_dir, art)?;
+                    built.pages += 1;
+                }
+            }
+        }
         built.languages.push(lang.code.to_string());
     }
     Ok(built)
+}
+
+/// The top pages of a language's OCR section, each with the pages nested under it. A top page is a
+/// file `NN-slug.md` in the OCR folder; its nested pages are the files of the folder `NN-slug/`.
+/// A language without the folder has no OCR section, and that is not an error.
+fn ocr_pages(language: &Path) -> Result<Option<Vec<(Source, Vec<Source>)>>, String> {
+    let dir = language.join(OCR_FOLDER);
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    let tops = read_sources(&dir)?;
+    if tops.is_empty() {
+        return Err(format!("{}: no pages", dir.display()));
+    }
+    let mut out = Vec::new();
+    for top in tops {
+        let nested_dir = dir.join(format!("{}-{}", top.order, top.slug));
+        let subs = if nested_dir.is_dir() { read_sources(&nested_dir)? } else { Vec::new() };
+        out.push((top, subs));
+    }
+    Ok(Some(out))
 }
 
 /// The bullet list on the start page: each language's own name as the link, its English
@@ -1044,7 +1101,11 @@ page-color: yellow
             assert_eq!(html_group.info.title, cmgfm_group.info.title);
             assert_eq!(html_group.children.len(), cmgfm_group.children.len(), "matching structure in {}", html_group.path.display());
             if html_group.info.kind == notecraft_model::NodeKind::SectionGroup {
-                assert_eq!(html_group.children.len(), 1, "one How to section in {}", html_group.path.display());
+                let folder = html_group.path.file_name().and_then(|name| name.to_str()).expect("language group folder");
+                let language = LANGUAGES.iter().find(|language| language.folder() == folder).expect("known language group");
+                // OCR remains optional for languages without authored OCR content.
+                let expected = 1 + usize::from(content_dir().join(language.code).join(OCR_FOLDER).is_dir());
+                assert_eq!(html_group.children.len(), expected, "sections in {}", html_group.path.display());
                 assert!(html_group.children[0].children.len() >= 8, "the same pages in every language");
             }
         }
@@ -1097,5 +1158,147 @@ page-color: yellow
     fn format_selection_rejects_unknown_values() {
         let err = selected_formats("markdown").expect_err("unknown format rejected");
         assert!(err.contains("Choose html, cmgfm, or both"), "{err}");
+    }
+
+    /// Copies a folder tree; the tests change a copy of the content, never the checked-in files.
+    fn copy_tree(from: &Path, to: &Path) {
+        fs::create_dir_all(to).expect("create");
+        for entry in fs::read_dir(from).expect("read") {
+            let entry = entry.expect("entry");
+            let target = to.join(entry.file_name());
+            if entry.file_type().expect("type").is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), &target).expect("copy");
+            }
+        }
+    }
+
+    /// A copy of the content with one OCR page in English, and a subpage nested under it: an
+    /// `en/ocr/90-extra.md` page with `en/ocr/90-extra/10-sub.md` inside its folder.
+    fn content_with_ocr(label: &str) -> PathBuf {
+        let dir = scratch(label);
+        let content = dir.join("content");
+        copy_tree(&content_dir(), &content);
+        let ocr = content.join("en").join("ocr");
+        write(
+            &ocr.join("90-extra.md"),
+            "---
+title: Extra
+---
+
+A test page for the OCR section.
+",
+        )
+        .expect("ocr page");
+        let nested = ocr.join("90-extra");
+        fs::create_dir_all(&nested).expect("nested folder");
+        write(
+            &nested.join("10-sub.md"),
+            "---
+title: Sub page
+---
+
+A nested test page.
+
+![A banner](assets/banner-en.png)
+",
+        )
+        .expect("nested page");
+        content
+    }
+
+    #[test]
+    fn an_ocr_section_holds_its_pages_and_their_nested_subpages_in_both_formats() {
+        let content = content_with_ocr("ocr-section");
+        let out = content.parent().expect("parent").join("DemoNotebook");
+        let both = selected_formats("both").expect("both formats");
+        build(&content, &out, &art_dir(), "0.0.0-test", &both).expect("build with an OCR section");
+        for format in ["html", "cmgfm"] {
+            let root = out.join(format);
+            let section = root.join("10-en").join("ocr");
+            let node = fs::read_to_string(section.join("_node.toml")).expect("the OCR section node");
+            assert!(node.contains("kind = \"section\""), "OCR is a section, not a group: {node}");
+            assert!(node.contains("title = \"OCR\""), "{node}");
+            let index = if format == "html" { "index.html" } else { "index.md" };
+            let page = section.join("extra");
+            assert!(page.join(index).is_file(), "the top page in {format}");
+            let sub = page.join("sub");
+            assert!(sub.join(index).is_file(), "the nested subpage in {format}");
+            assert!(sub.join("assets").join("banner-en.png").is_file(), "its picture is copied in {format}");
+        }
+        let html_tree = notecraft_store::tree::load_tree(&out.join("html")).expect("HTML tree");
+        let english = html_tree.children.iter().find(|g| g.info.title == "English").expect("English group");
+        let titles: Vec<&str> = english.children.iter().map(|s| s.info.title.as_str()).collect();
+        assert_eq!(titles.len(), 2, "How to and OCR: {titles:?}");
+        let ocr = english.children.iter().find(|g| g.info.title == "OCR").expect("OCR section");
+        assert_eq!(ocr.info.kind, notecraft_model::NodeKind::Section, "OCR is a section");
+        let pages: Vec<&str> = ocr.children.iter().map(|p| p.info.title.as_str()).collect();
+        assert!(pages.contains(&"Images") && pages.contains(&"Handwriting") && pages.contains(&"Printed"), "{pages:?}");
+        let _ = fs::remove_dir_all(content.parent().expect("parent"));
+    }
+
+    #[test]
+    fn a_language_without_an_ocr_folder_builds_without_one() {
+        let dir = scratch("no-ocr");
+        let content = dir.join("content");
+        copy_tree(&content_dir(), &content);
+        fs::remove_dir_all(content.join("ar").join("ocr")).expect("remove the Arabic OCR folder");
+        let out = dir.join("DemoNotebook");
+        let html_only = selected_formats("html").expect("html");
+        build(&content, &out, &art_dir(), "0.0.0-test", &html_only).expect("the content without an OCR folder builds");
+        assert!(!out.join("html").join("20-ar").join("ocr").exists(), "no OCR section without an OCR folder");
+        assert!(out.join("html").join("10-en").join("ocr").is_dir(), "the other languages keep theirs");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The two pictures the OCR pages added from the CC0 dataset are real files, linked from the
+    /// Arabic text and handwriting pages in every language with authored OCR content.
+    #[test]
+    fn the_dataset_pictures_are_linked_with_alt_text_and_credited() {
+        let pictures = ["ocr-receipt-ar-photo.jpg", "ocr-letter-ar.jpg"];
+        for name in pictures {
+            assert!(art_dir().join(name).is_file(), "{name} is in assets/demo");
+        }
+        let attribution =
+            fs::read_to_string(art_dir().parent().expect("assets").parent().expect("repo").join("ATTRIBUTION.md")).expect("ATTRIBUTION.md");
+        for name in pictures {
+            let row = attribution.lines().find(|l| l.contains(name)).unwrap_or_else(|| panic!("{name} has an attribution row"));
+            assert!(row.contains("CC0 1.0"), "{name} is credited as CC0: {row}");
+        }
+        let mut languages = 0;
+        for lang in LANGUAGES {
+            let ocr = content_dir().join(lang.code).join(OCR_FOLDER);
+            if !ocr.is_dir() {
+                continue;
+            }
+            languages += 1;
+            for (page, picture) in
+                [("20-images/50-arabic-text.md", "ocr-receipt-ar-photo.jpg"), ("30-handwriting/10-handwriting-limits.md", "ocr-letter-ar.jpg")]
+            {
+                let text = fs::read_to_string(ocr.join(page)).expect("page");
+                let line = text
+                    .lines()
+                    .find(|l| l.contains(&format!("assets/{picture}")))
+                    .unwrap_or_else(|| panic!("{} links {picture}", ocr.join(page).display()));
+                let alt = line.trim_start_matches("![").split("](").next().unwrap_or("");
+                assert!(!alt.trim().is_empty(), "{} has alt text for {picture}", ocr.join(page).display());
+            }
+        }
+        let languages_with_ocr = LANGUAGES.iter().filter(|lang| content_dir().join(lang.code).join(OCR_FOLDER).is_dir()).count();
+        assert_eq!(languages, languages_with_ocr, "every language with OCR content links the dataset pictures");
+    }
+
+    /// English is the most used language, so its OCR pages always carry an English printed example
+    /// and an English handwritten example, not only the Arabic ones.
+    #[test]
+    fn the_english_ocr_pages_have_english_printed_and_handwritten_examples() {
+        let ocr = content_dir().join("en").join(OCR_FOLDER);
+        let printed = fs::read_to_string(ocr.join("20-images").join("10-printed-text.md")).expect("English printed-text page");
+        assert!(printed.contains("assets/ocr-receipt.png"), "the English printed example is linked");
+        let handwriting = fs::read_to_string(ocr.join("30-handwriting").join("10-handwriting-limits.md")).expect("English handwriting page");
+        assert!(handwriting.contains("assets/ocr-letter-en.png"), "the English handwritten example is linked");
+        assert!(art_dir().join("ocr-letter-en.png").is_file(), "the English handwritten example is in assets/demo");
+        assert!(art_dir().join("ocr-receipt.png").is_file(), "the English printed example is in assets/demo");
     }
 }
