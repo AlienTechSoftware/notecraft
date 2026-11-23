@@ -203,8 +203,8 @@ index 0000000..f4394fb
 +                    (first == format && second.len() == 5 && second.as_bytes()[0].is_ascii_digit()).then_some(second.to_owned())
 +                })
 +                .collect::<std::collections::HashSet<_>>();
-+            if languages.len() != 13 {
-+                return Err(format!("The {format} Welcome notebook has {} language folders; expected 13", languages.len()));
++            if languages.len() != 14 {
++                return Err(format!("The {format} Welcome notebook has {} language folders; expected 14", languages.len()));
 +            }
 +        }
 +        WELCOME.with_borrow_mut(|w| *w = files);
