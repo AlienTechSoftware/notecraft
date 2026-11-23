@@ -918,6 +918,44 @@ mod tests {
     use super::*;
     use notecraft_ocr::Point;
 
+    fn label(rect: [f32; 4]) -> Label {
+        Label { text: String::new(), rect }
+    }
+
+    #[test]
+    fn a_rectangle_dragged_backwards_is_put_the_right_way_round() {
+        assert_eq!(Lab::normalized([9.0, 8.0, 1.0, 2.0]), [1.0, 2.0, 9.0, 8.0]);
+        assert_eq!(Lab::normalized([1.0, 2.0, 9.0, 8.0]), [1.0, 2.0, 9.0, 8.0]);
+    }
+
+    #[test]
+    fn a_click_finds_the_label_on_top_and_none_outside_all_labels() {
+        let labels = vec![label([0.0, 0.0, 50.0, 50.0]), label([10.0, 10.0, 20.0, 20.0])];
+        assert_eq!(Lab::label_at(&labels, [15.0, 15.0]), Some(1), "the later label is on top");
+        assert_eq!(Lab::label_at(&labels, [30.0, 30.0]), Some(0));
+        assert_eq!(Lab::label_at(&labels, [90.0, 90.0]), None);
+    }
+
+    #[test]
+    fn the_four_corners_go_round_clockwise_from_the_top_left() {
+        let c = Lab::corners([1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(c, [[1.0, 2.0], [3.0, 2.0], [3.0, 4.0], [1.0, 4.0]]);
+    }
+
+    #[test]
+    fn a_point_is_clamped_into_the_picture() {
+        assert_eq!(Lab::clamp_point([-5.0, 300.0], [200, 100]), [0.0, 100.0]);
+        assert_eq!(Lab::clamp_point([50.0, 50.0], [200, 100]), [50.0, 50.0]);
+    }
+
+    #[test]
+    fn screen_and_picture_coordinates_convert_both_ways() {
+        let origin = egui::pos2(100.0, 40.0);
+        let screen = Lab::to_screen(origin, 2.0, [30.0, 10.0]);
+        assert_eq!(screen, egui::pos2(160.0, 60.0));
+        assert_eq!(Lab::to_pixels(origin, 2.0, screen), [30.0, 10.0]);
+    }
+
     #[test]
     fn a_saved_run_loads_back_for_the_same_picture_and_is_ignored_once_the_picture_changes() {
         let dir = std::env::temp_dir().join(format!("ocr-lab-run-{}", std::process::id()));

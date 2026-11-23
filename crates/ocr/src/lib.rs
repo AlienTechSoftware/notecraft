@@ -246,6 +246,50 @@ mod tests {
         }
     }
 
+    fn piece(text: &str, left: i32, top: i32, right: i32, bottom: i32) -> Piece {
+        Piece { text: text.to_string(), left, top, right, bottom }
+    }
+
+    #[test]
+    fn pieces_on_the_same_line_join_left_to_right_and_a_box_covers_them_all() {
+        let rows = group_rows(vec![piece("6.00", 200, 12, 240, 30), piece("Sourdough", 10, 10, 150, 32), piece("Flat", 10, 60, 60, 80)]);
+        assert_eq!(rows.len(), 2, "two lines, not three pieces");
+        assert_eq!(rows[0].text, "Sourdough 6.00");
+        assert_eq!((rows[0].left, rows[0].top, rows[0].right, rows[0].bottom), (10, 10, 240, 32));
+        assert_eq!(rows[1].text, "Flat");
+    }
+
+    #[test]
+    fn a_piece_below_the_line_does_not_join_it_and_empty_input_gives_no_lines() {
+        assert!(group_rows(Vec::new()).is_empty());
+        let rows = group_rows(vec![piece("a", 0, 0, 10, 10), piece("b", 0, 20, 10, 30)]);
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn two_pieces_join_when_they_share_at_least_half_of_the_shorter_height() {
+        assert!(overlaps_vertically(&piece("a", 0, 0, 1, 10), &piece("b", 0, 5, 1, 15)), "half overlap joins");
+        assert!(!overlaps_vertically(&piece("a", 0, 0, 1, 10), &piece("b", 0, 8, 1, 20)), "a fifth overlap does not");
+        assert!(!overlaps_vertically(&piece("a", 0, 5, 1, 5), &piece("b", 0, 5, 1, 5)), "zero-height pieces do not join, and do not divide by zero");
+    }
+
+    #[test]
+    fn a_line_needs_four_corners_and_a_confidence_in_range() {
+        let quad = [Point { x: 0.0, y: 0.0 }, Point { x: 1.0, y: 0.0 }, Point { x: 1.0, y: 1.0 }, Point { x: 0.0, y: 1.0 }];
+        assert!(Line::new("ok", quad, Some(0.5)).is_ok());
+        assert!(Line::new("ok", quad, None).is_ok());
+        assert!(Line::new("bad", quad, Some(1.5)).is_err(), "confidence above 1");
+        assert!(Line::new("bad", quad, Some(-0.1)).is_err(), "confidence below 0");
+    }
+
+    #[test]
+    fn errors_say_what_went_wrong() {
+        let text = format!("{:?}", OcrError::Decode("x.png: not a picture".to_string()));
+        assert!(text.contains("x.png"), "{text}");
+        assert!(format!("{:?}", OcrError::Model("m".into())).contains("Model"));
+        assert!(format!("{:?}", OcrError::Engine("e".into())).contains("Engine"));
+    }
+
     #[test]
     fn the_companion_job_works_with_any_reader_and_reads_only_on_change() {
         let dir = std::env::temp_dir().join(format!("nc-ocr-unit-{}", std::process::id()));

@@ -77,3 +77,21 @@ fn chart(ui: &mut egui::Ui, values: impl Iterator<Item = f32>, top: f32, colour:
         values.iter().enumerate().map(|(i, v)| Pos2::new(x0 + step * i as f32, rect.bottom() - (v / top).clamp(0.0, 1.0) * rect.height())).collect();
     painter.add(egui::Shape::line(points, Stroke::new(1.5, colour)));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sampling_twice_quickly_takes_one_sample_and_keeps_the_limit() {
+        let mut metrics = Metrics::new();
+        metrics.tick();
+        metrics.tick();
+        assert!(metrics.samples.len() <= 1, "the second tick is too soon to sample");
+        for _ in 0..(KEEP + 5) {
+            metrics.last = None;
+            metrics.tick();
+        }
+        assert!(metrics.samples.len() <= KEEP, "history stays within {KEEP} samples");
+    }
+}

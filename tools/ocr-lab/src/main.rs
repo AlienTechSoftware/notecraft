@@ -116,3 +116,27 @@ impl eframe::App for Shell {
         self.0.ui(ui);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_flag_value_is_the_word_after_the_flag() {
+        let args: Vec<String> = ["lab", "--folder", "cases", "--models"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(argument(&args, "--folder").as_deref(), Some("cases"));
+        assert_eq!(argument(&args, "--models"), None, "a flag with no value gives none");
+        assert_eq!(argument(&args, "--missing"), None);
+    }
+
+    #[test]
+    fn the_headless_check_says_it_needs_models_and_fails_without_them() {
+        let dir = std::env::temp_dir().join(format!("ocr-lab-check-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let log = telemetry::Log::open(&dir.join("log.txt"));
+        assert_eq!(check(&dir, None, log), 2, "no models given");
+        let log = telemetry::Log::open(&dir.join("log.txt"));
+        assert_eq!(check(&dir, Some(&dir), log), 2, "a folder with no model files does not load");
+        std::fs::remove_dir_all(&dir).expect("clean up");
+    }
+}
