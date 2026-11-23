@@ -2,6 +2,7 @@
 //! boxes in the middle, and the run, the score and the editable labels on the right.
 
 use crate::case::{self, Label, LabelFile, Score};
+use crate::settings;
 use crate::telemetry::{self, Log, Timing};
 use eframe::egui;
 use egui::{Color32, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
@@ -46,6 +47,7 @@ pub struct Lab {
     reader: Option<OcrsReader>,
     reader_error: Option<String>,
     model_load_ms: Option<f64>,
+    models: Option<PathBuf>,
     mode: Mode,
     selected: Option<usize>,
     drag: Option<Drag>,
@@ -58,40 +60,67 @@ impl Lab {
     pub fn new(folder: PathBuf, models: Option<PathBuf>, mut log: Log) -> Lab {
         let pictures = case::discover(&folder);
         log.event(&format!("lab opened: {} pictures in {}", pictures.len(), folder_name(&folder)));
-        let mut timings = Vec::new();
-        let (reader, reader_error, model_load_ms) = match models {
-            None => (None, Some("No models set: pass --models <folder> or set NOTECRAFT_OCR_MODELS. Running OCR needs them.".to_string()), None),
-            Some(dir) => {
-                let (det, rec) = (dir.join("text-detection.onnx"), dir.join("text-recognition.onnx"));
-                let loaded = telemetry::timed("model load", &mut timings, || OcrsReader::from_model_files(&det, &rec));
-                let ms = timings.last().map(|t| t.ms);
-                match loaded {
-                    Ok(reader) => {
-                        log.event(&format!("models loaded in {:.0} ms", ms.unwrap_or_default()));
-                        (Some(reader), None, ms)
-                    }
-                    Err(e) => {
-                        log.event(&format!("models did not load: {e:?}"));
-                        (None, Some(format!("The models did not load: {e:?}")), ms)
-                    }
-                }
-            }
-        };
-        let status = if pictures.is_empty() { "No pictures in this folder.".to_string() } else { "Pick a picture to start.".to_string() };
-        Lab {
+        let mut lab = Lab {
             folder,
             pictures,
             loaded: None,
-            reader,
-            reader_error,
-            model_load_ms,
+            reader: None,
+            reader_error: Some(
+                "No models loaded. Click Models… and pick the folder that holds text-detection.onnx and text-recognition.onnx.".to_string(),
+            ),
+            model_load_ms: None,
+            models: None,
             mode: Mode::Select,
             selected: None,
             drag: None,
             show_engine: true,
             log,
-            status,
+            status: String::new(),
+        };
+        if let Some(dir) = models {
+            lab.load_reader(&dir);
         }
+        lab.status = if lab.pictures.is_empty() { "No pictures in this folder.".to_string() } else { "Pick a picture to start.".to_string() };
+        lab
+    }
+
+    /// Loads the two ONNX models from a folder. Failure leaves the lab usable for browsing.
+    pub fn load_reader(&mut self, dir: &Path) {
+        let (det, rec) = (dir.join("text-detection.onnx"), dir.join("text-recognition.onnx"));
+        let mut timings = Vec::new();
+        let loaded = telemetry::timed("model load", &mut timings, || OcrsReader::from_model_files(&det, &rec));
+        self.model_load_ms = timings.last().map(|t| t.ms);
+        match loaded {
+            Ok(reader) => {
+                self.log.event(&format!("models loaded in {:.0} ms", self.model_load_ms.unwrap_or_default()));
+                self.reader = Some(reader);
+                self.reader_error = None;
+                self.models = Some(dir.to_path_buf());
+                self.status = "Models loaded.".to_string();
+            }
+            Err(e) => {
+                self.log.event(&format!("models did not load: {e:?}"));
+                self.reader = None;
+                self.reader_error = Some(format!("The models did not load: {e:?}"));
+                self.status = self.reader_error.clone().unwrap_or_default();
+            }
+        }
+    }
+
+    /// Points the lab at another test folder and forgets the picture that was open.
+    pub fn set_folder(&mut self, folder: PathBuf) {
+        self.pictures = case::discover(&folder);
+        self.folder = folder;
+        self.loaded = None;
+        self.selected = None;
+        self.drag = None;
+        self.log.event(&format!("folder set: {} pictures in {}", self.pictures.len(), folder_name(&self.folder)));
+        self.status = if self.pictures.is_empty() { "No pictures in this folder.".to_string() } else { format!("{} pictures.", self.pictures.len()) };
+    }
+
+    /// Writes the folder and model choice to the local settings, so the next start has them.
+    fn remember(&self) {
+        settings::save(&settings::Settings { folder: Some(self.folder.clone()), models: self.models.clone() });
     }
 
     fn select(&mut self, ctx: &egui::Context, index: usize) {
@@ -279,6 +308,12 @@ impl Lab {
         ui.heading("Test cases");
         ui.label(format!("{} pictures", self.pictures.len()));
         ui.monospace(folder_name(&self.folder));
+        if ui.button("Open folder…").clicked()
+            && let Some(dir) = rfd::FileDialog::new().set_directory(&self.folder).pick_folder()
+        {
+            self.set_folder(dir);
+            self.remember();
+        }
         ui.separator();
         let mut pick = None;
         egui::ScrollArea::vertical().show(ui, |ui| {
@@ -308,6 +343,22 @@ impl Lab {
 
     fn details(&mut self, ui: &mut egui::Ui) {
         ui.heading("Run and labels");
+        ui.horizontal(|ui| {
+            if ui.button("Models…").clicked()
+                && let Some(dir) = rfd::FileDialog::new().pick_folder()
+            {
+                if settings::models_present(&dir) {
+                    self.load_reader(&dir);
+                    self.remember();
+                } else {
+                    self.status = "That folder has no text-detection.onnx and text-recognition.onnx.".to_string();
+                }
+            }
+            match &self.models {
+                Some(dir) => ui.label(format!("Models: {}", folder_name(dir))),
+                None => ui.label("Models: not set"),
+            };
+        });
         if let Some(e) = self.reader_error.clone() {
             ui.colored_label(Color32::from_rgb(200, 60, 40), e);
         }

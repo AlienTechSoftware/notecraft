@@ -9,6 +9,7 @@
 
 mod app;
 mod case;
+mod settings;
 mod telemetry;
 
 use eframe::egui;
@@ -29,12 +30,21 @@ fn default_folder() -> PathBuf {
 
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().collect();
-    let folder = argument(&args, "--folder").map(PathBuf::from).unwrap_or_else(default_folder);
-    let models = argument(&args, "--models").or_else(|| std::env::var("NOTECRAFT_OCR_MODELS").ok()).map(PathBuf::from);
+    let saved = settings::load();
+    // Flags win, then what was saved last time, then the environment, then the repository fixtures.
+    let folder = argument(&args, "--folder").map(PathBuf::from).or_else(|| saved.folder.clone()).unwrap_or_else(default_folder);
+    let models = argument(&args, "--models")
+        .map(PathBuf::from)
+        .or_else(|| saved.models.clone())
+        .or_else(|| std::env::var("NOTECRAFT_OCR_MODELS").ok().map(PathBuf::from));
     let log = telemetry::Log::open(&lab_root().join("local").join("ocr-lab.log"));
     if args.iter().any(|a| a == "--check") {
         std::process::exit(check(&folder, models.as_deref(), log));
     }
+    settings::save(&settings::Settings {
+        folder: Some(folder.clone()),
+        models: models.clone().filter(|m| settings::models_present(m)).or(saved.models),
+    });
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1400.0, 900.0]).with_title("NoteCraft OCR lab"),
         ..Default::default()

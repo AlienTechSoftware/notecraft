@@ -3420,6 +3420,7 @@ dependencies = [
  "egui",
  "image",
  "notecraft-ocr",
+ "rfd",
  "serde",
  "serde_json",
 ]
