@@ -14604,7 +14604,8 @@ fn a_locked_page_body_menu_offers_only_unlock() {
 /// Issue #441: a locked page's navigator menu still opens. Rename, Move, Delete and the other
 /// changes to the page are greyed out; Unlock, Copy link and Page versions stay enabled.
 #[test]
-fn a_locked_page_navigator_menu_offers_only_unlock() {
+fn a_locked_page_navigator_menu_greys_out_its_edits_and_keeps_the_rest() {
+    use egui_kittest::kittest::NodeT as _;
     let (_t, app, s) = sample_app("ui-locked-nav-menu");
     notecraft_store::page::set_read_only(&s.md_page, true).expect("lock the page on disk");
     let mut h = harness(app, LIGHT);
@@ -14619,10 +14620,14 @@ fn a_locked_page_navigator_menu_offers_only_unlock() {
         .expect("page row in the navigator");
     h.get_all_by_label(&title).find(|n| n.rect() == row).expect("row").click_secondary();
     settle(&mut h);
-    // Only the row menu is open, so each label is counted across the whole window.
     assert_eq!(h.query_all_by_label("Unlock").count(), 1, "the row menu offers Unlock");
-    for other in ["New page", "Add a sub-page", "Rename...", "Move or Copy...", "Copy link to page", "Open folder", "Page versions", "Delete..."] {
-        assert_eq!(h.query_all_by_label(other).count(), 0, "{other} is not in a locked page's row menu");
+    for edit in ["Rename...", "Move or Copy...", "Delete..."] {
+        let disabled: Vec<bool> = h.query_all_by_label(edit).map(|n| n.accesskit_node().is_disabled()).collect();
+        assert!(!disabled.is_empty() && disabled.iter().all(|d| *d), "{edit} is greyed out on a locked page: {disabled:?}");
+    }
+    for kept in ["Copy link to page", "Page versions", "New page"] {
+        let disabled: Vec<bool> = h.query_all_by_label(kept).map(|n| n.accesskit_node().is_disabled()).collect();
+        assert!(disabled.iter().any(|d| !*d), "{kept} stays enabled: {disabled:?}");
     }
 }
 
@@ -14758,4 +14763,25 @@ fn a_locked_page_shows_a_lock_in_the_navigator() {
     let marks = h.query_all_by_label("This page is locked read only").filter(|n| n.rect().max.x < 300.0).count();
     assert_eq!(marks, 1, "the locked page shows one lock in the navigator");
     review(&mut h, "nav-lock-mark");
+}
+
+/// Issue #441: a locked page's menu opens on an empty place in the page, below its words, and a
+/// right-click on the navigator's lock mark still opens the row's own menu.
+#[test]
+fn a_locked_page_menu_opens_on_empty_space_and_the_lock_mark_keeps_the_row_menu() {
+    let (_t, app, s) = sample_app("ui-locked-empty-space");
+    notecraft_store::page::set_read_only(&s.md_page, true).expect("lock the page on disk");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.click", json!({"x": 820.0, "y": 700.0, "button": "right"})).expect("right-click empty space in the page");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Unlock").count(), 1, "empty space in a locked page offers Unlock");
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("close the menu");
+    settle(&mut h);
+
+    let mark = h.query_all_by_label("This page is locked read only").map(|n| n.rect()).find(|r| r.max.x < 300.0).expect("the navigator's lock mark");
+    ask(&mut h, "ui.click", json!({"x": mark.center().x, "y": mark.center().y, "button": "right"})).expect("right-click the lock mark");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Unlock").count(), 1, "the lock mark still opens the row's menu");
 }

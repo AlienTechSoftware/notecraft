@@ -4245,15 +4245,6 @@ impl NoteCraftApp {
             // A locked page keeps its menu, with the changes to it greyed out (issue #441). Read
             // from the page's head only while this menu is open.
             let edits_off = node.info.kind == NodeKind::Page && notecraft_store::page::read_only(&node.path).unwrap_or(false);
-            // A locked page's menu offers only Unlock for now (issue #441).
-            if edits_off {
-                let (label, icon) = (crate::tl_id!("ui.unlock_read_only"), Icon::Unlock);
-                if floating::menu_row(ui, Some(floating::Glyph::Icon(icon)), label, t).clicked() {
-                    acts.push(Act::SetReadOnly(node.path.clone(), false));
-                    ui.close();
-                }
-                return;
-            }
             // Issue #380: the shortcut sits in its own right-hand column, not in the words.
             let shortcut = if cfg!(target_os = "macos") { "Cmd+N" } else { "Ctrl+N" };
             if node.info.kind == NodeKind::Page
