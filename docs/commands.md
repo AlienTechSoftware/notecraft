@@ -372,6 +372,25 @@ Parameters:
 
 - format (required): html or cmgfm
 
+## `ocr.refresh`
+
+Read the text and boxes of the pictures in a page.
+
+Parameters:
+
+- path (required): the page, relative to the notebooks folder
+- Needs the setting ocr_models: a folder with text-detection.onnx and text-recognition.onnx. A picture is read again only when its bytes changed
+
+## `alt.set`
+
+Write the alt text of a picture in a page.
+
+Parameters:
+
+- path (required): the page, relative to the notebooks folder
+- picture (required): the picture's file name in the page's assets
+- text (optional): the alt text; empty removes it
+
 ## `search.query`
 
 Search all pages.

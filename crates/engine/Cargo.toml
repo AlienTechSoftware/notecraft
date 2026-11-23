@@ -15,4 +15,5 @@ craft-voice-core = { workspace = true }
 notecraft-model = { workspace = true }
 notecraft-formats = { workspace = true }
 notecraft-store = { workspace = true }
+notecraft-ocr = { workspace = true }
 serde_json = { workspace = true }

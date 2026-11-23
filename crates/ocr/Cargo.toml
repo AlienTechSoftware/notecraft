@@ -1,0 +1,16 @@
+[package]
+name = "notecraft-ocr"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "NoteCraft OCR: printed text from pictures in a page's assets folder, with line boxes and confidences. No UI dependency"
+
+[lints]
+workspace = true
+
+[dependencies]
+image = { workspace = true }
+ocrs = { workspace = true }
+rten = { workspace = true }

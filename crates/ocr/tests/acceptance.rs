@@ -1,0 +1,110 @@
+//! Acceptance tests for Stage 1 (plan section 5). They read the POC pictures from
+//! `NOTECRAFT_OCR_FIXTURES` (the POC notebook's `Images` folder) and the `ocrs` models from
+//! `NOTECRAFT_OCR_MODELS` (a folder holding `text-detection.onnx` and `text-recognition.onnx`).
+//! Neither is in the public repository.
+
+use std::path::{Path, PathBuf};
+
+use notecraft_ocr::{Line, OcrError, OcrsReader, Point, Refresh, refresh_companion};
+
+fn fixture(relative: &str) -> PathBuf {
+    let root = std::env::var_os("NOTECRAFT_OCR_FIXTURES").map(PathBuf::from).expect("set NOTECRAFT_OCR_FIXTURES to the POC notebook's Images folder");
+    root.join(relative)
+}
+
+fn scratch(name: &str) -> PathBuf {
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("nc-ocr-{name}-{}-{nanos}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("scratch folder");
+    dir
+}
+
+fn engine() -> OcrsReader {
+    let models = std::env::var_os("NOTECRAFT_OCR_MODELS").map(PathBuf::from).expect("set NOTECRAFT_OCR_MODELS to the folder with the ocrs models");
+    OcrsReader::from_model_files(&models.join("text-detection.onnx"), &models.join("text-recognition.onnx")).expect("models load")
+}
+
+fn corners() -> [Point; 4] {
+    [Point { x: 0.0, y: 0.0 }, Point { x: 10.0, y: 0.0 }, Point { x: 10.0, y: 4.0 }, Point { x: 0.0, y: 4.0 }]
+}
+
+/// A2: each line has a box and a confidence in 0 to 1 when the engine reports one.
+#[test]
+fn a2_a_line_has_a_box_and_a_confidence_from_0_to_1() {
+    let line = Line::new("total 12.40", corners(), Some(0.9)).expect("a valid line");
+    assert_eq!(line.quad.len(), 4);
+    assert_eq!(line.confidence, Some(0.9));
+    assert!(Line::new("total", corners(), None).is_ok(), "an engine without a confidence");
+    assert_eq!(Line::new("total", corners(), Some(1.5)), Err(OcrError::InvalidConfidence(1.5)));
+}
+
+/// A1: a printed picture yields its text lines, in reading order, matching the reference text.
+#[test]
+#[ignore = "needs NOTECRAFT_OCR_FIXTURES and NOTECRAFT_OCR_MODELS; run with --ignored"]
+fn a1_the_receipt_reads_back_its_reference_text_in_reading_order() {
+    let lines = engine().read_image(&fixture("receipt-photo/assets/receipt.png")).expect("the receipt reads");
+    let got: Vec<String> = lines.iter().map(|l| l.text.split_whitespace().collect::<Vec<_>>().join(" ")).collect();
+    let reference = std::fs::read_to_string(fixture("receipt-photo/assets/receipt.png.txt")).expect("reference text");
+    let want: Vec<String> = reference.lines().map(|l| l.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|l| !l.is_empty()).collect();
+    assert_eq!(got, want);
+}
+
+/// A3: every line's box lies inside the picture, for every POC picture.
+#[test]
+#[ignore = "needs NOTECRAFT_OCR_FIXTURES and NOTECRAFT_OCR_MODELS; run with --ignored"]
+fn a3_every_box_lies_inside_its_picture() {
+    let engine = engine();
+    let pictures = [
+        "receipt-photo/assets/receipt.png",
+        "chart-bars/assets/chart.png",
+        "scanned-page/assets/scan.png",
+        "whiteboard-sketch/assets/sketch.png",
+        "arabic-alt-text/assets/receipt-ar.png",
+    ];
+    let mut found = 0;
+    for relative in pictures {
+        let path: &Path = &fixture(relative);
+        let (width, height) = image::image_dimensions(path).expect("picture size");
+        let lines = engine.read_image(path).expect("picture reads");
+        found += lines.len();
+        for line in lines {
+            for p in line.quad {
+                assert!(p.x >= 0.0 && p.x <= width as f32, "{relative}: x {} outside {width}", p.x);
+                assert!(p.y >= 0.0 && p.y <= height as f32, "{relative}: y {} outside {height}", p.y);
+            }
+        }
+    }
+    // Without this, a model that finds nothing would pass every box check above.
+    assert!(found > 0, "the pictures have text, so the engine finds some lines");
+}
+
+/// A4: re-running OCR on an unchanged picture does nothing.
+#[test]
+#[ignore = "needs NOTECRAFT_OCR_FIXTURES and NOTECRAFT_OCR_MODELS; run with --ignored"]
+fn a4_an_unchanged_picture_is_not_read_again() {
+    let dir = scratch("a4");
+    let picture = dir.join("receipt.png");
+    std::fs::copy(fixture("receipt-photo/assets/receipt.png"), &picture).expect("copy picture");
+    let engine = engine();
+    assert_eq!(refresh_companion(&engine, &picture).expect("first read"), Refresh::Rewritten);
+    assert_eq!(refresh_companion(&engine, &picture).expect("second read"), Refresh::Unchanged);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A5: changing a picture re-runs OCR and replaces its companion text.
+#[test]
+#[ignore = "needs NOTECRAFT_OCR_FIXTURES and NOTECRAFT_OCR_MODELS; run with --ignored"]
+fn a5_a_changed_picture_is_read_again_and_its_companion_is_replaced() {
+    let dir = scratch("a5");
+    let picture = dir.join("receipt.png");
+    std::fs::copy(fixture("receipt-photo/assets/receipt.png"), &picture).expect("copy picture");
+    let engine = engine();
+    refresh_companion(&engine, &picture).expect("first read");
+    let mut bytes = std::fs::read(&picture).expect("read picture");
+    bytes.extend_from_slice(b"changed");
+    std::fs::write(&picture, bytes).expect("change picture");
+    assert_eq!(refresh_companion(&engine, &picture).expect("second read"), Refresh::Rewritten);
+    let companion = std::fs::read_to_string(dir.join("receipt.png.txt")).expect("companion text");
+    assert!(companion.contains("TOTAL 13.75"), "the companion holds the new read: {companion}");
+    std::fs::remove_dir_all(&dir).ok();
+}

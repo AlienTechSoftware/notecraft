@@ -11,7 +11,7 @@ use crate::markdown::{Block, Span};
 
 /// The table as CSV, or `None` for a block that is not a table.
 pub fn from_table(block: &Block) -> Option<String> {
-    let Block::Table { head, rows } = block else { return None };
+    let Block::Table { head, rows, .. } = block else { return None };
     let mut out = String::new();
     for row in std::iter::once(head).chain(rows.iter()) {
         let line: Vec<String> = row.iter().map(|cell| quote(&plain(cell), row.len() == 1)).collect();
@@ -50,7 +50,7 @@ pub fn to_table(text: &str) -> Option<Block> {
     let mut rows = rows.into_iter().filter(|(r, quoted)| *quoted || !(r.len() == 1 && r[0].trim().is_empty())).map(|(r, _)| r);
     let head: Vec<Vec<Span>> = rows.next()?.iter().map(|c| literal(c)).collect();
     let body: Vec<Vec<Vec<Span>>> = rows.map(|r| r.iter().map(|c| literal(c)).collect()).collect();
-    Some(Block::Table { head, rows: body })
+    Some(Block::Table { head, rows: body, emoji: Vec::new() })
 }
 
 /// A cell's value as plain text. A spreadsheet cell holds a value, so its asterisks,
@@ -134,7 +134,7 @@ mod tests {
 \"one, two\",\"she said \"\"hi\"\"\"
 \"two
 lines\",last";
-        let Some(Block::Table { head, rows }) = to_table(from_sheet) else { panic!("a table") };
+        let Some(Block::Table { head, rows, .. }) = to_table(from_sheet) else { panic!("a table") };
         assert_eq!(head.len(), 2);
         assert_eq!(rows.len(), 2, "two rows under the heading");
         let text = |cell: &Vec<Span>| cell.iter().map(|s| s.text.as_str()).collect::<String>();
@@ -156,7 +156,7 @@ lines",
     fn a_cell_that_looks_like_markdown_is_read_as_it_is_written() {
         for input in ["Value\n*literal*\n", "Value\n[a](b)\n", "Value\n`x` **y** _z_ <b>w</b>\n", "# Heading,- item\n> quote,1. one\n"] {
             let table = to_table(input).expect("a table");
-            let Block::Table { head, rows } = &table else { panic!("a table") };
+            let Block::Table { head, rows, .. } = &table else { panic!("a table") };
             let plain_only =
                 std::iter::once(head).chain(rows).flatten().flatten().all(|span| span == &Span { text: span.text.clone(), ..Span::default() });
             assert!(plain_only, "{input:?} is read without marks");
@@ -169,7 +169,7 @@ lines",
     #[test]
     fn a_blank_row_of_a_one_column_table_is_kept() {
         let cell = |text: &str| if text.is_empty() { Vec::new() } else { vec![Span { text: text.into(), ..Span::default() }] };
-        let table = Block::Table { head: vec![cell("Value")], rows: vec![vec![cell("")], vec![cell("value")], vec![cell("  ")]] };
+        let table = Block::Table { head: vec![cell("Value")], rows: vec![vec![cell("")], vec![cell("value")], vec![cell("  ")]], emoji: Vec::new() };
         let csv = from_table(&table).expect("a table");
         assert_eq!(csv, "Value\n\"\"\nvalue\n\"  \"\n", "a blank only cell is written quoted");
         assert_eq!(to_table(&csv), Some(table), "and read back as a row");

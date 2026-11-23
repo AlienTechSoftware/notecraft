@@ -175,9 +175,9 @@ mod tests {
         assert!(matches!(block_count("H2").first(), Some(markdown::Block::Heading { level: 2, .. })));
         assert_eq!(block_count("List").len(), 2);
         assert!(matches!(block_count("To-do").first(), Some(markdown::Block::Item { task: Some(false), .. })));
-        assert!(matches!(block_count("Quote").first(), Some(markdown::Block::Quote(_))));
+        assert!(matches!(block_count("Quote").first(), Some(markdown::Block::Quote(_, _))));
         assert!(matches!(block_count("Table").first(), Some(markdown::Block::Table { .. })));
-        assert!(matches!(block_count("Equation").first(), Some(markdown::Block::MathBlock(_))));
+        assert!(matches!(block_count("Equation").first(), Some(markdown::Block::MathBlock(_, _))));
         assert!(matches!(block_count("Diagram").first(), Some(markdown::Block::Code { lang, .. }) if lang == "mermaid"));
     }
 
@@ -189,7 +189,7 @@ mod tests {
         };
         assert!(matches!(blocks("H1").first(), Some(markdown::Block::Heading { level: 1, .. })));
         assert_eq!(blocks("List").len(), 2);
-        assert!(matches!(blocks("Quote").first(), Some(markdown::Block::Quote(_))));
+        assert!(matches!(blocks("Quote").first(), Some(markdown::Block::Quote(_, _))));
         assert!(matches!(blocks("Table").first(), Some(markdown::Block::Table { .. })));
         assert!(matches!(blocks("Diagram").first(), Some(markdown::Block::Code { lang, .. }) if lang == "mermaid"));
     }

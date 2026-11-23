@@ -54,10 +54,11 @@ fn the_full_demo_notebooks_have_matching_pages_and_blocks() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("docs").join("demo").join("DemoNotebook");
     let html = pages(&root.join("html"));
     let cmgfm = pages(&root.join("cmgfm"));
-    assert_eq!(html.len(), 223, "expected every page from the 13-language demo, with the menus and moving around page in each");
+    // The demo has 240 base pages and 169 OCR pages, and a menus page in each of its 14 languages.
+    assert_eq!(html.len(), 423, "expected every page from the 14-language demo");
     assert_eq!(html.len(), cmgfm.len(), "both notebooks must have the same number of pages");
     assert_eq!(html.keys().collect::<Vec<_>>(), cmgfm.keys().collect::<Vec<_>>(), "page paths must match");
-    for language in ["10-en", "11-es", "12-fr", "13-de", "14-hi", "15-ru", "16-zh", "17-ja", "18-ko", "20-ar", "21-fa", "22-ur", "23-he"] {
+    for language in ["10-en", "11-es", "12-fr", "13-de", "14-hi", "15-ru", "16-zh", "17-ja", "18-ko", "19-tr", "20-ar", "21-fa", "22-ur", "23-he"] {
         for page in ["shapes", "handwriting-and-drawing", "mermaid-diagrams", "charts-vega-d3"] {
             let path = Path::new(language).join("how-to").join(page);
             assert!(html.contains_key(&path), "the 13-language demo has {}", path.display());
@@ -142,13 +143,13 @@ fn every_page_model_block_round_trips_through_both_formats_and_boxes() {
     for block in &expected {
         let kind = match block {
             Block::Heading { .. } => 0,
-            Block::Paragraph(_) => 1,
+            Block::Paragraph(_, _) => 1,
             Block::Item { .. } => 2,
-            Block::Quote(_) => 3,
+            Block::Quote(_, _) => 3,
             Block::Code { .. } => 4,
-            Block::MathBlock(_) => 5,
+            Block::MathBlock(_, _) => 5,
             Block::Table { .. } => 6,
-            Block::Rule => 7,
+            Block::Rule(_) => 7,
             Block::Image { .. } => 8,
         };
         kinds[kind] = true;
@@ -156,7 +157,7 @@ fn every_page_model_block_round_trips_through_both_formats_and_boxes() {
     assert!(kinds.iter().all(|present| *present), "fixture must exercise every Block variant: {kinds:?}");
     assert!(
         expected.iter().any(|block| match block {
-            Block::Paragraph(spans) | Block::Heading { spans, .. } | Block::Item { spans, .. } | Block::Quote(spans) => {
+            Block::Paragraph(spans, _) | Block::Heading { spans, .. } | Block::Item { spans, .. } | Block::Quote(spans, _) => {
                 spans.iter().any(|span| span.image.is_some())
             }
             _ => false,

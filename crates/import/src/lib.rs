@@ -598,7 +598,7 @@ fn reads_right_to_left(title: &str, blocks: &[Block]) -> bool {
     count(title);
     for b in blocks {
         match b {
-            Block::Paragraph(spans) | Block::Quote(spans) | Block::Heading { spans, .. } | Block::Item { spans, .. } => {
+            Block::Paragraph(spans, _) | Block::Quote(spans, _) | Block::Heading { spans, .. } | Block::Item { spans, .. } => {
                 count(&spans.iter().map(|s| s.text.as_str()).collect::<String>())
             }
             _ => {}

@@ -299,9 +299,9 @@ pub fn span_audit(body: &str, blocks: &[Block]) -> SpanAudit {
 fn styled_spans_in(block: &Block) -> usize {
     let lines: Vec<&Vec<Span>> = match block {
         Block::Heading { spans, .. } | Block::Item { spans, .. } => vec![spans],
-        Block::Paragraph(spans) | Block::Quote(spans) => vec![spans],
-        Block::Table { head, rows } => head.iter().chain(rows.iter().flatten()).collect(),
-        Block::Code { .. } | Block::MathBlock(_) | Block::Rule | Block::Image { .. } => Vec::new(),
+        Block::Paragraph(spans, _) | Block::Quote(spans, _) => vec![spans],
+        Block::Table { head, rows, .. } => head.iter().chain(rows.iter().flatten()).collect(),
+        Block::Code { .. } | Block::MathBlock(..) | Block::Rule(_) | Block::Image { .. } => Vec::new(),
     };
     lines
         .iter()

@@ -1,0 +1,135 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Grafikler, Vega ve D3</title>
+<meta name="notecraft:id" content="2e2abc20adceb0372c47">
+<meta name="notecraft:order" content="84">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>NoteCraft Mermaid grafik bloklarını doğrudan sayfaya çizer. Aşağıdaki örnekler çizilmiş grafiklerdir. Vega belirtimleri ve D3 programları grafikleri tanımlamanın da yararlı yollarıdır, ancak NoteCraft şu anda bunları kod olarak tutar; onları çalıştırmaz ya da grafik olarak çizmez.</p>
+<h2>Çizilmiş grafikler</h2>
+<h3>Çubuklar ve bir çizgi</h3>
+<pre class="diagram">xychart-beta
+    title &quot;Ayda yazılan sayfalar&quot;
+    x-axis [Oca, Şub, Mar, Nis, May]
+    y-axis &quot;Sayfa&quot; 0 --&gt; 100
+    bar [20, 38, 55, 72, 90]
+    line [12, 29, 48, 68, 86]</pre>
+<h3>Bir pasta</h3>
+<pre class="diagram">pie title Notlar nasıl kullanılıyor
+  &quot;Yazma&quot; : 45
+  &quot;Planlama&quot; : 30
+  &quot;Başvuru&quot; : 25</pre>
+<h3>Bir dörtlü grafik</h3>
+<pre class="diagram">quadrantChart
+    title Denenecek fikirler
+    x-axis Az çaba --&gt; Çok çaba
+    y-axis Az değer --&gt; Çok değer
+    quadrant-1 Sonra yap
+    quadrant-2 Planla
+    quadrant-3 Atla
+    quadrant-4 Belki
+    Sayfa bağlantıları: [0.75, 0.82]
+    Mürekkep araçları: [0.58, 0.72]
+    Temalar: [0.25, 0.3]</pre>
+<h3>Bir takvim</h3>
+<pre class="diagram">gantt
+  title Küçük bir defter projesi
+  dateFormat YYYY-MM-DD
+  section Hazırla
+  Taslak :done, a1, 2026-10-01, 2d
+  Yaz :active, a2, after a1, 3d
+  section İncele
+  Paylaş :a3, after a2, 1d</pre>
+<h2>Vega kaynağı: bir çubuk grafik</h2>
+<p>Bu belirtim, NoteCraft tarafından henüz çizilmeyen bir JSON kaynağı olarak gösterilir.</p>
+<pre class="json">{
+  &quot;$schema&quot;: &quot;https://vega.github.io/schema/vega-lite/v5.json&quot;,
+  &quot;data&quot;: {
+    &quot;values&quot;: [
+      {&quot;month&quot;: &quot;Oca&quot;, &quot;pages&quot;: 20},
+      {&quot;month&quot;: &quot;Şub&quot;, &quot;pages&quot;: 38},
+      {&quot;month&quot;: &quot;Mar&quot;, &quot;pages&quot;: 55}
+    ]
+  },
+  &quot;mark&quot;: &quot;bar&quot;,
+  &quot;encoding&quot;: {
+    &quot;x&quot;: {&quot;field&quot;: &quot;month&quot;, &quot;type&quot;: &quot;ordinal&quot;},
+    &quot;y&quot;: {&quot;field&quot;: &quot;pages&quot;, &quot;type&quot;: &quot;quantitative&quot;}
+  }
+}</pre>
+<h2>Vega kaynağı: bir çizgi grafik</h2>
+<pre class="json">{
+  &quot;$schema&quot;: &quot;https://vega.github.io/schema/vega-lite/v5.json&quot;,
+  &quot;data&quot;: {
+    &quot;values&quot;: [
+      {&quot;month&quot;: &quot;Oca&quot;, &quot;pages&quot;: 12},
+      {&quot;month&quot;: &quot;Şub&quot;, &quot;pages&quot;: 29},
+      {&quot;month&quot;: &quot;Mar&quot;, &quot;pages&quot;: 48}
+    ]
+  },
+  &quot;mark&quot;: &quot;line&quot;,
+  &quot;encoding&quot;: {
+    &quot;x&quot;: {&quot;field&quot;: &quot;month&quot;, &quot;type&quot;: &quot;ordinal&quot;},
+    &quot;y&quot;: {&quot;field&quot;: &quot;pages&quot;, &quot;type&quot;: &quot;quantitative&quot;}
+  }
+}</pre>
+<h2>D3 kaynağı: bir çubuk grafik</h2>
+<p>Bu JavaScript bir D3 grafiğinin kaynak kodudur. NoteCraft kodu gösterir ama çalıştırmaz.</p>
+<pre class="javascript">const data = [
+  { month: &quot;Oca&quot;, pages: 20 },
+  { month: &quot;Şub&quot;, pages: 38 },
+  { month: &quot;Mar&quot;, pages: 55 }
+];
+
+const svg = d3.select(&quot;svg&quot;)
+  .attr(&quot;width&quot;, 400)
+  .attr(&quot;height&quot;, 260);
+const x = d3.scaleBand()
+  .domain(data.map(d =&gt; d.month))
+  .range([0, 360])
+  .padding(0.15);
+const y = d3.scaleLinear()
+  .domain([0, d3.max(data, d =&gt; d.pages)])
+  .range([220, 0]);
+
+svg.selectAll(&quot;rect&quot;)
+  .data(data)
+  .join(&quot;rect&quot;)
+  .attr(&quot;x&quot;, d =&gt; x(d.month))
+  .attr(&quot;y&quot;, d =&gt; y(d.pages))
+  .attr(&quot;width&quot;, x.bandwidth())
+  .attr(&quot;height&quot;, d =&gt; 220 - y(d.pages));</pre>
+<h2>D3 kaynağı: bir çizgi grafik</h2>
+<pre class="javascript">const data = [
+  { month: &quot;Oca&quot;, pages: 12 },
+  { month: &quot;Şub&quot;, pages: 29 },
+  { month: &quot;Mar&quot;, pages: 48 }
+];
+
+const svg = d3.select(&quot;svg&quot;)
+  .attr(&quot;width&quot;, 400)
+  .attr(&quot;height&quot;, 260);
+const x = d3.scalePoint()
+  .domain(data.map(d =&gt; d.month))
+  .range([20, 360]);
+const y = d3.scaleLinear()
+  .domain([0, d3.max(data, d =&gt; d.pages)])
+  .range([220, 0]);
+const line = d3.line()
+  .x(d =&gt; x(d.month))
+  .y(d =&gt; y(d.pages));
+
+svg.append(&quot;path&quot;)
+  .datum(data)
+  .attr(&quot;fill&quot;, &quot;none&quot;)
+  .attr(&quot;stroke&quot;, &quot;currentColor&quot;)
+  .attr(&quot;d&quot;, line);</pre>
+<p>Sayfada grafikleri görmek için çizilmiş Mermaid bloklarına bakın. Vega ve D3 örneklerini, NoteCraft bu biçimleri desteklemeye başlayana kadar kod olarak tutun.</p>
+<p>Sonraki: <a href="../right-to-left/">Sağdan sola</a>.</p>
+<p><i>Bu sayfa bir yapay zekâ modeli tarafından çevrildi. Düzeltmeler memnuniyetle karşılanır.</i></p>
+</body>
+</html>

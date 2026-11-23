@@ -38,6 +38,10 @@ pub mod fonts {
     /// forms where the scripts share a character.
     pub const CJK: &[u8] = include_bytes!("../../../assets/fonts/NotoSansCJKsc-Regular.otf");
 
+    /// Twemoji Mozilla, 1.4 MB: the emoji in colour. It is the last resort for a machine with no emoji
+    /// font of its own; it is registered apart from [`ALL`], ahead of those faces.
+    pub const EMOJI: &[u8] = include_bytes!("../../../assets/fonts/TwemojiMozilla.ttf");
+
     /// All of them, in fallback order, each with the name the window registers it under.
     pub const ALL: [(&str, &[u8]); 4] =
         [("noto-naskh-arabic", ARABIC), ("noto-sans-hebrew", HEBREW), ("noto-sans-devanagari", DEVANAGARI), ("noto-sans-cjk-sc", CJK)];

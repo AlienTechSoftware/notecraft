@@ -502,6 +502,25 @@ impl Writer {
     }
 
     fn tag(&mut self, name: &str, closing: bool, attrs: &str) {
+        // A block that carries emoji keeps them as the marker line above it, the same form the
+        // CMGFM page uses, so both formats read back to the same blocks.
+        if !closing
+            && !self.in_cell
+            && !self.in_pre
+            && matches!(name, "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p" | "li" | "blockquote" | "pre" | "table" | "hr")
+            && let Some(list) = attr(attrs, "data-nc-emoji")
+        {
+            let names: Vec<&str> = list.split_whitespace().collect();
+            if !names.is_empty() {
+                self.block_break();
+                self.push(&format!(
+                    "<!-- nc-emoji: {} -->
+
+",
+                    names.join(" ")
+                ));
+            }
+        }
         match (name, closing) {
             ("h1" | "h2" | "h3" | "h4" | "h5" | "h6", false) => {
                 self.block_break();

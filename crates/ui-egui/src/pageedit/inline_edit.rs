@@ -646,10 +646,12 @@ impl InlineEdit {
         }
         let spans = merge(spans);
         match block {
-            Block::Heading { spans: value, .. } | Block::Paragraph(value) | Block::Quote(value) | Block::Item { spans: value, .. } => *value = spans,
-            Block::Code { text: value, .. } | Block::MathBlock(value) => *value = self.text.clone(),
+            Block::Heading { spans: value, .. } | Block::Paragraph(value, _) | Block::Quote(value, _) | Block::Item { spans: value, .. } => {
+                *value = spans
+            }
+            Block::Code { text: value, .. } | Block::MathBlock(value, _) => *value = self.text.clone(),
             Block::Image { alt, .. } => *alt = self.text.clone(),
-            Block::Table { .. } | Block::Rule => {}
+            Block::Table { .. } | Block::Rule(_) => {}
         }
     }
 
@@ -707,10 +709,12 @@ impl InlineEdit {
         };
         let spans = self.parse(&text);
         match block {
-            Block::Heading { spans: value, .. } | Block::Paragraph(value) | Block::Quote(value) | Block::Item { spans: value, .. } => *value = spans,
-            Block::Code { text: value, .. } | Block::MathBlock(value) => *value = text.to_owned(),
+            Block::Heading { spans: value, .. } | Block::Paragraph(value, _) | Block::Quote(value, _) | Block::Item { spans: value, .. } => {
+                *value = spans
+            }
+            Block::Code { text: value, .. } | Block::MathBlock(value, _) => *value = text.to_owned(),
             Block::Image { alt, .. } => *alt = text.to_owned(),
-            Block::Table { .. } | Block::Rule => {}
+            Block::Table { .. } | Block::Rule(_) => {}
         }
     }
 }

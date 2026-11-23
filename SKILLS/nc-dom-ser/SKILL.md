@@ -22,6 +22,24 @@ Both HTML and CommonMark formats MUST remain:
 
 ---
 
+## Model and view (block is the object, the control is its view)
+
+- **The block is the model.** A block (`Block` in `crates/formats/src/markdown.rs`) holds
+  everything the page stores about it: its kind, its text and any data the user chose for it.
+  Anything the files must keep belongs on the block and is written to both HTML and CMGFM.
+- **Controls are views of the block.** The `+` button, its popup, hover and focus are drawn from
+  the block and hold only view state (for example, which popup is open). They never hold data
+  that a file should keep.
+- **Data the user picks is model data.** An emoji chosen on a block is stored on that block,
+  round-trips through both formats, and has a round-trip test. A store kept by the view, keyed
+  by page path and block position, is not allowed: it loses data when blocks move and is lost
+  on restart.
+- **One view entry point per block.** Every path that draws a block (page editor, boxes,
+  read-only views) calls one function that draws the block frame and its header control as
+  children of the frame. No call site draws block chrome itself.
+
+---
+
 ## Supported Block Types (Parity Required)
 
 Every block type in HTML MUST have a CommonMark equivalent:
@@ -145,7 +163,7 @@ fn md_round_trip() {
 
 ---
 
-**Last updated:** 2026-11-23 | **Blocking requirement:** Yes
+**Last updated:** 2026-11-22 | **Blocking requirement:** Yes
 
 ## Reference: WordCraft and NoteCraft document models
 

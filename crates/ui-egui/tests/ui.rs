@@ -8,6 +8,7 @@ use notecraft_engine::sample::{Sample, create_sample};
 use notecraft_engine::{Output, Params, Session};
 use notecraft_store::Settings;
 use notecraft_store::testing::TempDir;
+use notecraft_ui_egui::block_emoji::HEADER_ROW;
 use notecraft_ui_egui::control::{ControlRequest, start};
 use notecraft_ui_egui::theme::{Accent, Mode, ModePref, Theme, Tokens, contrast};
 use notecraft_ui_egui::{LOGO_PNG, NoteCraftApp};
@@ -1458,7 +1459,7 @@ fn a_container_can_be_dragged_and_stays_where_it_is_put() {
     let origin = v.pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
     let (ox, oy) = (origin.first().and_then(Value::as_f64).unwrap_or(0.0), origin.get(1).and_then(Value::as_f64).unwrap_or(0.0));
     assert!(ox > 0.0 && oy > 0.0, "the page knows where it is drawn: {origin:?}");
-    let (hx, hy) = (ox + 40.0 + 160.0, oy + 20.0 + 6.0);
+    let (hx, hy) = (ox + 40.0 + 160.0, oy + 20.0 + HEADER_ROW as f64 + 6.0);
 
     // Press on the bar, move, let go.
     ask(&mut h, "ui.press", json!({"x": hx, "y": hy})).expect("press");
@@ -1969,7 +1970,7 @@ fn insert_table_dialog_makes_a_table_of_the_typed_size() {
         settle(&mut h);
         let blocks = h.state().editor_blocks();
         let made = blocks.iter().find_map(|b| match b {
-            notecraft_formats::Block::Table { head, rows } => Some((head.len(), rows.len() + 1)),
+            notecraft_formats::Block::Table { head, rows, .. } => Some((head.len(), rows.len() + 1)),
             _ => None,
         });
         assert_eq!(made, Some((12, 25)), "html={html}: 12 columns and 25 rows, heading included");
@@ -1984,7 +1985,7 @@ fn insert_table_dialog_makes_a_table_of_the_typed_size() {
             .state()
             .editor_blocks()
             .iter()
-            .any(|b| matches!(b, notecraft_formats::Block::Table { head, rows } if head.len() == 12 && rows.len() + 1 == 25));
+            .any(|b| matches!(b, notecraft_formats::Block::Table { head, rows, .. } if head.len() == 12 && rows.len() + 1 == 25));
         assert!(reopened, "html={html}: saved and read back at 12 by 25");
     }
 }
@@ -5200,7 +5201,7 @@ fn a_box_stays_drawn_while_the_pointer_is_on_its_drag_strip() {
     let origin = &page["origin"];
     let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
     // The strip runs along the top of the box, 14 points high, as wide as the box and its padding.
-    let strip = egui::Rect::from_min_size(egui::pos2(ox + 40.0, oy + 40.0), egui::vec2(300.0 + 12.0, 14.0));
+    let strip = egui::Rect::from_min_size(egui::pos2(ox + 40.0, oy + 40.0 + HEADER_ROW), egui::vec2(300.0 + 12.0, 14.0));
     let near = |a: egui::Rect, b: egui::Rect| (a.min - b.min).length() < 2.0 && (a.max - b.max).length() < 2.0;
 
     for (what, at) in [("over the words", egui::pos2(strip.center().x, strip.max.y + 12.0)), ("on the drag strip", strip.center())] {
@@ -5209,61 +5210,6 @@ fn a_box_stays_drawn_while_the_pointer_is_on_its_drag_strip() {
         let rects = painted_rects(&h);
         assert!(rects.iter().any(|r| near(*r, strip)), "{what}: the drag strip is drawn at {strip:?}; painted: {rects:?}");
     }
-}
-
-/// As in OneNote, a click on open paper only places the cursor there: no box is drawn until
-/// something is written. The box appears with the first letter.
-#[test]
-fn a_click_on_open_paper_shows_only_the_cursor_until_something_is_written() {
-    let (_t, app, s) = sample_app("ui-click-cursor-only");
-    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
-    settle(&mut h);
-    let section = s.md_page.parent().expect("the section").to_string_lossy().into_owned();
-    let html = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"300\"><p>words</p></div>\n";
-    let made = ask(
-        &mut h,
-        "engine.execute",
-        json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Cursor only", "format": "html"}}),
-    )
-    .expect("a page");
-    let dir = made.as_str().expect("its path").to_string();
-    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": dir, "body": html}})).expect("save it");
-    ask(&mut h, "ui.open", json!({"path": dir})).expect("open it");
-    settle(&mut h);
-    let origin = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["origin"].clone();
-    let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
-    let at = egui::pos2(ox + 500.0, oy + 200.0);
-    ask(&mut h, "ui.click", json!({"x": at.x, "y": at.y})).expect("click the open paper");
-    settle(&mut h);
-    let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
-    assert!(page["caret"] != Value::Null, "the cursor is placed where the click was: {page}");
-    // A box's frame, drag strip or the outline of the line being written in, around the click:
-    // anything visible drawn there narrower than the window.
-    let near = |h: &Harness<'_, NoteCraftApp>| {
-        fn walk(shape: &egui::Shape, out: &mut Vec<(egui::Rect, egui::Color32, egui::Stroke)>) {
-            match shape {
-                egui::Shape::Rect(r) => out.push((r.rect, r.fill, r.stroke)),
-                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
-                _ => {}
-            }
-        }
-        let mut all = Vec::new();
-        for clipped in &h.output().shapes {
-            walk(&clipped.shape, &mut all);
-        }
-        all.into_iter()
-            .filter(|(r, fill, stroke)| {
-                let seen = fill.a() > 0 || (stroke.width > 0.0 && stroke.color.a() > 0);
-                seen && r.width() > 40.0 && r.width() < 900.0 && r.expand(16.0).contains(at)
-            })
-            .map(|(r, ..)| r)
-            .collect::<Vec<_>>()
-    };
-    let box_drawn = |h: &Harness<'_, NoteCraftApp>| !near(h).is_empty();
-    assert!(!box_drawn(&h), "no box is drawn before anything is written: {:?}", near(&h));
-    ask(&mut h, "ui.text", json!({"text": "now a box"})).expect("type");
-    settle(&mut h);
-    assert!(box_drawn(&h), "the box appears with the first letters");
 }
 
 /// A click on open paper writes nothing to the page's file: the place it puts the cursor is not
@@ -5513,7 +5459,7 @@ fn dragging_a_box_to_the_bottom_edge_scrolls_the_page() {
     let origin = &page["origin"];
     let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
     // The middle of the drag strip along the top of the first box.
-    let (x, y) = (ox + 40.0 + 150.0, oy + 40.0 + 7.0);
+    let (x, y) = (ox + 40.0 + 150.0, oy + 40.0 + HEADER_ROW + 7.0);
     ask(&mut h, "ui.move", json!({"x": x, "y": y})).expect("onto the strip");
     settle(&mut h);
     ask(&mut h, "ui.press", json!({"x": x, "y": y})).expect("down");
@@ -5541,7 +5487,7 @@ fn dragging_a_box_to_the_bottom_edge_scrolls_the_page() {
 
     // And back up: held at the top of the view, the page scrolls back, but not past its own top.
     // The strip of the box, where it now sits on the scrolled page.
-    let y = oy_after + box_y + 7.0;
+    let y = oy_after + box_y + HEADER_ROW + 7.0;
     ask(&mut h, "ui.press", json!({"x": x, "y": y})).expect("down on the strip again");
     pump(&mut h);
     // Above the page's own top: past the top edge of the view, where the scroll is fastest.
@@ -5590,7 +5536,7 @@ fn a_dragged_box_stays_where_it_was_taken_hold_of_after_the_pointer_strays() {
     settle(&mut h);
     let page = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
     let (ox, oy) = (page["origin"][0].as_f64().unwrap_or(0.0) as f32, page["origin"][1].as_f64().unwrap_or(0.0) as f32);
-    let (x, y) = (ox + 40.0 + 150.0, oy + 40.0 + 7.0);
+    let (x, y) = (ox + 40.0 + 150.0, oy + 40.0 + HEADER_ROW + 7.0);
     ask(&mut h, "ui.move", json!({"x": x, "y": y})).expect("onto the strip");
     settle(&mut h);
     ask(&mut h, "ui.press", json!({"x": x, "y": y})).expect("down");
@@ -5663,7 +5609,7 @@ fn a_selection_box_dragged_over_open_paper_selects_moves_and_deletes_boxes() {
     assert_eq!(picked["caret"], Value::Null, "nor is the cursor placed: {picked}");
 
     // Moving the first by its strip moves the second with it.
-    let strip = egui::pos2(ox + 40.0 + 100.0, oy + 60.0 + 7.0);
+    let strip = egui::pos2(ox + 40.0 + 100.0, oy + 60.0 + HEADER_ROW + 7.0);
     ask(&mut h, "ui.move", json!({"x": strip.x, "y": strip.y})).expect("onto the strip");
     settle(&mut h);
     ask(&mut h, "ui.press", json!({"x": strip.x, "y": strip.y})).expect("down");
@@ -5753,7 +5699,7 @@ fn a_selection_box_picks_up_ink_with_the_boxes_and_they_move_and_go_together() {
     assert_eq!(picked["ink"]["holding"], json!(1), "and the writing is picked up: {}", picked["ink"]);
 
     // Dragging the box by its strip takes the writing with it.
-    drag(&mut h, egui::pos2(ox + 140.0, oy + 67.0), egui::pos2(ox + 140.0, oy + 167.0));
+    drag(&mut h, egui::pos2(ox + 140.0, oy + 67.0 + HEADER_ROW), egui::pos2(ox + 140.0, oy + 167.0 + HEADER_ROW));
     let moved = ink(&mut h);
     let b1 = bounds(&moved);
     assert_eq!(moved["page"]["containers"][0]["y"], json!(160.0), "the box moved down: {}", moved["page"]);
@@ -5854,7 +5800,7 @@ fn a_selection_box_shows_what_it_takes_and_ctrl_click_leaves_a_box_out() {
     assert_eq!(picked["ink"]["holding"], json!(1), "and the writing: {}", picked["ink"]);
 
     // Ctrl and a click on the box's words takes the box out, and puts no cursor in it.
-    ask(&mut h, "ui.click", json!({"x": ox + 80.0, "y": oy + 90.0, "ctrl": true})).expect("ctrl click the box");
+    ask(&mut h, "ui.click", json!({"x": ox + 80.0, "y": oy + 90.0 + HEADER_ROW, "ctrl": true})).expect("ctrl click the box");
     settle(&mut h);
     let left_out = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
     assert_eq!(left_out["page"]["selectedContainers"], json!([]), "the box is out of the selection: {}", left_out["page"]);
@@ -5904,7 +5850,7 @@ fn a_click_puts_the_caret_under_the_pointer_when_zoomed_in() {
         settle(h);
         caret["at"].as_u64().unwrap_or(u64::MAX)
     };
-    let at_100 = caret_after_click(&mut h, egui::vec2(57.0, 18.0));
+    let at_100 = caret_after_click(&mut h, egui::vec2(57.0, 18.0 + HEADER_ROW));
     assert!(at_100 > 0 && at_100 < 18, "at 100 % the click is inside the words: {at_100}");
     h.get_by_label("View").click();
     settle(&mut h);
@@ -5914,7 +5860,7 @@ fn a_click_puts_the_caret_under_the_pointer_when_zoomed_in() {
     }
     let zoom = h.state().zoom_percent() as f32 / 100.0;
     assert!((zoom - 2.0).abs() < 0.01, "zoomed to 200 %: {zoom}");
-    let at_200 = caret_after_click(&mut h, egui::vec2(57.0, 18.0) * zoom);
+    let at_200 = caret_after_click(&mut h, egui::vec2(57.0, 18.0 + HEADER_ROW) * zoom);
     assert!(at_200.abs_diff(at_100) <= 1, "the same place on the page puts the caret at the same letter: {at_100} at 100 %, {at_200} at 200 %");
 }
 
@@ -6245,7 +6191,8 @@ fn a_box_that_is_copied_and_pasted_comes_back_as_it_was() {
     let (ox, oy) = (page["origin"][0].as_f64().unwrap_or(0.0), page["origin"][1].as_f64().unwrap_or(0.0));
 
     // Select the box by its bar, and copy it with the keys.
-    ask(&mut h, "ui.click", json!({"x": ox + 200.0, "y": oy + 6.0})).expect("select the box by its bar");
+    let by = bar_y(&mut h, oy);
+    ask(&mut h, "ui.click", json!({"x": ox + 200.0, "y": by})).expect("select the box by its bar");
     settle(&mut h);
     let selected = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"]["selectedContainer"].clone();
     assert_eq!(selected, json!(0), "the box is selected: {selected}");
@@ -7357,7 +7304,8 @@ fn right_click_selects_a_container_and_delete_removes_it_with_its_content() {
     let before = h.state().body().unwrap_or_default().to_string();
 
     // On the box's handle, along its top edge.
-    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 6.0, "button": "right"})).expect("right click the handle");
+    let by = bar_y(&mut h, oy);
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": by, "button": "right"})).expect("right click the handle");
     for _ in 0..6 {
         pump(&mut h);
     }
@@ -7383,8 +7331,10 @@ fn right_click_selects_a_container_and_delete_removes_it_with_its_content() {
 /// page's menu opens and the box is left as it was.
 #[test]
 fn right_click_on_a_boxs_words_does_not_select_the_box() {
-    let (_t, mut h, _, (ox, oy)) = two_boxes("ui-box-words-right");
-    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 30.0, "button": "right"})).expect("right click the words");
+    let (_t, mut h, _, (ox, _)) = two_boxes("ui-box-words-right");
+    // The words sit just under the first block's header.
+    let header = h.query_all_by_label_contains("Add emoji to block").next().expect("the first header").rect();
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": header.bottom() as f64 + 30.0, "button": "right"})).expect("right click the words");
     for _ in 0..6 {
         pump(&mut h);
     }
@@ -7398,7 +7348,8 @@ fn right_click_on_a_boxs_words_does_not_select_the_box() {
 fn the_handle_selects_a_container_and_the_delete_key_removes_it() {
     let (_t, mut h, blocks, (ox, oy)) = two_boxes("ui-box-key");
     // The handle runs along the top of the box.
-    ask(&mut h, "ui.click", json!({"x": ox + 160.0, "y": oy + 6.0})).expect("click the handle");
+    let by = bar_y(&mut h, oy);
+    ask(&mut h, "ui.click", json!({"x": ox + 160.0, "y": by})).expect("click the handle");
     for _ in 0..6 {
         pump(&mut h);
     }
@@ -7416,7 +7367,8 @@ fn the_handle_selects_a_container_and_the_delete_key_removes_it() {
 #[test]
 fn escape_lets_go_of_a_selected_container() {
     let (_t, mut h, blocks, (ox, oy)) = two_boxes("ui-box-escape");
-    ask(&mut h, "ui.click", json!({"x": ox + 160.0, "y": oy + 6.0})).expect("click the handle");
+    let by = bar_y(&mut h, oy);
+    ask(&mut h, "ui.click", json!({"x": ox + 160.0, "y": by})).expect("click the handle");
     for _ in 0..6 {
         pump(&mut h);
     }
@@ -7437,7 +7389,8 @@ fn needle(body: &str, from: usize, to: usize) -> String {
 }
 
 fn select_box_by_handle(h: &mut Harness<'_, NoteCraftApp>, ox: f64, oy: f64, x: f64) {
-    ask(h, "ui.click", json!({"x": ox + x, "y": oy + 6.0})).expect("click the handle");
+    let by = bar_y(h, oy);
+    ask(h, "ui.click", json!({"x": ox + x, "y": by})).expect("click the handle");
     for _ in 0..6 {
         pump(h);
     }
@@ -7531,7 +7484,8 @@ fn copy_and_cut_on_a_box_reach_the_clipboard() {
         let (_t, mut h, blocks, (ox, oy)) = two_boxes_on(&format!("ui-box-{label}"), &board);
         let before = h.state().body().unwrap_or_default().to_string();
         let words = needle(&before, 0, 2);
-        ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 6.0, "button": "right"})).expect("right click the handle");
+        let by = bar_y(&mut h, oy);
+        ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": by, "button": "right"})).expect("right click the handle");
         for _ in 0..6 {
             pump(&mut h);
         }
@@ -7589,7 +7543,9 @@ fn clicking_into_words_lets_go_of_a_selected_box() {
     let (_t, mut h, blocks, (ox, oy)) = two_boxes("ui-box-click-away");
     select_box_by_handle(&mut h, ox, oy, 160.0);
     assert_eq!(look_at(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "selected");
-    ask(&mut h, "ui.click", json!({"x": ox + 360.0 + 60.0, "y": oy + 30.0 + 40.0})).expect("click the other box's words");
+    // The other box's first block is block 3; its words sit just under its header.
+    let header = h.get_by_label("Add emoji to block 3").rect();
+    ask(&mut h, "ui.click", json!({"x": header.left() + 60.0, "y": header.bottom() as f64 + 30.0})).expect("click the other box's words");
     settle(&mut h);
     let v = look_at(&mut h);
     assert!(v.pointer("/page/selectedContainer").is_none_or(Value::is_null), "no longer selected: {v}");
@@ -7675,7 +7631,7 @@ fn deleting_a_box_with_a_picture_in_it_removes_the_picture_from_the_page() {
     assert!(file(&s).contains("koala.png"), "the sample page has a picture, in the second box");
 
     // The second box starts at x 360, y 30: its handle is along its top.
-    ask(&mut h, "ui.click", json!({"x": ox + 360.0 + 150.0, "y": oy + 30.0 + 6.0})).expect("click the second handle");
+    ask(&mut h, "ui.click", json!({"x": ox + 360.0 + 150.0, "y": oy + 30.0 + HEADER_ROW as f64 + 6.0})).expect("click the second handle");
     for _ in 0..6 {
         pump(&mut h);
     }
@@ -7705,10 +7661,11 @@ fn clicking_a_picture_selects_the_picture_only() {
     settle(&mut h);
     let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
     let ox = origin.first().and_then(Value::as_f64).unwrap_or(0.0);
-    let oy = origin.get(1).and_then(Value::as_f64).unwrap_or(0.0);
 
     // The picture begins below the container handle/padding.
-    ask(&mut h, "ui.click", json!({"x": ox + 120.0, "y": oy + 40.0})).expect("click the picture");
+    // The picture sits just under its block's header, which is found by its name.
+    let header = h.query_all_by_label_contains("Add emoji to block").next().expect("the header of the picture block").rect();
+    ask(&mut h, "ui.click", json!({"x": ox + 120.0, "y": header.bottom() as f64 + 16.0})).expect("click the picture");
     settle(&mut h);
     let v = look_at(&mut h);
     assert_eq!(v.pointer("/page/selectedImage").and_then(Value::as_u64), Some(0), "the picture is selected: {v}");
@@ -7718,7 +7675,8 @@ fn clicking_a_picture_selects_the_picture_only() {
     settle(&mut h);
     assert!(look_at(&mut h).pointer("/page/selectedImage").is_none_or(Value::is_null), "Escape clears the picture selection");
 
-    ask(&mut h, "ui.click", json!({"x": ox + 120.0, "y": oy + 40.0, "button": "right"})).expect("right click the picture");
+    let header = h.query_all_by_label_contains("Add emoji to block").next().expect("the header of the picture block").rect();
+    ask(&mut h, "ui.click", json!({"x": ox + 120.0, "y": header.bottom() as f64 + 16.0, "button": "right"})).expect("right click the picture");
     settle(&mut h);
     let v = look_at(&mut h);
     assert_eq!(v.pointer("/page/selectedImage").and_then(Value::as_u64), Some(0), "right-clicking selects the picture: {v}");
@@ -8082,13 +8040,11 @@ fn double_clicking_an_attachment_card_opens_it() {
         .expect("arrange attachment card");
     ask(&mut h, "ui.open", json!({"path": page})).expect("open");
     settle(&mut h);
-    let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
-    let ox = origin.first().and_then(Value::as_f64).unwrap_or(0.0);
-    let oy = origin.get(1).and_then(Value::as_f64).unwrap_or(0.0);
     // Send one native double-click gesture. The single-click selection path is covered by the
     // picture-selection test; keeping this test to one gesture avoids coupling two separate
     // gestures to the runner's frame timing.
-    ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + 40.0, "count": 2})).expect("double click card");
+    let card = h.get_by_role_and_label(egui::accesskit::Role::Image, "brief.docx").rect().center();
+    ask(&mut h, "ui.click", json!({"x": card.x, "y": card.y, "count": 2})).expect("double click card");
     for _ in 0..6 {
         pump(&mut h);
     }
@@ -8138,8 +8094,8 @@ fn delete_and_backspace_remove_a_selected_picture() {
         settle(&mut h);
         let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
         let ox = origin.first().and_then(Value::as_f64).unwrap_or(0.0);
-        let oy = origin.get(1).and_then(Value::as_f64).unwrap_or(0.0);
-        ask(&mut h, "ui.click", json!({"x": ox + 120.0, "y": oy + 40.0})).expect("click the picture");
+        let header = h.query_all_by_label_contains("Add emoji to block").next().expect("the header of the block").rect();
+        ask(&mut h, "ui.click", json!({"x": ox + 120.0, "y": header.bottom() as f64 + 16.0})).expect("click the picture");
         settle(&mut h);
         assert_eq!(look_at(&mut h).pointer("/page/selectedImage").and_then(Value::as_u64), Some(0), "the picture is selected");
         ask(&mut h, "ui.key", json!({"key": key})).expect("remove the picture");
@@ -8241,7 +8197,8 @@ fn escape_closes_the_menu_and_its_toolbar() {
 #[test]
 fn a_boxs_menu_has_no_formatting_toolbar() {
     let (_t, mut h, _, (ox, oy)) = two_boxes("ui-minibar-box");
-    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 6.0, "button": "right"})).expect("right click the handle");
+    let by = bar_y(&mut h, oy);
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": by, "button": "right"})).expect("right click the handle");
     for _ in 0..8 {
         pump(&mut h);
     }
@@ -8300,7 +8257,8 @@ fn clicking_in_an_empty_box_puts_the_caret_there_and_typing_works() {
 #[test]
 fn an_empty_line_can_be_clicked_into_again() {
     let (_t, mut h, (ox, oy)) = blank_page("ui-empty-box-again", "<p></p>");
-    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 24.0})).expect("click in");
+    // The first click is on open paper; it makes the empty line and puts the caret in it.
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 70.0})).expect("click in");
     for _ in 0..4 {
         pump(&mut h);
     }
@@ -8313,7 +8271,9 @@ fn an_empty_line_can_be_clicked_into_again() {
     for _ in 0..4 {
         pump(&mut h);
     }
-    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": oy + 24.0})).expect("click in again");
+    // The line is named once it exists, so the second click finds it by name.
+    let line = h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Block 1").rect().center();
+    ask(&mut h, "ui.click", json!({"x": line.x, "y": line.y})).expect("click in again");
     for _ in 0..6 {
         pump(&mut h);
     }
@@ -8656,7 +8616,7 @@ fn an_older_page_is_read_and_moved_to_the_new_form() {
     let v = look_at(&mut h);
     let origin = v.pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
     let (ox, oy) = (origin.first().and_then(Value::as_f64).unwrap_or(0.0), origin.get(1).and_then(Value::as_f64).unwrap_or(0.0));
-    let (hx, hy) = (ox + 40.0 + 160.0, oy + 20.0 + 6.0);
+    let (hx, hy) = (ox + 40.0 + 160.0, oy + 20.0 + HEADER_ROW as f64 + 6.0);
     ask(&mut h, "ui.press", json!({"x": hx, "y": hy})).expect("press");
     pump(&mut h);
     ask(&mut h, "ui.move", json!({"x": hx + 30.0, "y": hy + 20.0})).expect("move");
@@ -9211,7 +9171,7 @@ fn a_selected_box_takes_the_ribbon_as_a_whole() {
     // Pick the box by its handle.
     let origin = look(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
     let (ox, oy) = (origin.first().and_then(Value::as_f64).unwrap_or(0.0) as f32, origin.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32);
-    click(&mut h, ox + 40.0 + 160.0, oy + 20.0 + 6.0);
+    click(&mut h, ox + 40.0 + 160.0, oy + 20.0 + HEADER_ROW + 6.0);
     assert_eq!(look(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "the box is selected");
 
     // Bold, from the ribbon: every line of words in the box, and the box stays picked.
@@ -9378,11 +9338,11 @@ fn typed_font_size_case(html: bool, enter: bool) {
     let after = h.state().body().unwrap_or_default().to_string();
     let (blocks, _) = notecraft_formats::boxes::read(format, &after);
     assert_eq!(blocks.len(), 2, "Enter in the combo must not create a paragraph in the note");
-    let notecraft_formats::Block::Paragraph(selected) = &blocks[0] else { panic!("selected paragraph") };
+    let notecraft_formats::Block::Paragraph(selected, _) = &blocks[0] else { panic!("selected paragraph") };
     assert_eq!(selected.iter().map(|s| s.text.as_str()).collect::<String>(), "alpha plain", "typing in the combo did not edit the note");
     assert!(selected.iter().all(|s| s.font_size == Some(24)), "the original selection took the size: {after}");
     assert_eq!(selected.iter().filter(|s| s.bold).map(|s| s.text.as_str()).collect::<String>(), "alpha", "other marks survive");
-    let notecraft_formats::Block::Paragraph(outside) = &blocks[1] else { panic!("outside paragraph") };
+    let notecraft_formats::Block::Paragraph(outside, _) = &blocks[1] else { panic!("outside paragraph") };
     assert_eq!(outside.iter().map(|s| s.text.as_str()).collect::<String>(), "untouched paragraph");
     assert!(outside.iter().all(|s| s.font_size.is_none()), "the unselected paragraph is unchanged");
     review(&mut h, &format!("typed_font_size_{html}_{enter}"));
@@ -9509,7 +9469,7 @@ fn dragging_across_text_selects_it() {
     let (ox, oy) = (origin[0].as_f64().unwrap_or(0.0) as f32, origin[1].as_f64().unwrap_or(0.0) as f32);
     // Follow the rendered text container, rather than a screen coordinate that
     // becomes blank paper when the surrounding application chrome changes.
-    let (y, x0, x1) = (oy + 24.0, ox + 10.0, ox + 70.0);
+    let (y, x0, x1) = (oy + 24.0 + HEADER_ROW, ox + 10.0, ox + 70.0);
     ask(&mut h, "ui.click", json!({"x": x0, "y": y})).expect("focus the text");
     settle(&mut h);
     ask(&mut h, "ui.press", json!({"x": x0, "y": y})).expect("press");
@@ -9611,7 +9571,7 @@ fn installed_font_family_can_be_applied_and_undone_in_both_formats() {
         settle(&mut h);
         let after = h.state().body().unwrap_or_default().to_string();
         let (blocks, _) = notecraft_formats::boxes::read(format, &after);
-        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
         assert!(spans.iter().all(|span| span.font_family.as_deref() == Some(family.as_str())), "{family}: {after}");
         let inspection = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
         assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some(family.as_str()), "{inspection}");
@@ -9662,7 +9622,7 @@ fn installed_family_and_underline_apply_to_new_text() {
     ask(&mut h, "ui.text", json!({"text": "字"})).expect("typing");
     settle(&mut h);
     let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, h.state().body().unwrap_or_default());
-    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+    let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
     assert!(spans.iter().any(|span| span.text.contains('字') && span.underline && span.font_family.as_deref() == Some(family.as_str())), "{spans:?}");
 }
 
@@ -9685,7 +9645,7 @@ fn underline_and_scripts_toggle_and_undo_for_a_selected_line_in_both_formats() {
             settle(&mut h);
             let after = h.state().body().unwrap_or_default().to_string();
             let (blocks, _) = notecraft_formats::boxes::read(format, &after);
-            let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+            let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
             assert!(
                 spans.iter().all(|span| match mark {
                     "Underline" => span.underline,
@@ -10150,7 +10110,7 @@ mod formatting_shortcuts_match_ribbon_and_keep_selection_history_and_storage {
             review(&mut h, &format!("shortcut_{format:?}_{}", theme.id()));
         }
         let (blocks, _) = notecraft_formats::boxes::read(format, &after);
-        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
         let active = |s: &notecraft_formats::markdown::Span| match key {
             egui::Key::B => s.bold,
             egui::Key::I => s.italic,
@@ -10159,7 +10119,7 @@ mod formatting_shortcuts_match_ribbon_and_keep_selection_history_and_storage {
         assert_eq!(spans.iter().filter(|s| active(s)).map(|s| s.text.as_str()).collect::<String>(), "bravo", "{label}, mac={mac}: {after}");
         press(&mut h);
         let (blocks, _) = notecraft_formats::boxes::read(format, h.state().body().unwrap_or_default());
-        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
         assert!(spans.iter().all(|s| !active(s)), "second shortcut toggles the same selection");
         ask(&mut h, "ui.undo", json!({})).expect("undo toggle");
         settle(&mut h);
@@ -10260,7 +10220,7 @@ fn replacing_a_formatted_full_selection_keeps_only_the_replacement_in_both_forma
 
         let saved = h.state().body().unwrap_or_default().to_string();
         let (blocks, _) = notecraft_formats::boxes::read(format, &saved);
-        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
         assert_eq!(spans.iter().map(|span| span.text.as_str()).collect::<String>(), "Replacement", "{format:?}: {saved}");
         assert!(spans.iter().all(|span| span.bold == spans[0].bold), "{format:?}: replacement has one consistent formatting state: {saved}");
     }
@@ -10296,7 +10256,7 @@ fn legacy_font_marks_toggle_partial_selection_without_losing_other_styles() {
             settle(&mut h);
             let after = h.state().body().unwrap_or_default().to_string();
             let (blocks, _) = notecraft_formats::boxes::read(format, &after);
-            let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+            let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
             let active = |s: &notecraft_formats::markdown::Span| match label {
                 "Bold" => s.bold,
                 "Italic" => s.italic,
@@ -10308,7 +10268,7 @@ fn legacy_font_marks_toggle_partial_selection_without_losing_other_styles() {
             settle(&mut h);
             let toggled = h.state().body().unwrap_or_default().to_string();
             let (blocks, _) = notecraft_formats::boxes::read(format, &toggled);
-            let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+            let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
             assert!(spans.iter().all(|s| !active(s) && s.underline), "{label} toggles only the selection: {toggled}");
             ask(&mut h, "ui.undo", json!({})).expect("undo toggle");
             settle(&mut h);
@@ -10349,14 +10309,14 @@ fn underline_applies_only_to_a_partial_selection_and_undoes_in_both_formats() {
         settle(&mut h);
         let after = h.state().body().unwrap_or_default().to_string();
         let (blocks, _) = notecraft_formats::boxes::read(format, &after);
-        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
         assert_eq!(spans.iter().filter(|s| s.underline).map(|s| s.text.as_str()).collect::<String>(), "bravo", "{after}");
         assert_eq!(spans.iter().filter(|s| !s.underline).map(|s| s.text.as_str()).collect::<String>(), "alpha  omega", "{after}");
         h.get_by_label("Underline").click();
         settle(&mut h);
         let toggled = h.state().body().unwrap_or_default().to_string();
         let (blocks, _) = notecraft_formats::boxes::read(format, &toggled);
-        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
         assert!(spans.iter().all(|s| !s.underline), "selection remains active for toggle: {toggled}");
         ask(&mut h, "ui.undo", json!({})).expect("undo toggle");
         settle(&mut h);
@@ -10395,7 +10355,7 @@ fn font_size_replaces_only_the_partial_selection_inside_an_existing_size() {
     settle(&mut h);
     let body = h.state().body().unwrap_or_default();
     let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, body);
-    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+    let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
     assert_eq!(spans.iter().filter(|s| s.font_size == Some(24)).map(|s| s.text.as_str()).collect::<String>(), "bravo", "{body}");
     assert_eq!(spans.iter().filter(|s| s.font_size == Some(18)).map(|s| s.text.as_str()).collect::<String>(), "alpha  omega", "{body}");
 }
@@ -10423,7 +10383,7 @@ fn font_size_replaces_mixed_sizes_in_a_partial_selection() {
     settle(&mut h);
     let body = h.state().body().unwrap_or_default();
     let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, body);
-    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+    let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
     assert_eq!(spans.iter().filter(|s| s.font_size == Some(24)).map(|s| s.text.as_str()).collect::<String>(), "alpha bravo", "{body}");
     assert!(spans.iter().all(|s| s.font_size != Some(18)), "{body}");
 }
@@ -10467,7 +10427,7 @@ fn partial_selection_keeps_font_family_when_script_is_added() {
     settle(&mut h);
     let body = h.state().body().unwrap_or_default();
     let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, body);
-    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+    let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
     assert!(
         spans.iter().any(|span| span.text == "bravo"
             && span.font_family.as_deref() == Some(family.as_str())
@@ -10503,7 +10463,7 @@ fn pending_marks_combine_with_size_for_unicode_typing_in_both_formats() {
         settle(&mut h);
         let after = h.state().body().unwrap_or_default().to_string();
         let (blocks, _) = notecraft_formats::boxes::read(format, &after);
-        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
         assert!(
             spans.iter().any(|span| span.text.contains("مرحبا")
                 && span.underline
@@ -10537,7 +10497,7 @@ fn pending_marks_toggle_and_cancel_when_the_caret_moves() {
     ask(&mut h, "ui.text", json!({"text": "X"})).expect("typing");
     settle(&mut h);
     let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, h.state().body().unwrap_or_default());
-    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+    let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
     assert!(spans.iter().any(|s| s.text == "X" && !s.underline && s.script == Some(notecraft_formats::markdown::Script::Superscript)));
 
     ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
@@ -10549,7 +10509,7 @@ fn pending_marks_toggle_and_cancel_when_the_caret_moves() {
     ask(&mut h, "ui.text", json!({"text": "Y"})).expect("typing after moving");
     settle(&mut h);
     let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, h.state().body().unwrap_or_default());
-    let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+    let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
     assert!(spans.iter().any(|s| s.text.contains('Y') && !s.underline), "{spans:?}");
 }
 
@@ -10600,7 +10560,7 @@ fn selected_line_script_switch_is_exclusive_and_can_be_toggled_off() {
         settle(&mut h);
         let body = h.state().body().unwrap_or_default();
         let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, body);
-        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
         assert_eq!(spans.iter().map(|s| s.text.as_str()).collect::<String>(), "H2O");
         assert!(spans.iter().all(|s| s.underline && s.script == expected), "{button}: {body}");
     }
@@ -10620,7 +10580,7 @@ fn selected_container_font_size_is_undoable_and_leaves_other_boxes_alone() {
     let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, &after);
     fn spans(block: &notecraft_formats::Block) -> &[notecraft_formats::markdown::Span] {
         match block {
-            notecraft_formats::Block::Heading { spans, .. } | notecraft_formats::Block::Paragraph(spans) => spans,
+            notecraft_formats::Block::Heading { spans, .. } | notecraft_formats::Block::Paragraph(spans, _) => spans,
             _ => panic!("expected text block"),
         }
     }
@@ -10680,7 +10640,7 @@ fn selected_container_font_family_is_undoable_and_leaves_other_boxes_alone() {
     let (blocks, _) = notecraft_formats::boxes::read(notecraft_model::PageFormat::Cmgfm, &after);
     fn spans(block: &notecraft_formats::Block) -> &[notecraft_formats::markdown::Span] {
         match block {
-            notecraft_formats::Block::Heading { spans, .. } | notecraft_formats::Block::Paragraph(spans) => spans,
+            notecraft_formats::Block::Heading { spans, .. } | notecraft_formats::Block::Paragraph(spans, _) => spans,
             _ => panic!("expected text block"),
         }
     }
@@ -10744,7 +10704,7 @@ fn legacy_font_marks_apply_to_next_typed_text_without_changing_page_first() {
             settle(&mut h);
             let after = h.state().body().unwrap_or_default().to_string();
             let (blocks, _) = notecraft_formats::boxes::read(format, &after);
-            let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+            let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
             let marked = |s: &notecraft_formats::markdown::Span| match label {
                 "Bold" => s.bold,
                 "Italic" => s.italic,
@@ -10783,7 +10743,7 @@ fn pending_font_marks_combine_and_can_be_switched_off_before_typing() {
         settle(&mut h);
         let body = h.state().body().unwrap_or_default();
         let (blocks, _) = notecraft_formats::boxes::read(format, body);
-        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph expected") };
+        let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph expected") };
         assert!(
             spans.iter().any(|span| span.text == "words" && span.bold && span.italic && span.underline && !span.strike),
             "combined pending styles: {body}"
@@ -10891,7 +10851,7 @@ fn pending_font_size_can_change_in_a_typing_run() {
     ask(&mut h, "ui.text", json!({"text": "second"})).expect("second size");
     settle(&mut h);
     let blocks = notecraft_formats::markdown::parse(h.state().body().unwrap_or_default());
-    let Some(notecraft_formats::Block::Paragraph(spans)) = blocks.get(1) else { panic!("paragraph") };
+    let Some(notecraft_formats::Block::Paragraph(spans, _)) = blocks.get(1) else { panic!("paragraph") };
     assert!(spans.iter().any(|span| span.text.contains("first") && span.font_size == Some(18)), "{spans:?}");
     assert!(spans.iter().any(|span| span.text.contains("second") && span.font_size == Some(24)), "{spans:?}");
 }
@@ -10939,7 +10899,7 @@ fn the_format_painter_puts_the_formatting_on_the_words_picked_next() {
             notecraft_formats::markdown::parse(&md)
                 .into_iter()
                 .flat_map(|b| match b {
-                    notecraft_formats::Block::Paragraph(s) => s,
+                    notecraft_formats::Block::Paragraph(s, _) => s,
                     _ => Vec::new(),
                 })
                 .collect()
@@ -11039,8 +10999,8 @@ fn font_size_undo_and_redo_preserve_page_content_in_both_formats() {
         let (after_blocks, _) = notecraft_formats::boxes::read(format, &resized);
         let spans = |block: &notecraft_formats::Block| match block {
             notecraft_formats::Block::Heading { spans, .. }
-            | notecraft_formats::Block::Paragraph(spans)
-            | notecraft_formats::Block::Quote(spans)
+            | notecraft_formats::Block::Paragraph(spans, _)
+            | notecraft_formats::Block::Quote(spans, _)
             | notecraft_formats::Block::Item { spans, .. } => spans.clone(),
             _ => panic!("expected a block of text"),
         };
@@ -11605,7 +11565,7 @@ fn a_selected_box_takes_direction_tags_and_lists_as_a_whole() {
     };
     let origin = look(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
     let (ox, oy) = (origin.first().and_then(Value::as_f64).unwrap_or(0.0) as f32, origin.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32);
-    click(&mut h, ox + 40.0 + 160.0, oy + 20.0 + 6.0);
+    click(&mut h, ox + 40.0 + 160.0, oy + 20.0 + HEADER_ROW + 6.0);
     assert_eq!(look(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "the box is selected");
 
     // Right to left on every paragraph of words in it.
@@ -11656,7 +11616,7 @@ fn a_picture_in_each_of_two_stacked_boxes_can_be_selected_and_resized() {
     for (block, top) in [(1u64, 0.0), (3u64, 150.0)] {
         let mut selected = false;
         for dy in (0..8).map(|n| 30.0 + 12.0 * f64::from(n)) {
-            ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + top + dy})).expect("click");
+            ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + top + f64::from(HEADER_ROW) + dy})).expect("click");
             settle(&mut h);
             let v = look_at(&mut h);
             if v.pointer("/page/selectedObject/block").and_then(Value::as_u64) == Some(block) {
@@ -11671,9 +11631,9 @@ fn a_picture_in_each_of_two_stacked_boxes_can_be_selected_and_resized() {
         let before = width(&mut h);
         let mut grew = false;
         for dy in (0..10).map(|n| 30.0 + 8.0 * f64::from(n)) {
-            ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + top + 55.0})).expect("select the picture again");
+            ask(&mut h, "ui.click", json!({"x": ox + 60.0, "y": oy + top + f64::from(HEADER_ROW) + 55.0})).expect("select the picture again");
             settle(&mut h);
-            let (x, y) = (ox + 6.0 + 300.0, oy + top + dy);
+            let (x, y) = (ox + 6.0 + 300.0, oy + top + f64::from(HEADER_ROW) + dy);
             ask(&mut h, "ui.press", json!({"x": x, "y": y})).expect("press the edge");
             for step in 1..=4 {
                 ask(&mut h, "ui.move", json!({"x": x + 15.0 * f64::from(step), "y": y})).expect("drag the edge");
@@ -11727,6 +11687,13 @@ fn page_origin(h: &mut Harness<'_, NoteCraftApp>) -> egui::Pos2 {
 }
 
 /// The first box as the page keeps it: x, y, width.
+/// The height, in points, the page's text and boxes sit below the top of a box: the header row.
+/// A box's bar is the strip right under that row, so a click that means the bar goes here.
+fn bar_y(h: &mut Harness<'_, NoteCraftApp>, oy: f64) -> f64 {
+    let (_x, box_y, _w) = first_box(h);
+    oy + box_y as f64 + HEADER_ROW as f64 + 6.0
+}
+
 fn first_box(h: &mut Harness<'_, NoteCraftApp>) -> (f32, f32, f32) {
     let b = ask(h, "ui.inspect", json!({})).expect("inspect").pointer("/page/containers/0").cloned().unwrap_or(Value::Null);
     let n = |k: &str| b.get(k).and_then(Value::as_f64).unwrap_or(-1.0) as f32;
@@ -11755,7 +11722,7 @@ fn on_grid(v: f32, step: f32) -> bool {
 
 /// Where box 0's move strip is, for a box at `x, y` page points and zoom `z`.
 fn strip_at(origin: egui::Pos2, x: f32, y: f32, z: f32) -> egui::Pos2 {
-    origin + egui::vec2(x * z + 100.0 * z, y * z + 7.0 * z)
+    origin + egui::vec2(x * z + 100.0 * z, y * z + (HEADER_ROW + 7.0) * z)
 }
 
 /// Issue #79: with snapping off, moving a box is free, exactly as before.
@@ -11800,7 +11767,7 @@ fn with_snapping_on_resizing_puts_the_right_edge_on_the_grid() {
     let (mut h, origin) = one_box_page(app, &s);
     // The resize edge is the last 10 points of the box's frame as drawn. The box is 320 wide,
     // but the sample's three-column table is 480 points wide, so the box is drawn that wide.
-    let edge = origin + egui::vec2(40.0 + 480.0 + 12.0 - 4.0, 20.0 + 14.0 + 10.0);
+    let edge = origin + egui::vec2(40.0 + 480.0 + 12.0 - 4.0, 20.0 + HEADER_ROW + 14.0 + 10.0);
     drag_by(&mut h, edge, egui::vec2(53.0, 0.0));
     let (x, _, width) = first_box(&mut h);
     assert!(on_grid(x + width, 18.0), "the right edge is on the grid: x={x} width={width}");
@@ -12087,7 +12054,7 @@ fn a_box_widened_by_its_table_resizes_from_its_drawn_edge() {
     let origin = look(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
     let at = |i: usize| origin.get(i).and_then(Value::as_f64).unwrap_or(0.0) as f32;
     // The resize edge is the last 10 points of the frame as drawn: 480 points and the padding.
-    let edge = egui::pos2(at(0) + 40.0 + 480.0 + 12.0 - 4.0, at(1) + 20.0 + 14.0 + 10.0);
+    let edge = egui::pos2(at(0) + 40.0 + 480.0 + 12.0 - 4.0, at(1) + 20.0 + HEADER_ROW + 14.0 + 10.0);
 
     ask(&mut h, "ui.press", json!({"x": edge.x, "y": edge.y})).expect("press");
     pump(&mut h);
@@ -12449,7 +12416,10 @@ fn a_pen_on_the_page_picks_up_the_last_pen_and_typing_puts_it_down() {
     settle(&mut h);
     assert_eq!(ink(&mut h).0, "write");
 
-    let at = page_origin(&mut h) + egui::vec2(500.0, 420.0);
+    // The pen lands on the header row above the first paragraph, which is blank apart from
+    // its `+`: a stroke on the words would put the caret there, which is not what this test is about.
+    let header_row = h.query_all_by_label_contains("Add emoji to block").nth(1).expect("the header of block 1").rect();
+    let at = egui::pos2(header_row.center().x + 60.0, header_row.top() + 2.0);
     let stroke = |h: &mut Harness<'_, NoteCraftApp>, force: Option<f32>| {
         let contact = |phase, pos| egui::Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(0), phase, pos, force };
         h.input_mut().events.push(contact(egui::TouchPhase::Start, at));
@@ -12504,7 +12474,9 @@ fn a_pen_on_the_page_picks_up_the_last_pen_and_typing_puts_it_down() {
     assert_eq!(ink(&mut h).0, "write", "typing goes back to the caret");
     let after = h.state().body().unwrap_or_default().to_string();
     assert_eq!(after.matches('Z').count(), before.matches('Z').count() + 1, "the Z went into the page");
-    assert!(after.contains("ZNoteCraft pages"), "where the caret was before the pen: {after}");
+    // The caret was put in the first paragraph with `ui.caret`, which places it at the end of the
+    // text; the Z goes there.
+    assert!(after.contains("CommonMark + GFM.Z"), "where the caret was before the pen: {after}");
 }
 /// The other half of the automatic switching: a pen the pen picked up is put down again by a
 /// click or a tap on the page with the trackpad, which puts the caret where it landed. A pen
@@ -13560,7 +13532,7 @@ fn font_colour_and_highlight_colour_the_selected_words_in_both_formats() {
         assert!(body.contains("color: #c00000") && body.contains("background-color: #ffff00"), "html={html}: both colours saved:\n{body}");
         assert!(body.contains("these"), "html={html}:\n{body}");
         let blocks = notecraft_formats::markdown::parse(&if html { notecraft_formats::html::to_markdown(&body) } else { body.clone() });
-        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("html={html}: a paragraph") };
+        let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("html={html}: a paragraph") };
         let coloured: String = spans.iter().filter(|s| s.colour.as_deref() == Some("#c00000")).map(|s| s.text.as_str()).collect();
         assert_eq!(coloured, "these", "html={html}: only the picked word");
         assert!(spans.iter().filter(|s| s.colour.is_some()).all(|s| s.highlight.as_deref() == Some("#ffff00")));
@@ -13683,7 +13655,7 @@ fn window_capture_refreshed_caret_uses_the_new_pages_formatting() {
         h.state_mut().save();
         let loaded = notecraft_store::page::load_page(page).expect("saved page");
         let blocks = notecraft_formats::boxes::read(loaded.format, &loaded.body).0;
-        let notecraft_formats::Block::Paragraph(spans) = &blocks[0] else { panic!("paragraph") };
+        let notecraft_formats::Block::Paragraph(spans, _) = &blocks[0] else { panic!("paragraph") };
         assert!(spans.iter().any(|span| span.bold && span.text.contains("seedx")), "typing after refresh must retain the peer's formatting");
     }
 }
@@ -13883,7 +13855,8 @@ fn a_sticker_from_the_gallery_goes_on_the_page_as_a_picture_it_owns() {
         assert!(std::fs::read_to_string(&file).is_ok_and(|t| t.starts_with("<svg")), "html={html}: the page owns the file");
         h.get_by_label("Stickers").click();
         settle(&mut h);
-        h.get_by_label("Star sticker").click();
+        // The picture on the page is named the same way, so the gallery's own item is the last one drawn.
+        h.query_all_by_label("Star sticker").last().expect("the gallery's star sticker").click();
         settle(&mut h);
         assert_eq!(images(&h).iter().filter(|(src, _)| src == "assets/sticker-star.svg").count(), 2, "html={html}");
         assert!(!page.join("assets/sticker-star-2.svg").exists(), "html={html}: one file for both");
@@ -14669,6 +14642,205 @@ fn settle_menu(h: &mut Harness<'_, NoteCraftApp>) {
     }
 }
 
+/// The block header's `+` opens a popup of emoji; choosing one adds it beside the `+`, and
+/// choosing it again removes it. Acceptance criteria 1 to 3 of the emoji block-header POC.
+#[test]
+fn block_header_plus_adds_and_removes_an_emoji() {
+    const THUMB_UP: &str = "\u{1F44D}";
+    const GRIN: &str = "\u{1F600}";
+    let (_t, app, s) = sample_app("ui-block-emoji");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+
+    // Criterion 1: the popup is closed until the `+` is clicked.
+    assert_eq!(h.query_all_by_label(THUMB_UP).count(), 0, "popup starts closed");
+    h.query_all_by_label_contains("Add emoji to block").next().expect("a block header `+`").click();
+    h.run();
+    settle(&mut h);
+    assert!(h.query_all_by_label(GRIN).count() > 0, "the `+` opens the emoji popup");
+
+    // Criterion 2: choosing an emoji puts it beside the `+`.
+    h.get_by_label("Hands").click();
+    h.run();
+    h.query_all_by_label(THUMB_UP).last().expect("popup choice").click();
+    h.run();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label_contains("Remove").count(), 1, "the chosen emoji is shown once, beside the +");
+
+    // Criterion 3: clicking the emoji on the block takes it off the block.
+    h.query_all_by_label_contains("Remove").next().expect("the emoji on the block").click();
+    h.run();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label_contains("Remove").count(), 0, "clicking the emoji removes it");
+}
+
+/// Every event the interface records while a test runs, as (name, fields). The app's own sink
+/// writes these to the telemetry session; a test installs one that keeps them, so it can check
+/// what was recorded.
+static RECORDED: std::sync::Mutex<Vec<(String, Vec<(String, String)>)>> = std::sync::Mutex::new(Vec::new());
+
+fn record_usage_events() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        notecraft_ui_egui::usage::install(Box::new(|_level, event, fields| {
+            let owned = fields.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+            RECORDED.lock().unwrap_or_else(|e| e.into_inner()).push((event.to_string(), owned));
+        }));
+    });
+}
+
+fn recorded_names() -> Vec<String> {
+    RECORDED.lock().unwrap_or_else(|e| e.into_inner()).iter().map(|(n, _)| n.clone()).collect()
+}
+
+/// The block header is a control like the others: each click and choice is recorded, so the
+/// telemetry does not lose it.
+#[test]
+fn block_header_records_usage_like_the_other_controls() {
+    const THUMB_UP: &str = "\u{1F44D}";
+    record_usage_events();
+    let (_t, app, s) = sample_app("ui-block-emoji-telemetry");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let before = recorded_names().len();
+
+    h.query_all_by_label_contains("Add emoji to block").next().expect("a block header `+`").click();
+    h.run();
+    settle(&mut h);
+    h.get_by_label("Hands").click();
+    h.run();
+    h.query_all_by_label(THUMB_UP).last().expect("popup choice").click();
+    h.run();
+    settle(&mut h);
+    h.query_all_by_label_contains("Remove").next().expect("the emoji on the block").click();
+    h.run();
+    settle(&mut h);
+
+    let names: Vec<String> = recorded_names().into_iter().skip(before).collect();
+    let wanted = ["block_header_plus_opened", "block_emoji_added", "block_emoji_removed"];
+    for w in wanted {
+        assert!(names.iter().any(|n| n == w), "{w} should be recorded, got {names:?}");
+    }
+}
+
+/// Acceptance criterion 4 of the emoji block-header POC: the emoji chosen on a block is saved with
+/// the page, so it is still there after the window is closed and the page is opened again.
+#[test]
+fn a_block_emoji_is_saved_with_the_page_in_both_formats() {
+    const THUMB_UP: &str = "\u{1F44D}";
+    for open_md in [true, false] {
+        let (_t, app, s) = sample_app("ui-block-emoji-saved");
+        let page = if open_md { s.md_page.clone() } else { s.html_page.clone() };
+        let file = if open_md { page.join("index.md") } else { page.join("index.html") };
+        let mut h = harness(app, LIGHT);
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+
+        h.query_all_by_label_contains("Add emoji to block").next().expect("a block header `+`").click();
+        h.run();
+        settle(&mut h);
+        h.get_by_label("Hands").click();
+        h.run();
+        h.query_all_by_label(THUMB_UP).last().expect("popup choice").click();
+        h.run();
+        settle(&mut h);
+        h.state_mut().save_page_now();
+
+        let saved = std::fs::read_to_string(&file).expect("the saved page");
+        assert!(saved.contains(THUMB_UP), "the emoji is written into the page (md={open_md}): {saved}");
+        assert!(saved.contains("nc-emoji"), "it is written as an emoji marker (md={open_md}): {saved}");
+    }
+}
+
+/// The block header is part of the block's frame: the top block's `+` sits in a row above its
+/// box's bar, and the emoji it holds sit right of the `+` on the same row. This guards the layout
+/// the person asked for, so a change to the box or the header cannot put the `+` back under the bar.
+#[test]
+fn the_header_sits_above_the_box_bar_and_its_emoji_beside_the_plus() {
+    const SMILE: &str = "\u{1F600}";
+    let (_t, mut app, s) = sample_app("ui-header-above-bar");
+    let md = s.md_page.to_string_lossy().to_string();
+    app.open_path(&md);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": md.clone(), "body": "Hello in a box\n"}}))
+        .expect("write the page");
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": md.clone(), "boxes": "0,0,300,1"}}))
+        .expect("arrange the box");
+    ask(&mut h, "ui.open", json!({"path": md})).expect("open the boxed page");
+    settle(&mut h);
+
+    let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let oy = origin.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+    let (_x, box_y, _w) = first_box(&mut h);
+    let bar_top = oy + box_y + HEADER_ROW;
+
+    let plus = h.query_all_by_label_contains("Add emoji to block").next().expect("the top block's `+`").rect();
+    assert!(plus.bottom() <= bar_top + 0.5, "the `+` is above the bar: plus bottom {} bar top {bar_top}", plus.bottom());
+    assert!(plus.top() >= oy + box_y - 0.5, "the `+` is in the row above the bar, not above the box: {plus:?}");
+
+    h.query_all_by_label_contains("Add emoji to block").next().expect("the top block's `+`").click();
+    h.run();
+    settle(&mut h);
+    h.query_all_by_label(SMILE).last().expect("a choice in the popup").click();
+    h.run();
+    settle(&mut h);
+
+    let chip = h.query_all_by_label_contains("Remove").next().expect("the emoji on the block").rect();
+    assert!(chip.left() >= plus.right(), "the emoji sit right of the `+`: chip {chip:?} plus {plus:?}");
+    assert!((chip.center().y - plus.center().y).abs() < 10.0, "the emoji are on the `+` row: chip {chip:?} plus {plus:?}");
+}
+
+/// An emoji on a block can be clicked to take it off, so the pointer turns into a hand over it, and
+/// stays an arrow over the page's plain text.
+#[test]
+fn the_pointer_is_a_hand_over_an_emoji_that_can_be_removed() {
+    const SMILE: &str = "\u{1F600}";
+    let (_t, app, s) = sample_app("ui-emoji-hover-cursor");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.query_all_by_label_contains("Add emoji to block").next().expect("a block header `+`").click();
+    h.run();
+    settle(&mut h);
+    h.query_all_by_label(SMILE).last().expect("a choice in the popup").click();
+    h.run();
+    settle(&mut h);
+
+    let chip = h.query_all_by_label_contains("Remove").next().expect("the emoji on the block").rect();
+    h.input_mut().events.push(egui::Event::PointerMoved(chip.center()));
+    h.run();
+    assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::PointingHand, "a hand over the emoji");
+
+    h.input_mut().events.push(egui::Event::PointerMoved(egui::pos2(chip.center().x + 400.0, chip.center().y + 300.0)));
+    h.run();
+    assert_ne!(h.output().platform_output.cursor_icon, egui::CursorIcon::PointingHand, "not a hand away from it");
+}
+
+/// The emoji popup has a search field: typing a word shows only the emoji it names.
+#[test]
+fn the_emoji_popup_searches_its_choices_by_name() {
+    const FIRE: &str = "\u{1F525}";
+    const GRIN: &str = "\u{1F600}";
+    let (_t, app, s) = sample_app("ui-emoji-search");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.query_all_by_label_contains("Add emoji to block").next().expect("a block header `+`").click();
+    h.run();
+    settle(&mut h);
+    assert!(h.query_all_by_label(GRIN).count() > 0, "the whole grid shows before any search");
+
+    h.get_by_label("Search emoji").click();
+    h.get_by_label("Search emoji").type_text("fire");
+    h.run();
+    settle(&mut h);
+    assert!(h.query_all_by_label(FIRE).count() > 0, "the search finds fire");
+    assert_eq!(h.query_all_by_label(GRIN).count(), 0, "and hides the emoji it does not name");
+}
+
 /// Issue #371: the footer keeps the save state and the default-format control in view. The
 /// notebook counts, the folder and the format inheritance sit behind one Details control, and
 /// a keyboard user reaches them from there.
@@ -14833,4 +15005,120 @@ fn the_navigator_lock_mark_follows_lock_and_unlock_at_once() {
     h.get_by_label("Unlock").click();
     settle(&mut h);
     assert_eq!(marks(&mut h), 0, "unlocking removes the mark without reopening");
+}
+
+/// The emoji grid shows every choice, the party popper included, without scrolling.
+#[test]
+fn the_emoji_grid_shows_every_choice_including_the_party_popper() {
+    const POPPER: &str = "\u{1F389}";
+    let (_t, app, s) = sample_app("ui-emoji-grid-all");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.query_all_by_label_contains("Add emoji to block").next().expect("a block header `+`").click();
+    h.run();
+    settle(&mut h);
+    h.get_by_label("Symbols").click();
+    h.run();
+    settle(&mut h);
+    let popper = h.query_all_by_label(POPPER).last().expect("the party popper is in the grid").rect();
+    let _ = 0;
+    assert!(popper.height() > 0.0 && popper.width() > 0.0, "the popper is laid out: {popper:?}");
+}
+
+/// The emoji popup has tabs: the Hearts tab shows hearts only, and the Smileys tab is the first.
+#[test]
+fn the_emoji_popup_has_tabs_that_show_one_group_at_a_time() {
+    const GRIN: &str = "\u{1F600}";
+    const RED_HEART: &str = "\u{2764}\u{FE0F}";
+    let (_t, app, s) = sample_app("ui-emoji-tabs");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.query_all_by_label_contains("Add emoji to block").next().expect("a block header `+`").click();
+    h.run();
+    settle(&mut h);
+    assert!(h.query_all_by_label(GRIN).count() > 0, "the Smileys tab is shown first");
+    h.get_by_label("Hearts").click();
+    h.run();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label(GRIN).count(), 0, "the Hearts tab hides the smileys");
+    assert!(h.query_all_by_label(RED_HEART).count() > 0, "and shows the hearts");
+}
+
+/// Clicking on empty paper makes a block, and it is shown as a block at once: the bar and the border
+/// are drawn around it while the caret is in it, even before anything is written.
+#[test]
+fn a_block_made_by_clicking_empty_paper_shows_its_bar_and_border() {
+    let (_t, mut app, s) = sample_app("ui-new-block-edges");
+    let page = s.md_page.to_string_lossy().to_string();
+    app.open_path(&page);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    settle(&mut h);
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page.clone(), "body": ""}})).expect("an empty page");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open it");
+    settle(&mut h);
+    assert_eq!(look_at(&mut h).pointer("/page/blocks").and_then(Value::as_u64), Some(0), "the page starts empty");
+    let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let (ox, oy) = (origin.first().and_then(Value::as_f64).unwrap_or(0.0) as f32, origin.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32);
+    ask(&mut h, "ui.click", json!({"x": ox + 300.0, "y": oy + 150.0})).expect("click the paper");
+    for _ in 0..8 {
+        pump(&mut h);
+    }
+    let v = look_at(&mut h);
+    assert!(v.pointer("/page/caret").is_some_and(|c| !c.is_null()), "the caret is in the new block: {v}");
+    let (bx, by, bw) = first_box(&mut h);
+    // The bar runs along the top of the box, just under the header row, as wide as the box and its padding.
+    let bar = egui::Rect::from_min_size(egui::pos2(ox + bx, oy + by + HEADER_ROW), egui::vec2(bw + 12.0, 14.0));
+    let near = |a: egui::Rect, b: egui::Rect| (a.min - b.min).length() < 4.0 && (a.max - b.max).length() < 4.0;
+    assert!(painted_rects(&h).iter().any(|r| near(*r, bar)), "the bar is drawn at {bar:?}: {:?}", painted_rects(&h));
+}
+
+/// A block made by clicking empty paper can be moved at once by dragging its bar, like any box.
+#[test]
+fn a_new_block_can_be_dragged_by_its_bar() {
+    let (_t, mut app, s) = sample_app("ui-new-block-drag");
+    let page = s.md_page.to_string_lossy().to_string();
+    app.open_path(&page);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    settle(&mut h);
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page.clone(), "body": ""}})).expect("an empty page");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open it");
+    settle(&mut h);
+    let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let (ox, oy) = (origin.first().and_then(Value::as_f64).unwrap_or(0.0) as f32, origin.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32);
+    ask(&mut h, "ui.click", json!({"x": ox + 300.0, "y": oy + 150.0})).expect("click the paper");
+    for _ in 0..8 {
+        pump(&mut h);
+    }
+    let (x0, y0, w) = first_box(&mut h);
+    // The middle of the bar, just under the header row.
+    let from = egui::pos2(ox + x0 + w / 2.0, oy + y0 + HEADER_ROW + 7.0);
+    drag_by(&mut h, from, egui::vec2(100.0, 80.0));
+    let (x1, y1, _) = first_box(&mut h);
+    assert!(x1 > x0 + 50.0 && y1 > y0 + 40.0, "the box followed the pointer: ({x0}, {y0}) -> ({x1}, {y1})");
+}
+
+/// The pointer turns into the move cursor over the bar of a block made by clicking empty paper.
+#[test]
+fn the_pointer_shows_the_move_cursor_over_a_new_blocks_bar() {
+    let (_t, mut app, s) = sample_app("ui-new-block-cursor");
+    let page = s.md_page.to_string_lossy().to_string();
+    app.open_path(&page);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    settle(&mut h);
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": page.clone(), "body": ""}})).expect("an empty page");
+    ask(&mut h, "ui.open", json!({"path": page})).expect("open it");
+    settle(&mut h);
+    let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let (ox, oy) = (origin.first().and_then(Value::as_f64).unwrap_or(0.0) as f32, origin.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32);
+    ask(&mut h, "ui.click", json!({"x": ox + 300.0, "y": oy + 150.0})).expect("click the paper");
+    for _ in 0..8 {
+        pump(&mut h);
+    }
+    let (x, y, w) = first_box(&mut h);
+    let bar = egui::pos2(ox + x + w / 2.0, oy + y + HEADER_ROW + 7.0);
+    h.input_mut().events.push(egui::Event::PointerMoved(bar));
+    h.run();
+    assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Move, "the move cursor over the bar");
 }

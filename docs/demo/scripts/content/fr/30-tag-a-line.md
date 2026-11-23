@@ -35,6 +35,6 @@ qui ressemble seulement à une étiquette, comme #ideas sans espace derrière, e
 Les étiquettes personnalisées et une page de synthèse qui rassemble toutes les lignes
 étiquetées ne sont pas faites. Le bouton Rechercher les étiquettes le dit.
 
-Suite : [Images et fichiers](../pictures-and-files/).
+Suite : [Emoji sur un bloc](../emoji-on-a-block/).
 
 *Cette page a été traduite par un modèle d'intelligence artificielle. Les corrections sont les bienvenues.*

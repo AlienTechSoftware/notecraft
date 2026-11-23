@@ -30,7 +30,26 @@ pub fn output_json(o: &Output) -> Value {
         Output::Recycled(items) => {
             Value::Array(items.iter().map(|x| json!({"id": x.id, "title": x.title, "deleted": x.deleted, "count": x.count, "kind": x.kind.id(), "original": x.original})).collect())
         }
-        Output::Hits(h) => Value::Array(h.iter().map(|x| json!({"path": display_path(&x.path), "title": x.title, "snippet": x.snippet})).collect()),
+        Output::Hits(h) => Value::Array(
+            h.iter()
+                .map(|x| {
+                    let source = match x.source {
+                        notecraft_store::search::Source::Page => "page",
+                        notecraft_store::search::Source::Alt => "alt",
+                        notecraft_store::search::Source::Picture => "picture",
+                    };
+                    json!({
+                        "path": display_path(&x.path),
+                        "title": x.title,
+                        "snippet": x.snippet,
+                        "source": source,
+                        "score": x.score,
+                        "picture": x.picture.as_ref().map(|p| display_path(p)),
+                        "boxes": x.boxes,
+                    })
+                })
+                .collect(),
+        ),
         Output::Tagged(found) => Value::Array(
             found
                 .iter()

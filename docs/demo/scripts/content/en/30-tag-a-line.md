@@ -37,4 +37,4 @@ they work in every notebook, and Find Tags lists them with the rest. The page ho
 made from the name, like `#asklegal`; renaming the tag keeps it on every line, and removing it
 leaves the marker as ordinary words.
 
-Next: [Pictures and files](../pictures-and-files/).
+Next: [Emoji on a block](../emoji-on-a-block/).

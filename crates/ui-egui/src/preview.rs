@@ -669,7 +669,7 @@ pub(crate) fn item_marker_size(spans: &[Span], zoom: f32) -> f32 {
 /// right-to-left or mixed line lands on the word under the pointer.
 pub fn link_at_point(block: &Block, at: egui::Vec2, width: f32, page: Option<Dir>) -> Option<String> {
     let spans = match block {
-        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) | Block::Item { spans, .. } => spans,
+        Block::Heading { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) | Block::Item { spans, .. } => spans,
         _ => return None,
     };
     if spans.iter().any(|s| s.math) {
@@ -699,7 +699,7 @@ pub fn link_at_point(block: &Block, at: egui::Vec2, width: f32, page: Option<Dir
     let lead = mark
         + match block {
             Block::Item { depth, .. } => 8.0 + *depth as f32 * 18.0 + 22.0,
-            Block::Quote(_) => 18.0,
+            Block::Quote(_, _) => 18.0,
             _ => 0.0,
         };
     // A right-to-left row puts its bullet or mark on the right, so the words start at the
@@ -773,6 +773,7 @@ fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, b
                 Picture::Loading => loading_picture(ui, size),
                 Picture::Ready(uri, bytes) => {
                     let response = ui.add(egui::Image::from_bytes(uri, bytes).fit_to_exact_size(size).sense(egui::Sense::hover()));
+                    outline_highlight(ui, page_dir, src, response.rect);
                     *object_rect = Some(response.rect);
                     if s.link.is_none() {
                         record_rendered_image(ui.ctx(), block, response.rect, src);
@@ -792,8 +793,8 @@ fn draw_inline_images(ui: &mut Ui, spans: &[Span], page_dir: &Path, zoom: f32, b
 /// True for a block that is more than styled text: a picture, a table, an equation, a
 /// diagram. While the page is written on as text, these are drawn below it.
 pub fn is_rich(block: &Block) -> bool {
-    matches!(block, Block::Image { .. } | Block::Table { .. } | Block::MathBlock(_) | Block::Code { .. })
-        || matches!(block, Block::Paragraph(spans) if spans.iter().any(|s| s.math || s.image.is_some()))
+    matches!(block, Block::Image { .. } | Block::Table { .. } | Block::MathBlock(_, _) | Block::Code { .. })
+        || matches!(block, Block::Paragraph(spans, _) if spans.iter().any(|s| s.math || s.image.is_some()))
 }
 
 /// Draws only the blocks [`is_rich`] picks out. They are picked out of their page, so the
@@ -870,6 +871,8 @@ pub fn show_zoomed(
     for (i, block) in blocks.iter().enumerate() {
         make_room(ui, justified, i, 0, zoom);
         let _floor = hold_floor(justified, i, zoom);
+        // The same block header as in the editor, so every view of a block shows it.
+        let _ = crate::block_emoji::header(ui, page_dir, i, block.emoji(), false, zoom);
         let out = show_block_zoomed(ui, block, i, page_dir, tokens, false, page, justified.mark_of(i), None, ui.id().with(("block", i)), zoom);
         let resp = out.response;
         if resp.clicked()
@@ -935,7 +938,7 @@ pub(crate) fn show_block_zoomed(
     let mut rendered_object_rect = None;
     {
         match block {
-            Block::Heading { level, spans } => {
+            Block::Heading { level, spans, .. } => {
                 let size = match level {
                     1 => 28.0,
                     2 => 22.0,
@@ -952,7 +955,7 @@ pub(crate) fn show_block_zoomed(
                 }
                 ui.add_space(2.0 * zoom);
             }
-            Block::Paragraph(spans) => {
+            Block::Paragraph(spans, _) => {
                 // A line that starts with a tag marker shows the tag's mark, not the word.
                 match tagged(spans) {
                     Some((tag, spans)) => {
@@ -971,7 +974,7 @@ pub(crate) fn show_block_zoomed(
                     }
                 }
             }
-            Block::Item { ordered, number, task, depth, spans } => {
+            Block::Item { ordered, number, task, depth, spans, .. } => {
                 // A right-to-left item starts at the right: its bullet or box goes there,
                 // and the indent of a nested item comes off the right edge too.
                 let row = if dir_of(spans, page).is_rtl() {
@@ -1011,7 +1014,7 @@ pub(crate) fn show_block_zoomed(
                     });
                 });
             }
-            Block::Quote(spans) => {
+            Block::Quote(spans, _) => {
                 egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 4, top: 2, bottom: 2 }).show(ui, |ui| {
                     let rect = ui.available_rect_before_wrap();
                     ui.painter().rect_filled(egui::Rect::from_min_size(rect.min, egui::vec2(3.0, 18.0)), 1.0, tokens.quote_bar);
@@ -1022,7 +1025,7 @@ pub(crate) fn show_block_zoomed(
             // A Mermaid diagram is shown as the drawing, in the page, and a click puts the caret in
             // it, which shows its source to edit. One that cannot be drawn says why and shows its
             // source instead, so nothing the page holds is ever hidden.
-            Block::Code { lang, text } if lang == "mermaid" => {
+            Block::Code { lang, text, .. } if lang == "mermaid" => {
                 egui::Frame::new().fill(tokens.editor).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     if let crate::diagramview::Shown::Failed(_) = crate::diagramview::show_zoomed(ui, text, tokens, zoom) {
@@ -1031,7 +1034,7 @@ pub(crate) fn show_block_zoomed(
                 });
                 ui.add_space(4.0 * zoom);
             }
-            Block::Code { lang, text } => {
+            Block::Code { lang, text, .. } => {
                 let (numbered, language) = notecraft_formats::markdown::code_lang(lang);
                 egui::Frame::new().fill(tokens.code_bg).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
                     ui.set_width(ui.available_width());
@@ -1052,14 +1055,14 @@ pub(crate) fn show_block_zoomed(
                 });
                 ui.add_space(4.0 * zoom);
             }
-            Block::MathBlock(tex) => {
+            Block::MathBlock(tex, _) => {
                 egui::Frame::new().fill(tokens.code_bg).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     crate::mathview::display(ui, tex, 22.0 * zoom, tokens.strong);
                 });
                 ui.add_space(4.0 * zoom);
             }
-            Block::Table { head, rows } => {
+            Block::Table { head, rows, .. } => {
                 egui::Grid::new(("table", i)).striped(true).spacing([14.0, 4.0]).show(ui, |ui| {
                     for cell in head {
                         ui.label(job(ui, cell, 14.5 * zoom, tokens.strong, tokens, page));
@@ -1074,7 +1077,7 @@ pub(crate) fn show_block_zoomed(
                 });
                 ui.add_space(6.0 * zoom);
             }
-            Block::Rule => {
+            Block::Rule(_) => {
                 ui.separator();
             }
             // The page names its own ink so that its words say what is on it, but the ink
@@ -1082,7 +1085,7 @@ pub(crate) fn show_block_zoomed(
             // the words. Another program opening the page sees the handwriting; here the
             // line itself takes no room.
             Block::Image { src, .. } if crate::inkpad::is_page_ink(src) => {}
-            Block::Image { alt, src, width, height } => {
+            Block::Image { alt, src, width, height, .. } => {
                 match picture(ui.ctx(), page_dir, src) {
                     Picture::Loading => {
                         let size = match (width, height) {
@@ -1101,8 +1104,16 @@ pub(crate) fn show_block_zoomed(
                             // the words, and never wider than its column.
                             _ => ui.add(image.max_width(ui.available_width()).max_height(picture_max_height(src, zoom)).fit_to_original_size(zoom)),
                         };
+                        outline_highlight(ui, page_dir, src, response.rect);
                         rendered_object_rect = Some(response.rect);
-                        if object_link(&Block::Image { alt: alt.clone(), src: src.clone(), width: *width, height: *height }, page_dir).is_none() {
+                        // Named by its alt text, so tests and screen readers can find the picture.
+                        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Image, true, alt.as_str()));
+                        if object_link(
+                            &Block::Image { alt: alt.clone(), src: src.clone(), width: *width, height: *height, emoji: Vec::new() },
+                            page_dir,
+                        )
+                        .is_none()
+                        {
                             record_rendered_image(ui.ctx(), i, response.rect, src);
                         }
                         if response.hovered() {
@@ -1194,9 +1205,9 @@ pub(crate) fn object_kind(block: &Block) -> Option<&'static str> {
         Block::Code { lang, .. } if lang == "mermaid" => Some("diagram"),
         // Code is page text like a paragraph: a click places the caret in it (owner, 2026-11-11).
         Block::Code { .. } => None,
-        Block::MathBlock(_) => Some("math"),
+        Block::MathBlock(_, _) => Some("math"),
         Block::Table { .. } => Some("table"),
-        Block::Paragraph(spans) | Block::Item { spans, .. } | Block::Heading { spans, .. } | Block::Quote(spans)
+        Block::Paragraph(spans, _) | Block::Item { spans, .. } | Block::Heading { spans, .. } | Block::Quote(spans, _)
             if spans.iter().any(|s| s.image.is_some()) =>
         {
             Some("image")
@@ -1207,7 +1218,7 @@ pub(crate) fn object_kind(block: &Block) -> Option<&'static str> {
 
 pub(crate) fn object_link(block: &Block, page_dir: &std::path::Path) -> Option<String> {
     match block {
-        Block::Paragraph(spans) | Block::Item { spans, .. } | Block::Heading { spans, .. } | Block::Quote(spans) => {
+        Block::Paragraph(spans, _) | Block::Item { spans, .. } | Block::Heading { spans, .. } | Block::Quote(spans, _) => {
             spans.iter().find_map(|span| span.link.clone())
         }
         // Attachment cards in stored Markdown are represented by the generated
@@ -1254,6 +1265,50 @@ pub fn rendered_images_id() -> egui::Id {
     egui::Id::new("rendered-image-hits")
 }
 
+/// The boxes of a search hit on a picture, to outline when that picture is drawn. `src` is the
+/// picture's name as the page writes it (`assets/x.png`); `pixels` is its size in pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PictureHighlight {
+    pub page_dir: std::path::PathBuf,
+    pub src: String,
+    pub pixels: (u32, u32),
+    pub boxes: Vec<[[f32; 2]; 4]>,
+}
+
+fn highlight_id() -> egui::Id {
+    egui::Id::new("notecraft-picture-highlight")
+}
+
+/// Sets, or with `None` clears, the picture whose matching lines are outlined.
+pub fn set_picture_highlight(ctx: &egui::Context, highlight: Option<PictureHighlight>) {
+    ctx.data_mut(|data| data.insert_temp(highlight_id(), highlight));
+}
+
+fn picture_highlight(ctx: &egui::Context) -> Option<PictureHighlight> {
+    ctx.data_mut(|data| data.get_temp::<Option<PictureHighlight>>(highlight_id())).flatten()
+}
+
+/// Maps a box, in the picture's pixels, into the rectangle the picture is drawn in. The four
+/// corners keep their order.
+pub fn box_on_screen(quad: [[f32; 2]; 4], drawn: egui::Rect, pixels: (u32, u32)) -> [egui::Pos2; 4] {
+    let (w, h) = (pixels.0.max(1) as f32, pixels.1.max(1) as f32);
+    let at = |p: [f32; 2]| egui::pos2(drawn.left() + p[0] / w * drawn.width(), drawn.top() + p[1] / h * drawn.height());
+    [at(quad[0]), at(quad[1]), at(quad[2]), at(quad[3])]
+}
+
+/// Outlines the boxes of the highlight when this is the picture it is for.
+fn outline_highlight(ui: &Ui, page_dir: &Path, src: &str, drawn: egui::Rect) {
+    let Some(h) = picture_highlight(ui.ctx()) else { return };
+    if h.page_dir != page_dir || h.src != src {
+        return;
+    }
+    let stroke = egui::Stroke::new(2.0, ui.visuals().selection.stroke.color);
+    for quad in &h.boxes {
+        let corners = box_on_screen(*quad, drawn, h.pixels).to_vec();
+        ui.painter().add(egui::Shape::closed_line(corners, stroke));
+    }
+}
+
 pub fn record_rendered_image(ctx: &egui::Context, block: usize, rect: egui::Rect, src: &str) {
     // Added where it is kept: taken out, added to and put back, the whole list was copied for
     // every picture drawn, which on a page of printouts was the most of a frame.
@@ -1265,7 +1320,7 @@ pub fn record_rendered_image(ctx: &egui::Context, block: usize, rect: egui::Rect
 /// A text block with no words, no maths and no picture in it: a blank line.
 pub fn is_blank(block: &Block) -> bool {
     match block {
-        Block::Paragraph(spans) | Block::Quote(spans) | Block::Heading { spans, .. } | Block::Item { spans, .. } => {
+        Block::Paragraph(spans, _) | Block::Quote(spans, _) | Block::Heading { spans, .. } | Block::Item { spans, .. } => {
             text_of(spans).is_empty() && !spans.iter().any(|s| s.math || s.image.is_some())
         }
         _ => false,
@@ -1551,7 +1606,11 @@ mod tests {
         let mut heights = Vec::new();
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::fonts::install_once(ui.ctx());
-            for block in [Block::Paragraph(Vec::new()), Block::Heading { level: 1, spans: Vec::new() }, Block::Quote(Vec::new())] {
+            for block in [
+                Block::Paragraph(Vec::new(), Vec::new()),
+                Block::Heading { level: 1, spans: Vec::new(), emoji: Vec::new() },
+                Block::Quote(Vec::new(), Vec::new()),
+            ] {
                 let out = show_block(
                     ui,
                     &block,
@@ -1569,7 +1628,7 @@ mod tests {
         });
         frame.textures_delta.clear();
         assert!(heights.iter().all(|h| *h >= 20.0), "an empty line has the height of a line, not a sliver: {heights:?}");
-        assert!(is_blank(&Block::Paragraph(Vec::new())) && !is_blank(&Block::Rule));
+        assert!(is_blank(&Block::Paragraph(Vec::new(), Vec::new())) && !is_blank(&Block::Rule(Vec::new())));
     }
 
     #[test]
@@ -1604,7 +1663,7 @@ mod tests {
             PageFormat::Html,
             r#"<p><a href="assets/brief.docx"><img src="assets/brief.docx.png" alt="" width="48"><br>brief.docx</a></p>"#,
         );
-        let Block::Paragraph(spans) = &blocks[0] else { panic!("attachment card was not a paragraph") };
+        let Block::Paragraph(spans, _) = &blocks[0] else { panic!("attachment card was not a paragraph") };
         let image = spans.iter().find(|span| span.image.as_deref() == Some("assets/brief.docx.png")).expect("attachment icon");
         assert_eq!(image.link.as_deref(), Some("assets/brief.docx"));
     }
@@ -1620,13 +1679,20 @@ mod tests {
 
     #[test]
     fn rich_blocks_share_object_selection_kinds() {
-        assert_eq!(object_kind(&Block::Image { alt: "a".into(), src: "assets/a.png".into(), width: None, height: None }), Some("image"));
-        assert_eq!(object_kind(&Block::Code { lang: "mermaid".into(), text: "graph TD;".into() }), Some("diagram"));
-        assert_eq!(object_kind(&Block::Code { lang: "rust".into(), text: "fn main() {}".into() }), None, "a code block is page text, not an object");
-        assert_eq!(object_kind(&Block::MathBlock("x^2".into())), Some("math"));
-        assert_eq!(object_kind(&Block::Table { head: vec![], rows: vec![] }), Some("table"));
-        assert_eq!(object_kind(&Block::Paragraph(vec![Span { image: Some("assets/a.png".into()), ..Span::default() }])), Some("image"));
-        assert_eq!(object_kind(&Block::Paragraph(vec![Span { text: "plain".into(), ..Span::default() }])), None);
+        assert_eq!(
+            object_kind(&Block::Image { alt: "a".into(), src: "assets/a.png".into(), width: None, height: None, emoji: Vec::new() }),
+            Some("image")
+        );
+        assert_eq!(object_kind(&Block::Code { lang: "mermaid".into(), text: "graph TD;".into(), emoji: Vec::new() }), Some("diagram"));
+        assert_eq!(
+            object_kind(&Block::Code { lang: "rust".into(), text: "fn main() {}".into(), emoji: Vec::new() }),
+            None,
+            "a code block is page text, not an object"
+        );
+        assert_eq!(object_kind(&Block::MathBlock("x^2".into(), Vec::new())), Some("math"));
+        assert_eq!(object_kind(&Block::Table { head: vec![], rows: vec![], emoji: Vec::new() }), Some("table"));
+        assert_eq!(object_kind(&Block::Paragraph(vec![Span { image: Some("assets/a.png".into()), ..Span::default() }], Vec::new())), Some("image"));
+        assert_eq!(object_kind(&Block::Paragraph(vec![Span { text: "plain".into(), ..Span::default() }], Vec::new())), None);
     }
 
     /// An attachment link must resolve to something egui can actually load.
@@ -1802,6 +1868,7 @@ mod tests {
             task: None,
             depth: 0,
             spans: vec![Span { text: "Item text".into(), font_size, ..Span::default() }],
+            emoji: Vec::new(),
         };
 
         let height_of = |block: &Block, zoom: f32| {
@@ -1838,6 +1905,7 @@ mod tests {
             task: None,
             depth: 2,
             spans: vec![Span { text: "مرحبا".into(), font_size: Some(18), ..Span::default() }],
+            emoji: Vec::new(),
         };
         let rtl_height = height_of(&rtl_nested, 1.0);
         assert!(rtl_height > 10.0, "rtl nested item renders: {rtl_height}");
@@ -1858,11 +1926,11 @@ mod tests {
         let tokens = crate::theme::Theme::DEFAULT.tokens();
 
         let blocks = [
-            Block::Image { alt: "Test picture".into(), src: "assets/pic.png".into(), width: Some(100.0), height: Some(80.0) },
-            Block::Paragraph(vec![
-                Span { text: "Some text ".into(), ..Span::default() },
-                Span { image: Some("assets/inline.png".into()), ..Span::default() },
-            ]),
+            Block::Image { alt: "Test picture".into(), src: "assets/pic.png".into(), width: Some(100.0), height: Some(80.0), emoji: Vec::new() },
+            Block::Paragraph(
+                vec![Span { text: "Some text ".into(), ..Span::default() }, Span { image: Some("assets/inline.png".into()), ..Span::default() }],
+                Vec::new(),
+            ),
         ];
 
         let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -1881,5 +1949,14 @@ mod tests {
         assert_eq!(images[1].block, 1);
         assert_eq!(images[1].src, "assets/inline.png");
         assert!(images[1].rect.width() > 0.0 && images[1].rect.height() > 0.0);
+    }
+
+    #[test]
+    fn a_box_in_picture_pixels_lands_on_the_drawn_picture_in_the_same_corners() {
+        let drawn = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(200.0, 100.0));
+        // A 100 x 50 picture drawn twice as large: every pixel is two points.
+        let quad = [[0.0, 0.0], [50.0, 0.0], [50.0, 25.0], [0.0, 25.0]];
+        let corners = box_on_screen(quad, drawn, (100, 50));
+        assert_eq!(corners, [egui::pos2(10.0, 10.0), egui::pos2(110.0, 10.0), egui::pos2(110.0, 60.0), egui::pos2(10.0, 60.0)]);
     }
 }

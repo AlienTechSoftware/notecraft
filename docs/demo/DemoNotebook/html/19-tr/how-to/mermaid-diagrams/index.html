@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mermaid diyagramları</title>
+<meta name="notecraft:id" content="8d0235e1b74901763052">
+<meta name="notecraft:order" content="82">
+<meta name="notecraft:created" content="2026-10-18T00:00:00Z">
+<meta name="notecraft:updated" content="2026-10-18T00:00:00Z">
+</head>
+<body>
+<p>Bir diyagramı, çitli bir blok içinde Mermaid metni olarak yazın. NoteCraft bloğu geçerli temada sayfada çizer; metni düzenlemek için <b>&lt; &gt;</b> ile sayfa kaynağını açın.</p>
+<h2>Akış şeması</h2>
+<pre class="diagram">flowchart TD
+  Start[Bir not yazın] --&gt; Save{Kaydedildi mi?}
+  Save --&gt;|evet| Ready[Devam edin]
+  Save --&gt;|henüz değil| Wait[Kısa bir süre durun]
+  Wait --&gt; Save</pre>
+<h2>Sıra</h2>
+<pre class="diagram">sequenceDiagram
+  Writer-&gt;&gt;Page: Bir satır yazın
+  Page-&gt;&gt;Files: Sayfayı kaydedin
+  Files--&gt;&gt;Page: Kaydedildi
+  Page--&gt;&gt;Writer: Yazmaya devam edin</pre>
+<h2>Zihin haritası</h2>
+<pre class="diagram">mindmap
+  root((Bir defter))
+    Sayfalar
+      Sözcükler
+      Denklemler
+    Çizimler
+      Şekiller
+      Mürekkep
+    Dosyalar
+      Resimler
+      Ekler</pre>
+<h2>Durum diyagramı</h2>
+<pre class="diagram">stateDiagram-v2
+  [*] --&gt; Hazir
+  Hazir --&gt; Duzenleniyor: yaz
+  Duzenleniyor --&gt; Kaydedildi: dur
+  Kaydedildi --&gt; Duzenleniyor: yeniden yaz
+  Kaydedildi --&gt; [*]</pre>
+<h2>Pasta diyagramı</h2>
+<pre class="diagram">pie title Bu turdaki sayfalar
+  &quot;Yazma&quot; : 4
+  &quot;Çizim&quot; : 2
+  &quot;Dosyalar&quot; : 2</pre>
+<p>Her blok kendi diyagramıdır. Metin sayfa dosyasında kalır; bu yüzden bir resim düzenleyicisi olmadan değiştirilebilir ya da kopyalanabilir.</p>
+<p>Sonraki: <a href="../charts-vega-d3/">Grafikler, Vega ve D3</a>.</p>
+<p><i>Bu sayfa bir yapay zekâ modeli tarafından çevrildi. Düzeltmeler memnuniyetle karşılanır.</i></p>
+</body>
+</html>

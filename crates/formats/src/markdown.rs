@@ -39,15 +39,47 @@ pub enum Script {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Block {
-    Heading { level: u8, spans: Vec<Span> },
-    Paragraph(Vec<Span>),
-    Item { ordered: bool, number: usize, task: Option<bool>, depth: usize, spans: Vec<Span> },
-    Quote(Vec<Span>),
-    Code { lang: String, text: String },
-    MathBlock(String),
-    Table { head: Vec<Vec<Span>>, rows: Vec<Vec<Vec<Span>>> },
-    Rule,
-    Image { alt: String, src: String, width: Option<f32>, height: Option<f32> },
+    Heading { level: u8, spans: Vec<Span>, emoji: Vec<String> },
+    Paragraph(Vec<Span>, Vec<String>),
+    Item { ordered: bool, number: usize, task: Option<bool>, depth: usize, spans: Vec<Span>, emoji: Vec<String> },
+    Quote(Vec<Span>, Vec<String>),
+    Code { lang: String, text: String, emoji: Vec<String> },
+    MathBlock(String, Vec<String>),
+    Table { head: Vec<Vec<Span>>, rows: Vec<Vec<Vec<Span>>>, emoji: Vec<String> },
+    Rule(Vec<String>),
+    Image { alt: String, src: String, width: Option<f32>, height: Option<f32>, emoji: Vec<String> },
+}
+
+impl Block {
+    /// The emoji the block's header holds, in the order they were chosen.
+    pub fn emoji(&self) -> &[String] {
+        match self {
+            Block::Heading { emoji, .. }
+            | Block::Item { emoji, .. }
+            | Block::Code { emoji, .. }
+            | Block::Table { emoji, .. }
+            | Block::Image { emoji, .. }
+            | Block::Paragraph(_, emoji)
+            | Block::Quote(_, emoji)
+            | Block::MathBlock(_, emoji)
+            | Block::Rule(emoji) => emoji,
+        }
+    }
+
+    /// Replaces the block's emoji.
+    pub fn set_emoji(&mut self, list: Vec<String>) {
+        match self {
+            Block::Heading { emoji, .. }
+            | Block::Item { emoji, .. }
+            | Block::Code { emoji, .. }
+            | Block::Table { emoji, .. }
+            | Block::Image { emoji, .. }
+            | Block::Paragraph(_, emoji)
+            | Block::Quote(_, emoji)
+            | Block::MathBlock(_, emoji)
+            | Block::Rule(emoji) => *emoji = list,
+        }
+    }
 }
 
 /// What a code block's language starts with when its lines are numbered: `123|rust`, or `123|` for no language.
@@ -683,7 +715,7 @@ fn try_parse_img_block(line: &str) -> Option<Block> {
     let alt = parse_attr(trimmed, "alt").unwrap_or_default();
     let width = parse_attr(trimmed, "width").and_then(|w| w.parse::<f32>().ok()).filter(|v| v.is_finite());
     let height = parse_attr(trimmed, "height").and_then(|h| h.parse::<f32>().ok()).filter(|v| v.is_finite());
-    Some(Block::Image { alt, src, width, height })
+    Some(Block::Image { alt, src, width, height, emoji: Vec::new() })
 }
 
 /// How many backticks `text` starts with.
@@ -698,15 +730,37 @@ pub(crate) fn code_fence(code: &str) -> String {
     "`".repeat(longest.max(2) + 1)
 }
 
+/// Reads an emoji marker line, `<!-- nc-emoji: 😀 👍 -->`, into the emoji it holds. `None` for any other line.
+pub fn emoji_marker(line: &str) -> Option<Vec<String>> {
+    let inner = line.trim().strip_prefix("<!--")?.strip_suffix("-->")?.trim();
+    let list = inner.strip_prefix("nc-emoji:")?;
+    Some(list.split_whitespace().map(str::to_string).collect())
+}
+
 /// Parses a Markdown page body into blocks. Never panics.
 pub fn parse(src: &str) -> Vec<Block> {
     let text = src.replace("\r\n", "\n");
     let lines: Vec<&str> = text.split('\n').collect();
-    let mut out = Vec::new();
+    let mut out: Vec<Block> = Vec::new();
     let mut i = 0;
+    // An emoji marker line holds for the block that follows it, at position `pending_at`.
+    let mut pending: Vec<String> = Vec::new();
+    let mut pending_at = 0;
     while i < lines.len() {
+        if !pending.is_empty()
+            && out.len() > pending_at
+            && let Some(block) = out.get_mut(pending_at)
+        {
+            block.set_emoji(std::mem::take(&mut pending));
+        }
         let line = lines.get(i).copied().unwrap_or("");
         let t = line.trim();
+        if let Some(list) = emoji_marker(t) {
+            pending = list;
+            pending_at = out.len();
+            i += 1;
+            continue;
+        }
         if t.is_empty() {
             i += 1;
         } else if t.starts_with("```") {
@@ -726,7 +780,7 @@ pub fn parse(src: &str) -> Vec<Block> {
                 i += 1;
             }
             i += 1;
-            out.push(Block::Code { lang, text: body.join("\n") });
+            out.push(Block::Code { lang, text: body.join("\n"), emoji: Vec::new() });
         } else if t == "$$" {
             let mut body = Vec::new();
             i += 1;
@@ -735,17 +789,17 @@ pub fn parse(src: &str) -> Vec<Block> {
                 i += 1;
             }
             i += 1;
-            out.push(Block::MathBlock(body.join(" ").trim().to_string()));
+            out.push(Block::MathBlock(body.join(" ").trim().to_string(), Vec::new()));
         } else if let Some(img_block) = try_parse_img_block(line) {
             out.push(img_block);
             i += 1;
         } else if t.starts_with('#') && t.trim_start_matches('#').starts_with(' ') && t.chars().take_while(|&c| c == '#').count() <= 6 {
             let level = t.chars().take_while(|&c| c == '#').count();
             let rest = t.trim_start_matches('#').trim();
-            out.push(Block::Heading { level: u8::try_from(level).unwrap_or(6), spans: parse_inline(rest) });
+            out.push(Block::Heading { level: u8::try_from(level).unwrap_or(6), spans: parse_inline(rest), emoji: Vec::new() });
             i += 1;
         } else if t.len() >= 3 && (t.chars().all(|c| c == '-') || t.chars().all(|c| c == '*') || t.chars().all(|c| c == '_')) {
-            out.push(Block::Rule);
+            out.push(Block::Rule(Vec::new()));
             i += 1;
         } else if t.starts_with('>') {
             let mut parts = Vec::new();
@@ -753,7 +807,7 @@ pub fn parse(src: &str) -> Vec<Block> {
                 parts.push(lines.get(i).copied().unwrap_or("").trim_start().trim_start_matches('>').trim().to_string());
                 i += 1;
             }
-            out.push(Block::Quote(parse_inline(&parts.join(" "))));
+            out.push(Block::Quote(parse_inline(&parts.join(" ")), Vec::new()));
         } else if line.contains('|') && lines.get(i + 1).is_some_and(|l| is_table_separator(l)) {
             let head: Vec<Vec<Span>> = cells(line).iter().map(|c| parse_table_cell(c)).collect();
             i += 2;
@@ -762,7 +816,7 @@ pub fn parse(src: &str) -> Vec<Block> {
                 rows.push(cells(lines.get(i).copied().unwrap_or("")).iter().map(|c| parse_table_cell(c)).collect());
                 i += 1;
             }
-            out.push(Block::Table { head, rows });
+            out.push(Block::Table { head, rows, emoji: Vec::new() });
         } else if let Some((ordered, number, indent, rest)) = list_marker(line) {
             let (task, rest) = if let Some(r) = rest.strip_prefix("[ ] ") {
                 (Some(false), r)
@@ -771,7 +825,7 @@ pub fn parse(src: &str) -> Vec<Block> {
             } else {
                 (None, rest)
             };
-            out.push(Block::Item { ordered, number, task, depth: indent / 2, spans: parse_inline(rest) });
+            out.push(Block::Item { ordered, number, task, depth: indent / 2, spans: parse_inline(rest), emoji: Vec::new() });
             i += 1;
         } else {
             let mut parts = vec![t.to_string()];
@@ -790,11 +844,16 @@ pub fn parse(src: &str) -> Vec<Block> {
             if let [only] = spans.as_slice()
                 && let Some(src) = &only.image
             {
-                out.push(Block::Image { alt: only.text.clone(), src: src.clone(), width: None, height: None });
+                out.push(Block::Image { alt: only.text.clone(), src: src.clone(), width: None, height: None, emoji: Vec::new() });
                 continue;
             }
-            out.push(Block::Paragraph(spans));
+            out.push(Block::Paragraph(spans, Vec::new()));
         }
+    }
+    if !pending.is_empty()
+        && let Some(block) = out.get_mut(pending_at)
+    {
+        block.set_emoji(std::mem::take(&mut pending));
     }
     out
 }
@@ -881,9 +940,9 @@ mod tests {
     fn headings_and_paragraphs() {
         let b = parse("# One\n\ntwo\nlines\n\n###### six\n####### seven\n");
         assert!(matches!(&b[0], Block::Heading { level: 1, .. }));
-        assert!(matches!(&b[1], Block::Paragraph(s) if text_of(s) == "two lines"));
+        assert!(matches!(&b[1], Block::Paragraph(s, _) if text_of(s) == "two lines"));
         assert!(matches!(&b[2], Block::Heading { level: 6, .. }));
-        assert!(matches!(&b[3], Block::Paragraph(_)), "seven hashes is a paragraph");
+        assert!(matches!(&b[3], Block::Paragraph(_, _)), "seven hashes is a paragraph");
     }
 
     #[test]
@@ -900,30 +959,30 @@ mod tests {
     #[test]
     fn code_math_quote_rule() {
         let b = parse("```mermaid\ngraph TD;\n  A-->B;\n```\n\n$$\nE = mc^2\n$$\n\n> quoted\n> text\n\n---\n");
-        assert!(matches!(&b[0], Block::Code { lang, text } if lang == "mermaid" && text.contains("A-->B")));
-        assert!(matches!(&b[1], Block::MathBlock(m) if m == "E = mc^2"));
-        assert!(matches!(&b[2], Block::Quote(s) if text_of(s) == "quoted text"));
-        assert!(matches!(&b[3], Block::Rule));
+        assert!(matches!(&b[0], Block::Code { lang, text, .. } if lang == "mermaid" && text.contains("A-->B")));
+        assert!(matches!(&b[1], Block::MathBlock(m, _) if m == "E = mc^2"));
+        assert!(matches!(&b[2], Block::Quote(s, _) if text_of(s) == "quoted text"));
+        assert!(matches!(&b[3], Block::Rule(_)));
     }
 
     #[test]
     fn tables() {
         let b = parse("| a | b |\n|---|:-:|\n| 1 | **2** |\n| 3 | 4 |\n\nafter");
         match &b[0] {
-            Block::Table { head, rows } => {
+            Block::Table { head, rows, .. } => {
                 assert_eq!(head.len(), 2);
                 assert_eq!(rows.len(), 2);
                 assert!(rows[0][1].iter().any(|s| s.bold));
             }
             other => panic!("expected a table, got {other:?}"),
         }
-        assert!(matches!(&b[1], Block::Paragraph(_)));
+        assert!(matches!(&b[1], Block::Paragraph(_, _)));
     }
 
     #[test]
     fn a_lone_image_is_an_image_block() {
         let b = parse("![alt text](assets/x.png)\n");
-        assert_eq!(b, vec![Block::Image { alt: "alt text".into(), src: "assets/x.png".into(), width: None, height: None }]);
+        assert_eq!(b, vec![Block::Image { alt: "alt text".into(), src: "assets/x.png".into(), width: None, height: None, emoji: Vec::new() }]);
     }
 
     #[test]
