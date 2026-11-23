@@ -74,7 +74,7 @@ impl Lab {
             ),
             model_load_ms: None,
             models: None,
-            theme: Theme::DEFAULT,
+            theme: Theme { mode: notecraft_ui_egui::theme::Mode::Dark, accent: notecraft_ui_egui::theme::Accent::Default },
             applied_theme: None,
             mode: Mode::Select,
             selected: None,
