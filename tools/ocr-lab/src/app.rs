@@ -308,6 +308,12 @@ impl Lab {
             ctx.set_visuals(self.theme.visuals());
             self.applied_theme = Some(self.theme);
         }
+        egui::Panel::top("header").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.heading("NoteCraft OCR lab");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.theme_button(ui));
+            });
+        });
         egui::Panel::left("cases").resizable(true).default_size(260.0).show(ui, |ui| self.case_list(&ctx, ui));
         egui::Panel::right("details").resizable(true).default_size(340.0).show(ui, |ui| self.details(ui));
         egui::Panel::bottom("status").show(ui, |ui| ui.label(&self.status));
@@ -317,17 +323,47 @@ impl Lab {
         }
     }
 
-    fn case_list(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
-        ui.heading("Test cases");
-        let before = self.theme;
-        egui::ComboBox::from_id_salt("theme").selected_text(self.theme.id()).show_ui(ui, |ui| {
-            for theme in Theme::all() {
-                ui.selectable_value(&mut self.theme, theme, theme.id());
-            }
+    /// The sun or moon in the header, as in the app: a click opens the 14 swatches (light and dark,
+    /// seven accents each). The choice is saved with the folder and models.
+    fn theme_button(&mut self, ui: &mut egui::Ui) {
+        let current = self.theme;
+        let tokens = current.tokens();
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(28.0, 24.0), Sense::click());
+        let painter = ui.painter_at(rect);
+        if resp.hovered() {
+            painter.rect_filled(rect, 4.0, tokens.row_hover);
+        }
+        let icon_rect = Rect::from_center_size(rect.center(), egui::vec2(19.0, 19.0));
+        if current.mode.is_dark() {
+            notecraft_ui_egui::icons::paint_moon(&painter, icon_rect, tokens.accent, if resp.hovered() { tokens.row_hover } else { tokens.panel });
+        } else {
+            notecraft_ui_egui::icons::paint(&painter, icon_rect, notecraft_ui_egui::icons::Icon::Sun, tokens.accent);
+        }
+        let resp = resp.on_hover_text(format!("Theme: {}. Click to change it.", current.label()));
+        let mut pick: Option<Theme> = None;
+        egui::Popup::menu(&resp).show(|ui| {
+            egui::Grid::new("lab-theme-grid").spacing([6.0, 6.0]).show(ui, |ui| {
+                for mode in [notecraft_ui_egui::theme::Mode::Light, notecraft_ui_egui::theme::Mode::Dark] {
+                    ui.label(mode.label());
+                    for accent in notecraft_ui_egui::theme::Accent::ALL {
+                        let theme = Theme { mode, accent };
+                        let swatch = ui.add(egui::Button::new("     ").fill(theme.tokens().accent)).on_hover_text(theme.label());
+                        if swatch.clicked() {
+                            pick = Some(theme);
+                        }
+                    }
+                    ui.end_row();
+                }
+            });
         });
-        if self.theme != before {
+        if let Some(theme) = pick {
+            self.theme = theme;
             self.remember();
         }
+    }
+
+    fn case_list(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
+        ui.heading("Test cases");
         ui.label(format!("{} pictures", self.pictures.len()));
         ui.monospace(folder_name(&self.folder));
         if ui.button("Open folder…").clicked()
