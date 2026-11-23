@@ -51,17 +51,9 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens, lock
             egui::Frame::popup(ui.style()).inner_margin(egui::Margin::same(4)).show(ui, |ui| {
                 ui.set_width(floating::MENU_W);
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-                // A locked page offers only what can still be done to it: Copy, and Unlock below
-                // (issue #441). Paste, Cut and the insertions are edits, so they are not offered.
-                picked = if locked {
-                    let copied = floating::menu_row(ui, Some(Glyph::Mark(Mark::Copy)), "Copy", t).clicked();
-                    if copied {
-                        acts.push(Act::Clipboard("copy"));
-                    }
-                    copied
-                } else {
-                    items(ui, acts, true, t)
-                };
+                // A locked page keeps its menu: the edit entries are greyed out, and Copy and
+                // Unlock stay enabled (issue #441).
+                picked = items_with(ui, acts, true, t, !locked);
                 // The page's lock, as the navigator's menus offer it (issue #441).
                 let (label, icon) =
                     if locked { (crate::tl_id!("ui.unlock_read_only"), Icon::Unlock) } else { (crate::tl_id!("ui.lock_read_only"), Icon::Lock) };
@@ -95,25 +87,32 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens, lock
 /// `clipboard` puts Paste, Cut and Copy first; a container's menu has its own Cut and Copy for
 /// the whole box, so it asks for the rest only. True when one was picked.
 pub fn items(ui: &mut Ui, acts: &mut Vec<Act>, clipboard: bool, t: &Tokens) -> bool {
+    items_with(ui, acts, clipboard, t, true)
+}
+
+/// [`items`], with the edit entries greyed out when `edits` is false (a locked page). Copy is not
+/// an edit, so it stays enabled either way.
+pub fn items_with(ui: &mut Ui, acts: &mut Vec<Act>, clipboard: bool, t: &Tokens, edits: bool) -> bool {
     let mut picked = false;
-    let mut item = |ui: &mut Ui, glyph: Glyph, label: &str, act: Act| {
-        if floating::menu_row(ui, Some(glyph), label, t).clicked() {
+    let mut item = |ui: &mut Ui, glyph: Glyph, label: &str, act: Act, edit: bool| {
+        let enabled = !edit || edits;
+        if floating::menu_row_if(ui, enabled, Some(glyph), label, t).clicked() && enabled {
             acts.push(act);
             picked = true;
         }
     };
-    item(ui, Glyph::Mark(Mark::Paste), "Paste", Act::Paste);
+    item(ui, Glyph::Mark(Mark::Paste), "Paste", Act::Paste, true);
     if clipboard {
-        item(ui, Glyph::Mark(Mark::Cut), "Cut", Act::Clipboard("cut"));
-        item(ui, Glyph::Mark(Mark::Copy), "Copy", Act::Clipboard("copy"));
+        item(ui, Glyph::Mark(Mark::Cut), "Cut", Act::Clipboard("cut"), true);
+        item(ui, Glyph::Mark(Mark::Copy), "Copy", Act::Clipboard("copy"), false);
     }
     floating::menu_separator(ui, t);
-    item(ui, Glyph::Icon(Icon::Table), "Table", Act::Insert("table"));
-    item(ui, Glyph::Icon(Icon::Link), "Link", Act::Insert("link"));
-    item(ui, Glyph::Icon(Icon::Equation), "Equation", Act::Insert("equation"));
-    item(ui, Glyph::Icon(Icon::Calendar), "Date and time", Act::Insert("datetime"));
+    item(ui, Glyph::Icon(Icon::Table), "Table", Act::Insert("table"), true);
+    item(ui, Glyph::Icon(Icon::Link), "Link", Act::Insert("link"), true);
+    item(ui, Glyph::Icon(Icon::Equation), "Equation", Act::Insert("equation"), true);
+    item(ui, Glyph::Icon(Icon::Calendar), "Date and time", Act::Insert("datetime"), true);
     floating::menu_separator(ui, t);
-    item(ui, Glyph::Icon(Icon::Picture), "Picture from a file", Act::AddPicture);
-    item(ui, Glyph::Icon(Icon::Attach), "Attach a file", Act::AddFile);
+    item(ui, Glyph::Icon(Icon::Picture), "Picture from a file", Act::AddPicture, true);
+    item(ui, Glyph::Icon(Icon::Attach), "Attach a file", Act::AddFile, true);
     picked
 }

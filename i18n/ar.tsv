@@ -438,6 +438,8 @@
 @id	ui.notebook_recycle_bin_2	سلة محذوفات الدفتر
 @id	ui.notebook_recycle_bin_3	سلة محذوفات\nالدفتر
 @id	ui.notebooks_2	الدفترة
+@id	ui.save_the_page_before_locking_it	احفظ الصفحة قبل قفلها
+@id	ui.page_is_read_only	هذه الصفحة مقفلة للقراءة فقط
 @id	ui.lock_read_only	قفل للقراءة فقط
 @id	ui.unlock_read_only	إلغاء القفل
 @id	ui.page_locked_read_only	تم قفل الصفحة للقراءة فقط

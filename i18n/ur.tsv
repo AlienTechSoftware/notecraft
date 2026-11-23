@@ -438,6 +438,8 @@
 @id	ui.notebook_recycle_bin_2	نوٹ بک کا ری سائیکل بین
 @id	ui.notebook_recycle_bin_3	نوٹ بک\nری سائیکل بین
 @id	ui.notebooks_2	نوٹ بکس
+@id	ui.save_the_page_before_locking_it	مقفل کرنے سے پہلے صفحہ محفوظ کریں
+@id	ui.page_is_read_only	یہ صفحہ صرف پڑھنے کے لیے مقفل ہے
 @id	ui.lock_read_only	صرف پڑھنے کے لیے مقفل کریں
 @id	ui.unlock_read_only	غیر مقفل کریں
 @id	ui.page_locked_read_only	صفحہ صرف پڑھنے کے لیے مقفل ہو گیا

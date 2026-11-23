@@ -2599,6 +2599,16 @@ impl NoteCraftApp {
     /// Locks a page read only, or unlocks it, through the engine's command. The page open in
     /// the editor follows at once: a lock stops its edits, and an unlock reopens it for them.
     fn set_read_only(&mut self, path: &Path, locked: bool) {
+        // A lock stops the page's writes, so edits made but not yet saved are written first. If
+        // that save does not happen, the page stays unlocked rather than losing them (issue #441).
+        if locked && self.editor.as_ref().is_some_and(|ed| ed.dir == path && (ed.dirty_since.is_some() || ed.saving.is_some())) {
+            self.save_now();
+            self.take_saves(true);
+            if self.editor.as_ref().is_some_and(|ed| ed.dir == path && (ed.dirty_since.is_some() || ed.saving.is_some())) {
+                self.say(crate::tl_id!("ui.save_the_page_before_locking_it"));
+                return;
+            }
+        }
         let arg = if locked { "true" } else { "false" };
         if self.run("page.read_only", &params(&[("path", &path_str(path)), ("locked", arg)])).is_none() {
             return;
@@ -4185,7 +4195,9 @@ impl NoteCraftApp {
         // Pages keep room for the add-page "+" at the end of the row. Organiser rows do not,
         // so notebook, group and section names run almost to the pane border.
         let trailing = if node.info.kind == NodeKind::Page { 28.0 } else { 8.0 };
-        let room = (rect.max.x - trailing - text_pos.x).max(0.0);
+        // A locked page keeps room for its lock beside the name (issue #441).
+        let lock_room = if node.info.read_only { 18.0 } else { 0.0 };
+        let room = (rect.max.x - trailing - text_pos.x - lock_room).max(0.0);
         // The format label ("html", "md") is the less important of the two: it is shown only
         // when the whole name fits beside it, and the name is never cut to make room for it.
         let label = if node.info.kind == NodeKind::Page { node.info.format.map(|f| crate::tl!(f.short())) } else { None };
@@ -4198,6 +4210,16 @@ impl NoteCraftApp {
         // direction; the row keeps its place and its clip either way.
         let clipped = painter.with_clip_rect(text_clip);
         crate::bidi::line_at(ui, &clipped, text_pos, Align2::LEFT_CENTER, &name, 14.0, text_color, None);
+        // A locked page's lock, after its name, with the words of its tooltip for a screen reader too.
+        if node.info.read_only {
+            let name_width = text_width(ui, &name, 14.0);
+            let lock_rect = egui::Rect::from_center_size(egui::pos2(text_pos.x + name_width + 9.0, cy), vec2(13.0, 13.0));
+            floating::Glyph::Icon(Icon::Lock).paint(&painter, lock_rect, t);
+            let tip = crate::tl_id!("ui.page_is_read_only");
+            let lock = ui.interact(lock_rect, ui.id().with(("read-only", node.path.clone())), Sense::hover());
+            lock.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, tip));
+            lock.on_hover_text(tip);
+        }
         let plus_rect = egui::Rect::from_min_size(egui::pos2(rect.max.x - 24.0, rect.min.y + 2.0), vec2(20.0, ROW_HEIGHT - 4.0));
         if show_label && let Some(l) = label {
             painter.text(egui::pos2(rect.max.x - trailing, cy), Align2::RIGHT_CENTER, l, egui::FontId::proportional(10.5), t.muted);
@@ -4220,6 +4242,9 @@ impl NoteCraftApp {
             }
         }
         resp.context_menu(|ui| {
+            // A locked page keeps its menu, with the changes to it greyed out (issue #441). Read
+            // from the page's head only while this menu is open.
+            let edits_off = node.info.kind == NodeKind::Page && notecraft_store::page::read_only(&node.path).unwrap_or(false);
             // Issue #380: the shortcut sits in its own right-hand column, not in the words.
             let shortcut = if cfg!(target_os = "macos") { "Cmd+N" } else { "Ctrl+N" };
             if node.info.kind == NodeKind::Page
@@ -4259,15 +4284,22 @@ impl NoteCraftApp {
             {
                 floating::menu_separator(ui, t);
                 if Self::can_make_subpage(&node.path)
-                    && floating::menu_row(ui, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::IndentMore)), crate::tl_id!("ui.make_subpage"), t)
-                        .clicked()
+                    && floating::menu_row_if(
+                        ui,
+                        !edits_off,
+                        Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::IndentMore)),
+                        crate::tl_id!("ui.make_subpage"),
+                        t,
+                    )
+                    .clicked()
                 {
                     acts.push(Act::MakeSubpage(node.path.clone()));
                     ui.close();
                 }
                 if Self::can_promote_subpage(&node.path)
-                    && floating::menu_row(
+                    && floating::menu_row_if(
                         ui,
+                        !edits_off,
                         Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::IndentLess)),
                         crate::tl_id!("ui.promote_subpage"),
                         t,
@@ -4278,13 +4310,13 @@ impl NoteCraftApp {
                     ui.close();
                 }
                 if Self::can_move_page(&node.path, true)
-                    && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::MoveUp)), crate::tl_id!("ui.move_up"), t).clicked()
+                    && floating::menu_row_if(ui, !edits_off, Some(floating::Glyph::Icon(Icon::MoveUp)), crate::tl_id!("ui.move_up"), t).clicked()
                 {
                     acts.push(Act::MovePageUp(node.path.clone()));
                     ui.close();
                 }
                 if Self::can_move_page(&node.path, false)
-                    && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::MoveDown)), crate::tl_id!("ui.move_down"), t).clicked()
+                    && floating::menu_row_if(ui, !edits_off, Some(floating::Glyph::Icon(Icon::MoveDown)), crate::tl_id!("ui.move_down"), t).clicked()
                 {
                     acts.push(Act::MovePageDown(node.path.clone()));
                     ui.close();
@@ -4301,12 +4333,13 @@ impl NoteCraftApp {
                     ui.close();
                 }
             }
-            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Page)), crate::tl_id!("ui.rename_ellipsis"), t).clicked() {
+            if floating::menu_row_if(ui, !edits_off, Some(floating::Glyph::Icon(Icon::Page)), crate::tl_id!("ui.rename_ellipsis"), t).clicked() {
                 acts.push(Act::Rename(node.path.clone(), node.info.title.clone()));
                 ui.close();
             }
             if matches!(node.info.kind, NodeKind::Page | NodeKind::Section | NodeKind::SectionGroup)
-                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::MoveDown)), crate::tl_id!("ui.move_or_copy_ellipsis"), t).clicked()
+                && floating::menu_row_if(ui, !edits_off, Some(floating::Glyph::Icon(Icon::MoveDown)), crate::tl_id!("ui.move_or_copy_ellipsis"), t)
+                    .clicked()
             {
                 acts.push(Act::MoveOrCopy(node.path.clone()));
                 ui.close();
@@ -4380,7 +4413,16 @@ impl NoteCraftApp {
                 acts.push(Act::CloseNotebook(node.path.clone()));
                 ui.close();
             }
-            if floating::menu_row_danger(ui, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Delete)), crate::tl_id!("ui.delete_ellipsis"), t)
+            if ui
+                .add_enabled_ui(!edits_off, |ui| {
+                    floating::menu_row_danger(
+                        ui,
+                        Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Delete)),
+                        crate::tl_id!("ui.delete_ellipsis"),
+                        t,
+                    )
+                })
+                .inner
                 .clicked()
             {
                 acts.push(Act::Delete(node.path.clone(), node.info.title.clone(), node.count()));
@@ -15175,7 +15217,7 @@ mod band_title_tests {
     fn node(kind: NodeKind, path: &str, title: &str, children: Vec<Node>) -> Node {
         Node {
             path: PathBuf::from(path),
-            info: NodeInfo { kind, title: title.into(), color: None, format: None, id: title.into(), order: 0 },
+            info: NodeInfo { kind, title: title.into(), color: None, format: None, id: title.into(), order: 0, read_only: false },
             children,
         }
     }

@@ -438,6 +438,8 @@
 @id	ui.notebook_recycle_bin_2	סל המיחזור של המחברת
 @id	ui.notebook_recycle_bin_3	סל מיחזור מחברות\n
 @id	ui.notebooks_2	מחברות
+@id	ui.save_the_page_before_locking_it	שמרו את הדף לפני נעילתו
+@id	ui.page_is_read_only	הדף הזה נעול לקריאה בלבד
 @id	ui.lock_read_only	נעל לקריאה בלבד
 @id	ui.unlock_read_only	בטל נעילה
 @id	ui.page_locked_read_only	הדף ננעל לקריאה בלבד

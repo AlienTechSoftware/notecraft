@@ -517,6 +517,8 @@
 @id	ui.notebook_recycle_bin_2	Notebook recycle bin
 @id	ui.notebook_recycle_bin_3	Notebook\nRecycle Bin
 @id	ui.notebooks_2	NOTEBOOKS
+@id	ui.save_the_page_before_locking_it	Save the page before locking it
+@id	ui.page_is_read_only	This page is locked read only
 @id	ui.lock_read_only	Lock read only
 @id	ui.unlock_read_only	Unlock
 @id	ui.page_locked_read_only	Page locked read only

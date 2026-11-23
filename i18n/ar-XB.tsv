@@ -517,6 +517,8 @@
 @id	ui.notebook_recycle_bin_2	[[RLI]]$$$Notebook recycle bin@@@[[PDI]]
 @id	ui.notebook_recycle_bin_3	[[RLI]]$$$Notebook@@@[[PDI]]\n[[RLI]]$$$Recycle Bin@@@[[PDI]]
 @id	ui.notebooks_2	[[RLI]]$$$NOTEBOOKS@@@[[PDI]]
+@id	ui.save_the_page_before_locking_it	[[RLI]]$$$Save the page before locking it@@@[[PDI]]
+@id	ui.page_is_read_only	[[RLI]]$$$This page is locked read only@@@[[PDI]]
 @id	ui.lock_read_only	[[RLI]]$$$Lock read only@@@[[PDI]]
 @id	ui.unlock_read_only	[[RLI]]$$$Unlock@@@[[PDI]]
 @id	ui.page_locked_read_only	[[RLI]]$$$Page locked read only@@@[[PDI]]

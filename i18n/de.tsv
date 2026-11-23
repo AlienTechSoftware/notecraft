@@ -438,6 +438,8 @@
 @id	ui.notebook_recycle_bin_2	Papierkorb des Notizbuchs
 @id	ui.notebook_recycle_bin_3	Papierkorb\ndesNotizbuchs
 @id	ui.notebooks_2	NOTIZBÜCHER
+@id	ui.save_the_page_before_locking_it	Speichern Sie die Seite, bevor Sie sie sperren
+@id	ui.page_is_read_only	Diese Seite ist nur lesbar gesperrt
 @id	ui.lock_read_only	Nur-Lesen sperren
 @id	ui.unlock_read_only	Entsperren
 @id	ui.page_locked_read_only	Seite auf Nur-Lesen gesperrt

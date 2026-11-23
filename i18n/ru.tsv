@@ -438,6 +438,8 @@
 @id	ui.notebook_recycle_bin_2	Корзина блокнота
 @id	ui.notebook_recycle_bin_3	Корзина блокнота\n
 @id	ui.notebooks_2	БЛОКНОТЫ
+@id	ui.save_the_page_before_locking_it	Сохраните страницу перед блокировкой
+@id	ui.page_is_read_only	Эта страница заблокирована только для чтения
 @id	ui.lock_read_only	Заблокировать только для чтения
 @id	ui.unlock_read_only	Разблокировать
 @id	ui.page_locked_read_only	Страница заблокирована только для чтения

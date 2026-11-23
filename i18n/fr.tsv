@@ -438,6 +438,8 @@
 @id	ui.notebook_recycle_bin_2	Corbeille du cahier
 @id	ui.notebook_recycle_bin_3	\n Corbeille des cahiers
 @id	ui.notebooks_2	BLOCS-NOTES
+@id	ui.save_the_page_before_locking_it	Enregistrez la page avant de la verrouiller
+@id	ui.page_is_read_only	Cette page est verrouillée en lecture seule
 @id	ui.lock_read_only	Verrouiller en lecture seule
 @id	ui.unlock_read_only	Déverrouiller
 @id	ui.page_locked_read_only	Page verrouillée en lecture seule

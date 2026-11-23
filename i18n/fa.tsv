@@ -438,6 +438,8 @@
 @id	ui.notebook_recycle_bin_2	سطل بازیافت دفترچه
 @id	ui.notebook_recycle_bin_3	سطل بازیافت دفترچه\n
 @id	ui.notebooks_2	دفترچه‌ها
+@id	ui.save_the_page_before_locking_it	پیش از قفل کردن، صفحه را ذخیره کنید
+@id	ui.page_is_read_only	این صفحه به‌صورت فقط‌خواندنی قفل شده است
 @id	ui.lock_read_only	قفل فقط‌خواندنی
 @id	ui.unlock_read_only	باز کردن قفل
 @id	ui.page_locked_read_only	صفحه به‌صورت فقط‌خواندنی قفل شد

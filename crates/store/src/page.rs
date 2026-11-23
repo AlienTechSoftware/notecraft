@@ -124,6 +124,12 @@ pub fn restore_version(dir: &Path, id: &str) -> Result<()> {
         return Err(StoreError::NotFound(format!("page version {id}")));
     }
     let contents = fs::read_to_string(&snapshot).map_err(|e| StoreError::io("read", &snapshot, e))?;
+    // A locked page keeps its words, so an older version does not replace them (issue #441).
+    let (format, _) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
+    let now = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    if read_only_in(format, &now) {
+        return Err(StoreError::invalid("this page is locked read only"));
+    }
     snapshot_current(dir, &file, true)?;
     write_atomic_file(&file, &contents)
 }
@@ -541,6 +547,9 @@ pub(crate) fn read_only_in(format: PageFormat, text: &str) -> bool {
 /// Locks the page read only, or unlocks it. Unlocking removes the line, so an unlocked page
 /// is the same file it was before it was locked.
 pub fn set_read_only(dir: &Path, locked: bool) -> Result<()> {
+    // The same writer lock as a body save, so a save in flight is not lost under this write.
+    let writer = crate::coordination::page_writer(dir)?;
+    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
     let out = match format {
@@ -557,6 +566,11 @@ pub fn set_read_only(dir: &Path, locked: bool) -> Result<()> {
             format!("{front}{rest}")
         }
     };
+    // A page whose file has no head to hold the line cannot be locked: a lock that is not stored
+    // would leave the page editable while it says it is locked (issue #441).
+    if locked && !read_only_in(format, &out) {
+        return Err(StoreError::invalid("this page has no head to hold its lock, so it cannot be locked read only"));
+    }
     write_atomic(&file, &out)
 }
 
@@ -1143,5 +1157,25 @@ mod tests {
             ops::set_title(&dir, "Renamed").expect("an unlocked page takes its title again");
             save_body(&dir, "Changed").expect("and its words");
         }
+    }
+
+    /// A page whose file has no head cannot hold the lock, so locking it fails and the page stays
+    /// editable, and a locked page refuses an older version over its words (issue #441).
+    #[test]
+    fn a_lock_must_be_stored_and_a_locked_page_keeps_its_words_through_a_restore() {
+        let (_t, dir) = setup("lock-stored", PageFormat::Html);
+        let file = dir.join("index.html");
+        std::fs::write(&file, "<p>no head at all</p>").expect("write");
+        assert!(set_read_only(&dir, true).is_err(), "a page without a head cannot be locked");
+        assert!(!read_only(&dir).expect("read"), "and it stays editable");
+
+        let (_t2, dir2) = setup("lock-restore", PageFormat::Html);
+        save_body(&dir2, "<p>first</p>").expect("save");
+        save_body(&dir2, "<p>second</p>").expect("save again, so a version exists");
+        let versions = versions(&dir2).expect("versions");
+        let id = versions.first().expect("a version").id.clone();
+        set_read_only(&dir2, true).expect("lock");
+        assert!(restore_version(&dir2, &id).is_err(), "a locked page is not restored over its words");
+        assert_eq!(load_page(&dir2).expect("load").body, "<p>second</p>", "the words are the same");
     }
 }

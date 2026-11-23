@@ -64,6 +64,16 @@ pub fn menu_row(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Tokens) -> R
     resp
 }
 
+/// A menu row that is greyed out and does nothing when `enabled` is false (issue #441: a locked
+/// page's edits stay in its menu, shown as unavailable).
+pub fn menu_row_if(ui: &mut Ui, enabled: bool, glyph: Option<Glyph>, label: &str, t: &Tokens) -> Response {
+    if enabled {
+        return menu_row(ui, glyph, label, t);
+    }
+    let muted = Tokens { text: t.muted, ..*t };
+    ui.add_enabled_ui(false, |ui| menu_row(ui, glyph, label, &muted)).inner
+}
+
 /// A menu row with its keyboard shortcut right-aligned in a column of its own (issue #380), so
 /// the shortcut is not run into the words of the label.
 // i18n-ui-text: label

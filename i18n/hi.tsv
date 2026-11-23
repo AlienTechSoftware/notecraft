@@ -438,6 +438,8 @@
 @id	ui.notebook_recycle_bin_2	नोटबुक रिसाइकिल बिन
 @id	ui.notebook_recycle_bin_3	नोटबुक\nरिसाइकिल बिन
 @id	ui.notebooks_2	नोटबुक्स
+@id	ui.save_the_page_before_locking_it	लॉक करने से पहले पेज सहेजें
+@id	ui.page_is_read_only	यह पेज केवल-पढ़ने के लिए लॉक है
 @id	ui.lock_read_only	केवल-पढ़ने के लिए लॉक करें
 @id	ui.unlock_read_only	अनलॉक करें
 @id	ui.page_locked_read_only	पेज केवल-पढ़ने के लिए लॉक किया गया

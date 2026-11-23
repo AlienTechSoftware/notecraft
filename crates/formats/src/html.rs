@@ -44,11 +44,25 @@ pub fn set_meta(text: &str, name: &str, value: &str) -> String {
     }
 }
 
+/// Where the tag that starts at `start` ends: after the first `>` outside a quoted attribute, so a
+/// `>` inside a value does not end it early.
+fn tag_end(text: &str, start: usize) -> Option<usize> {
+    let mut quoted = false;
+    for (i, c) in text.get(start..)?.char_indices() {
+        match c {
+            '"' => quoted = !quoted,
+            '>' if !quoted => return Some(start + i + 1),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Removes `<meta name="NAME" content="...">` from the head, with its line. Unchanged if absent.
 pub fn remove_meta(text: &str, name: &str) -> String {
     let tag = format!("<meta name=\"{name}\" content=\"");
     let Some(start) = text.find(&tag) else { return text.to_string() };
-    let Some(end) = text.get(start..).and_then(|t| t.find('>')).map(|e| start + e + 1) else { return text.to_string() };
+    let Some(end) = tag_end(text, start) else { return text.to_string() };
     let line_start = text
         .get(..start)
         .and_then(|t| t.rfind('\n').map(|i| i + 1))
@@ -932,5 +946,22 @@ mod remove_meta_tests {
         assert_eq!(meta(&locked, "notecraft:read-only").as_deref(), Some("true"));
         assert_eq!(remove_meta(&locked, "notecraft:read-only"), before);
         assert_eq!(remove_meta(before, "notecraft:read-only"), before, "absent is unchanged");
+    }
+
+    /// A `>` inside an attribute value does not end the tag early, so unlocking takes the whole tag.
+    #[test]
+    fn removing_a_meta_line_with_a_greater_than_in_a_value_takes_the_whole_tag() {
+        let before = "<!doctype html>
+<html><head>
+<title>T</title>
+</head><body></body></html>
+";
+        let tagged = "<!doctype html>
+<html><head>
+<meta name=\"notecraft:read-only\" content=\"true\" data-note=\"a>b\">
+<title>T</title>
+</head><body></body></html>
+";
+        assert_eq!(remove_meta(tagged, "notecraft:read-only"), before, "no part of the tag is left in the page");
     }
 }
