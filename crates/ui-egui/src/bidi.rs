@@ -322,6 +322,21 @@ pub fn line_at(ui: &Ui, painter: &egui::Painter, at: Pos2, align: Align2, text: 
     paint_with(painter, box_.min - vec2(left, 0.0), &drawn);
 }
 
+/// How wide `text` is when [`line_at`] draws it on one line at `size` points. Measured through
+/// the same runs `line_at` paints, so a title cut to a width is cut to the width it is drawn at
+/// (issue #371); plain text is measured as a label is.
+pub fn line_width(ui: &Ui, text: &str, size: f32, page: Option<notecraft_model::Dir>) -> f32 {
+    let font = egui::FontId::proportional(size);
+    if !paints(text, page) {
+        return ui.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), font, Color32::WHITE).rect.width());
+    }
+    let pieces = [(0..text.len(), TextFormat { font_id: font, color: Color32::WHITE, ..TextFormat::default() })];
+    let (drawn, _) = runs(ui, text, &pieces, size, f32::INFINITY, page);
+    let left = drawn.iter().map(|d| d.at.x).fold(f32::INFINITY, f32::min);
+    let right = drawn.iter().map(|d| d.at.x + d.galley.rect.width()).fold(f32::NEG_INFINITY, f32::max);
+    if left.is_finite() && right.is_finite() { right - left } else { 0.0 }
+}
+
 /// A line as it is heard rather than as it is stored: the direction marks and isolates that
 /// carry the writing direction are invisible on screen, so they are left out of the label a
 /// screen reader reads and the tests look a line up by.
