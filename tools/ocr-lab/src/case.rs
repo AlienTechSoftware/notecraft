@@ -34,6 +34,9 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
 pub struct Label {
     pub text: String,
     pub rect: [f32; 4],
+    /// The colour of this label's box, when the person picked one. Not set means the default blue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub colour: Option<[u8; 3]>,
 }
 
 /// The label file beside a picture: `<picture>.label.json`.
@@ -106,7 +109,8 @@ pub fn load_labels(picture: &Path) -> Result<LabelFile, String> {
     let name = picture.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let path = label_path(picture);
     match std::fs::read_to_string(&path) {
-        Ok(text) => serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display())),
+        // Files written on Windows can start with a byte-order mark, which JSON does not allow.
+        Ok(text) => serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| format!("{}: {e}", path.display())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(LabelFile { version: 1, picture: name, width, height, labels: Vec::new() }),
         Err(e) => Err(format!("{}: {e}", path.display())),
     }
@@ -213,7 +217,7 @@ mod tests {
 
     #[test]
     fn a_label_over_a_line_is_found_and_its_text_compared_loosely() {
-        let labels = vec![Label { text: "Sourdough  6.00".into(), rect: [10.0, 10.0, 110.0, 30.0] }];
+        let labels = vec![Label { text: "Sourdough  6.00".into(), rect: [10.0, 10.0, 110.0, 30.0], colour: None }];
         let lines = vec![line("sourdough 6.00", 10.0, 10.0, 110.0, 30.0)];
         let s = score(&labels, &lines);
         assert_eq!((s.labels, s.found, s.text_matched, s.unmatched_engine_lines), (1, 1, 1, 0));
@@ -221,7 +225,7 @@ mod tests {
 
     #[test]
     fn a_label_with_no_line_over_it_is_not_found_and_an_uncovered_line_is_counted() {
-        let labels = vec![Label { text: "Flat white".into(), rect: [10.0, 50.0, 110.0, 70.0] }];
+        let labels = vec![Label { text: "Flat white".into(), rect: [10.0, 50.0, 110.0, 70.0], colour: None }];
         let lines = vec![line("Sourdough", 10.0, 10.0, 110.0, 30.0)];
         let s = score(&labels, &lines);
         assert_eq!((s.found, s.text_matched, s.unmatched_engine_lines), (0, 0, 1));
@@ -229,10 +233,22 @@ mod tests {
 
     #[test]
     fn a_found_label_with_different_text_is_found_but_not_text_matched() {
-        let labels = vec![Label { text: "Flat white".into(), rect: [10.0, 10.0, 110.0, 30.0] }];
+        let labels = vec![Label { text: "Flat white".into(), rect: [10.0, 10.0, 110.0, 30.0], colour: None }];
         let lines = vec![line("Flat whlte", 10.0, 10.0, 110.0, 30.0)];
         let s = score(&labels, &lines);
         assert_eq!((s.found, s.text_matched), (1, 0));
+    }
+
+    #[test]
+    fn a_label_file_with_a_byte_order_mark_still_loads() {
+        let dir = std::env::temp_dir().join(format!("ocr-lab-bom-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let picture = dir.join("q.png");
+        image::RgbImage::new(4, 4).save(&picture).expect("picture");
+        let text = "\u{feff}{\"version\":1,\"picture\":\"q.png\",\"width\":4,\"height\":4,\"labels\":[]}";
+        std::fs::write(label_path(&picture), text).expect("file");
+        assert!(load_labels(&picture).expect("loads").labels.is_empty());
+        std::fs::remove_dir_all(&dir).expect("clean up");
     }
 
     #[test]
@@ -244,7 +260,7 @@ mod tests {
         let mut file = load_labels(&picture).expect("no label file yet");
         assert!(file.labels.is_empty());
         assert_eq!((file.width, file.height), (20, 10));
-        file.labels.push(Label { text: "hi".into(), rect: [1.0, 2.0, 3.0, 4.0] });
+        file.labels.push(Label { text: "hi".into(), rect: [1.0, 2.0, 3.0, 4.0], colour: None });
         save_labels(&picture, &file).expect("save");
         assert_eq!(load_labels(&picture).expect("load"), file);
         std::fs::remove_dir_all(&dir).expect("clean up");

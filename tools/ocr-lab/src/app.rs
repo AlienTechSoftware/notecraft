@@ -12,8 +12,75 @@ use std::path::{Path, PathBuf};
 
 const HANDLE_PX: f32 = 8.0;
 const LABEL_COLOUR: Color32 = Color32::from_rgb(40, 160, 255);
+const LABEL_DEFAULT_RGB: [u8; 3] = [40, 160, 255];
 const SELECTED_COLOUR: Color32 = Color32::from_rgb(255, 200, 0);
 const ENGINE_COLOUR: Color32 = Color32::from_rgb(255, 90, 60);
+
+/// How the picture is shown: hue turns the colours round the colour wheel, contrast and brightness
+/// are applied after it. Neutral is no change at all.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Adjust {
+    /// Degrees, -180 to 180.
+    pub hue: f32,
+    /// 1 is no change; 0 is flat grey, 2 is twice the spread.
+    pub contrast: f32,
+    /// -1 to 1, added to every channel.
+    pub brightness: f32,
+}
+
+impl Adjust {
+    pub const NEUTRAL: Adjust = Adjust { hue: 0.0, contrast: 1.0, brightness: 0.0 };
+
+    /// The picture with these adjustments applied to every pixel.
+    pub fn apply(self, src: &image::RgbaImage) -> egui::ColorImage {
+        let pixels: Vec<egui::Color32> = src
+            .pixels()
+            .map(|p| {
+                let [r, g, b] = rotate_hue([p[0], p[1], p[2]], self.hue);
+                let shift = |v: u8| -> u8 {
+                    let v = (v as f32 - 128.0) * self.contrast + 128.0 + self.brightness * 255.0;
+                    v.round().clamp(0.0, 255.0) as u8
+                };
+                egui::Color32::from_rgba_unmultiplied(shift(r), shift(g), shift(b), p[3])
+            })
+            .collect();
+        egui::ColorImage { size: [src.width() as usize, src.height() as usize], pixels, source_size: egui::Vec2::ZERO }
+    }
+}
+
+/// Turns an RGB colour round the wheel by `degrees`, keeping its brightness and saturation.
+pub fn rotate_hue(rgb: [u8; 3], degrees: f32) -> [u8; 3] {
+    if degrees.abs() < f32::EPSILON {
+        return rgb;
+    }
+    let [r, g, b] = rgb.map(|c| c as f32 / 255.0);
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let delta = max - min;
+    let hue = if delta == 0.0 {
+        0.0
+    } else if max == r {
+        60.0 * (((g - b) / delta).rem_euclid(6.0))
+    } else if max == g {
+        60.0 * ((b - r) / delta + 2.0)
+    } else {
+        60.0 * ((r - g) / delta + 4.0)
+    };
+    let saturation = if max == 0.0 { 0.0 } else { delta / max };
+    let hue = (hue + degrees).rem_euclid(360.0);
+    let chroma = max * saturation;
+    let x = chroma * (1.0 - ((hue / 60.0).rem_euclid(2.0) - 1.0).abs());
+    let m = max - chroma;
+    let (r1, g1, b1) = match (hue / 60.0) as u32 {
+        0 => (chroma, x, 0.0),
+        1 => (x, chroma, 0.0),
+        2 => (0.0, chroma, x),
+        3 => (0.0, x, chroma),
+        4 => (x, 0.0, chroma),
+        _ => (chroma, 0.0, x),
+    };
+    [(r1 + m) * 255.0, (g1 + m) * 255.0, (b1 + m) * 255.0].map(|c| c.round().clamp(0.0, 255.0) as u8)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -33,6 +100,8 @@ enum Drag {
 struct Loaded {
     index: usize,
     texture: egui::TextureHandle,
+    /// The picture as it is on disk. The sliders change only what is shown; OCR reads this.
+    original: image::RgbaImage,
     size: [u32; 2],
     bytes: u64,
     file: LabelFile,
@@ -53,6 +122,8 @@ pub struct Lab {
     follow_system: bool,
     health: crate::models::Health,
     metrics: crate::metrics::Metrics,
+    adjust: Adjust,
+    applied_adjust: Option<Adjust>,
     /// The theme last applied to the window, so the visuals are set only when it changes.
     applied_theme: Option<Theme>,
     mode: Mode,
@@ -81,6 +152,8 @@ impl Lab {
             follow_system: false,
             health: crate::models::Health::NotSet,
             metrics: crate::metrics::Metrics::new(),
+            adjust: Adjust::NEUTRAL,
+            applied_adjust: None,
             applied_theme: None,
             mode: Mode::Select,
             selected: None,
@@ -168,7 +241,7 @@ impl Lab {
             Ok(file) => {
                 self.log.event(&format!("opened {name} {}x{} with {} labels", size[0], size[1], file.labels.len()));
                 let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-                let mut loaded = Loaded { index, texture, size, bytes, file, lines: Vec::new(), timings: Vec::new(), score: None };
+                let mut loaded = Loaded { index, texture, original: rgba, size, bytes, file, lines: Vec::new(), timings: Vec::new(), score: None };
                 if let Some((lines, timings)) = load_run(&path) {
                     loaded.score = Some(case::score(&loaded.file.labels, &lines));
                     loaded.lines = lines;
@@ -189,6 +262,18 @@ impl Lab {
 
     fn relative_name(&self, path: &Path) -> String {
         path.strip_prefix(&self.folder).unwrap_or(path).to_string_lossy().replace('\\', "/")
+    }
+
+    /// Redraws the shown picture when the sliders have moved. The pixels OCR reads do not change.
+    fn apply_adjust(&mut self) {
+        if self.applied_adjust == Some(self.adjust) {
+            return;
+        }
+        if let Some(loaded) = self.loaded.as_mut() {
+            let image = self.adjust.apply(&loaded.original);
+            loaded.texture.set(image, egui::TextureOptions::LINEAR);
+        }
+        self.applied_adjust = Some(self.adjust);
     }
 
     fn run_ocr(&mut self) {
@@ -326,6 +411,7 @@ impl Lab {
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        self.apply_adjust();
         if self.follow_system
             && let Some(system) = ctx.system_theme()
         {
@@ -593,6 +679,15 @@ impl Lab {
         });
         ui.checkbox(&mut self.show_engine, "Show the engine's lines (orange)");
         egui::CollapsingHeader::new("Metrics").default_open(false).show(ui, |ui| self.metrics.show(ui));
+        egui::CollapsingHeader::new("Picture").default_open(false).show(ui, |ui| {
+            ui.add(egui::Slider::new(&mut self.adjust.hue, -180.0..=180.0).text("Hue"));
+            ui.add(egui::Slider::new(&mut self.adjust.contrast, 0.0..=2.0).text("Contrast"));
+            ui.add(egui::Slider::new(&mut self.adjust.brightness, -1.0..=1.0).text("Brightness"));
+            if ui.button("Reset picture").clicked() {
+                self.adjust = Adjust::NEUTRAL;
+            }
+            ui.small("Only the picture on screen changes. OCR reads the file.");
+        });
         ui.separator();
         let Some(loaded) = self.loaded.as_ref() else {
             ui.label("No picture open.");
@@ -625,6 +720,11 @@ impl Lab {
                         if is_selected {
                             let edit = ui.add(egui::TextEdit::singleline(&mut label.text).hint_text("the text in this box"));
                             text_changed |= edit.lost_focus();
+                            let mut rgb = label.colour.unwrap_or(LABEL_DEFAULT_RGB);
+                            if ui.color_edit_button_srgb(&mut rgb).changed() {
+                                label.colour = Some(rgb);
+                                text_changed = true;
+                            }
                         } else {
                             ui.label(if label.text.is_empty() { "(no text)" } else { label.text.as_str() });
                         }
@@ -683,7 +783,8 @@ impl Lab {
         for (i, label) in loaded.file.labels.iter().enumerate() {
             let r = Self::normalized(label.rect);
             let screen = Rect::from_min_max(Self::to_screen(origin, scale, [r[0], r[1]]), Self::to_screen(origin, scale, [r[2], r[3]]));
-            let colour = if self.selected == Some(i) { SELECTED_COLOUR } else { LABEL_COLOUR };
+            let colour =
+                if self.selected == Some(i) { SELECTED_COLOUR } else { label.colour.map_or(LABEL_COLOUR, |c| Color32::from_rgb(c[0], c[1], c[2])) };
             painter.rect_stroke(screen, CornerRadius::ZERO, Stroke::new(2.0, colour), StrokeKind::Outside);
             let tag = if label.text.is_empty() { format!("#{}", i + 1) } else { format!("#{} {}", i + 1, label.text) };
             painter.text(screen.min + Vec2::new(2.0, -2.0), egui::Align2::LEFT_BOTTOM, tag, egui::FontId::proportional(12.0), colour);
@@ -792,7 +893,7 @@ impl Lab {
                     let r = Self::normalized([start[0], start[1], now[0], now[1]]);
                     if r[2] - r[0] >= 2.0 && r[3] - r[1] >= 2.0 {
                         if let Some(loaded) = self.loaded.as_mut() {
-                            loaded.file.labels.push(Label { text: String::new(), rect: r });
+                            loaded.file.labels.push(Label { text: String::new(), rect: r, colour: None });
                             self.selected = Some(loaded.file.labels.len() - 1);
                         }
                         self.save();
@@ -919,7 +1020,29 @@ mod tests {
     use notecraft_ocr::Point;
 
     fn label(rect: [f32; 4]) -> Label {
-        Label { text: String::new(), rect }
+        Label { text: String::new(), rect, colour: None }
+    }
+
+    #[test]
+    fn a_zero_hue_turn_changes_nothing_and_red_turns_to_green_at_120_degrees() {
+        assert_eq!(rotate_hue([200, 30, 90], 0.0), [200, 30, 90]);
+        assert_eq!(rotate_hue([255, 0, 0], 120.0), [0, 255, 0]);
+        assert_eq!(rotate_hue([255, 0, 0], -120.0), [0, 0, 255]);
+        assert_eq!(rotate_hue([128, 128, 128], 90.0), [128, 128, 128], "grey has no hue to turn");
+    }
+
+    #[test]
+    fn neutral_adjustments_keep_the_picture_and_brightness_and_contrast_move_it() {
+        let mut src = image::RgbaImage::new(2, 1);
+        src.put_pixel(0, 0, image::Rgba([100, 100, 100, 255]));
+        src.put_pixel(1, 0, image::Rgba([200, 200, 200, 255]));
+        let same = Adjust::NEUTRAL.apply(&src);
+        assert_eq!(same.pixels[0], egui::Color32::from_rgba_unmultiplied(100, 100, 100, 255));
+        let bright = Adjust { brightness: 0.5, ..Adjust::NEUTRAL }.apply(&src);
+        assert_eq!(bright.pixels[0].r(), 228, "100 plus half of 255, clamped");
+        let flat = Adjust { contrast: 0.0, ..Adjust::NEUTRAL }.apply(&src);
+        assert_eq!(flat.pixels[0].r(), 128, "no contrast is flat mid grey");
+        assert_eq!(flat.pixels[1].r(), 128);
     }
 
     #[test]
