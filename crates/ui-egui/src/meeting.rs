@@ -70,14 +70,14 @@ fn bold(text: &str) -> Span {
 /// A line's words without their markup, as the dialog shows what will be put on the page.
 pub fn plain_text(block: &Block) -> String {
     match block {
-        Block::Heading { spans, .. } | Block::Paragraph(spans) => spans.iter().map(|s| s.text.as_str()).collect(),
+        Block::Heading { spans, .. } | Block::Paragraph(spans, _) => spans.iter().map(|s| s.text.as_str()).collect(),
         other => crate::pageedit::block_text(other),
     }
 }
 
 /// One line: a name in bold and what it says.
 fn line(name: &str, value: &str) -> Block {
-    Block::Paragraph(vec![bold(&format!("{name}: ")), plain(value)])
+    Block::Paragraph(vec![bold(&format!("{name}: ")), plain(value)], Vec::new())
 }
 
 /// The details of one meeting as lines of a page: its title, when, where, its link, who
@@ -85,16 +85,19 @@ fn line(name: &str, value: &str) -> Block {
 /// is left out rather than written empty.
 pub fn details(event: &Event, o: &Occurrence, offset: i32) -> Vec<Block> {
     let title = if event.summary.is_empty() { crate::tl_id!("ui.meeting_with_no_title").to_string() } else { event.summary.clone() };
-    let mut out = vec![Block::Heading { level: 3, spans: vec![plain(&title)] }];
+    let mut out = vec![Block::Heading { level: 3, spans: vec![plain(&title)], emoji: Vec::new() }];
     out.push(line(crate::tl_id!("ui.meeting_when"), &span_text(o, offset)));
     if !event.location.is_empty() {
         out.push(line(crate::tl_id!("ui.meeting_where"), &event.location));
     }
     if event.url.starts_with("https://") || event.url.starts_with("http://") {
-        out.push(Block::Paragraph(vec![
-            bold(&format!("{}: ", crate::tl_id!("ui.meeting_link"))),
-            Span { text: event.url.clone(), link: Some(event.url.clone()), ..Span::default() },
-        ]));
+        out.push(Block::Paragraph(
+            vec![
+                bold(&format!("{}: ", crate::tl_id!("ui.meeting_link"))),
+                Span { text: event.url.clone(), link: Some(event.url.clone()), ..Span::default() },
+            ],
+            Vec::new(),
+        ));
     }
     if let Some(organizer) = event.organizer.as_ref().map(notecraft_formats::ics::Person::shown).filter(|o| !o.is_empty()) {
         out.push(line(crate::tl_id!("ui.meeting_organizer"), &organizer));
@@ -113,8 +116,8 @@ pub fn details(event: &Event, o: &Occurrence, offset: i32) -> Vec<Block> {
     }
     let agenda: Vec<&str> = event.description.lines().map(str::trim_end).filter(|l| !l.trim().is_empty()).collect();
     if !agenda.is_empty() {
-        out.push(Block::Paragraph(vec![bold(crate::tl_id!("ui.meeting_agenda"))]));
-        out.extend(agenda.iter().map(|l| Block::Paragraph(vec![plain(l)])));
+        out.push(Block::Paragraph(vec![bold(crate::tl_id!("ui.meeting_agenda"))], Vec::new()));
+        out.extend(agenda.iter().map(|l| Block::Paragraph(vec![plain(l)], Vec::new())));
     }
     out
 }

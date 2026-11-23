@@ -40,6 +40,6 @@ palabra que solo parece una etiqueta, como #ideas sin espacio detrás, se deja e
 Las etiquetas personalizadas y una página de resumen que reúna todas las líneas etiquetadas no
 están hechas. El botón Buscar etiquetas lo dice.
 
-Siguiente: [Imágenes y archivos](../pictures-and-files/).
+Siguiente: [Emoji en un bloque](../emoji-on-a-block/).
 
 *Esta página la tradujo un modelo de inteligencia artificial. Las correcciones son bienvenidas.*

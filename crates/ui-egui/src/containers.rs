@@ -428,7 +428,19 @@ pub fn show(
         );
         // Positions and widths are stored in page-space points, like the content. Scale them
         // together so the outline remains attached to its text as the page zooms.
-        let at = pos2(area.min.x + b.x * zoom, area.min.y + b.y * zoom);
+        // The first block's header sits above the box's bar, so the box reserves that row.
+        let first_drawn = range.clone().find(|&n| blocks.get(n).is_some() && !pageedit::is_title_echo(blocks, n, shown_title));
+        let head = if first_drawn.is_some() { crate::block_emoji::HEADER_ROW * zoom } else { 0.0 };
+        let at = pos2(area.min.x + b.x * zoom, area.min.y + b.y * zoom + head);
+        if let Some(first) = first_drawn {
+            let row = Rect::from_min_size(pos2(at.x + PAD * zoom, at.y - head), vec2(b.width * zoom, head));
+            let mut head_ui = ui.new_child(egui::UiBuilder::new().max_rect(row));
+            let emoji = blocks[first].emoji().to_vec();
+            if let Some(next) = crate::block_emoji::header(&mut head_ui, page_dir, first, &emoji, true, zoom) {
+                blocks[first].set_emoji(next);
+                out.changed.blocks = true;
+            }
+        }
         let pad = PAD * zoom;
         let handle = HANDLE * zoom;
         let grip_width = GRIP * zoom;
@@ -446,7 +458,10 @@ pub fn show(
         // everything else on it: left as it was, it was the same few screen points at every zoom,
         // so the page's blocks crept against its ink as it was zoomed.
         child.spacing_mut().item_spacing.y *= zoom;
+        // The header of the first block is already drawn above the bar, so the blocks skip it.
+        ui.data_mut(|d| d.insert_temp(crate::block_emoji::box_first_header_id(), first_drawn));
         let changed = pageedit::show_blocks(&mut child, blocks, caret, page_dir, t, page, range.clone(), cols, justified, across, shown_title, zoom);
+        ui.data_mut(|d| d.remove::<Option<usize>>(crate::block_emoji::box_first_header_id()));
         out.changed.blocks |= changed.blocks;
         out.changed.caret |= changed.caret;
         out.changed.columns |= changed.columns;
@@ -1135,7 +1150,7 @@ pub fn show(
             let target = pageedit::next_writable_block(blocks, block, shown_title);
             let target = target.or_else(|| {
                 let at = block.saturating_add(1).min(blocks.len());
-                blocks.insert(at, Block::Paragraph(Vec::new()));
+                blocks.insert(at, Block::Paragraph(Vec::new(), Vec::new()));
                 out.changed.blocks = true;
                 Some(at)
             });
@@ -1243,7 +1258,7 @@ pub fn show(
     {
         let at = container::blocks_of(boxes, i).start.min(blocks.len());
         log::debug!("FILL_EMPTY_BOX: i={i} inserts empty paragraph at block {at} (triggered by click)");
-        blocks.insert(at, Block::Paragraph(Vec::new()));
+        blocks.insert(at, Block::Paragraph(Vec::new(), Vec::new()));
         // The blocks after it are one further down the page: what is kept against them follows.
         out.changed.columns |= cols.insert_block(at);
         out.justified |= justified.insert_block(at);
@@ -1272,7 +1287,7 @@ pub fn show(
         && container::blocks_of(boxes, i).len() == 1
     {
         let at = container::blocks_of(boxes, i).end.min(blocks.len());
-        blocks.insert(at, Block::Paragraph(Vec::new()));
+        blocks.insert(at, Block::Paragraph(Vec::new(), Vec::new()));
         out.changed.columns |= cols.insert_block(at);
         out.justified |= justified.insert_block(at);
         if let Some(c) = boxes.get_mut(i) {
@@ -1649,6 +1664,8 @@ pub fn show_ink_view(
                 pageedit::show_table_read(&mut child, block, index, t, page, columns, zoom);
                 continue;
             }
+            // The same emoji header as a block on the page, above the block in its box.
+            let _ = crate::block_emoji::header(&mut child, page_dir, index, block.emoji(), false, zoom);
             // In a scope of its own, as the ordinary view draws a finished block: egui spaces a
             // scope from the next block as it spaces the block itself, and drawn straight into
             // the column the blocks sat a little closer, so the page jumped when the pen was
@@ -1712,7 +1729,7 @@ fn page_points_right(area: Rect, right: f32, zoom: f32) -> f32 {
 fn block_has_image(block: &Block) -> bool {
     match block {
         Block::Image { .. } => true,
-        Block::Paragraph(spans) => spans.iter().any(|span| span.image.is_some()),
+        Block::Paragraph(spans, _) => spans.iter().any(|span| span.image.is_some()),
         _ => false,
     }
 }
@@ -1926,7 +1943,7 @@ fn printout_blocks(blocks: &[Block], range: &std::ops::Range<usize>, block: usiz
     // The card is the file's icon, `assets/a.pdf.svg`, or words linking to the file.
     let card = |b: &Block| match b {
         Block::Image { src, .. } => src.strip_suffix(".svg") == Some(source),
-        Block::Paragraph(spans) => {
+        Block::Paragraph(spans, _) => {
             spans.iter().any(|s| s.link.as_deref() == Some(source) || s.image.as_deref().and_then(|i| i.strip_suffix(".svg")) == Some(source))
         }
         _ => false,
@@ -2037,7 +2054,7 @@ fn start_a_box(blocks: &mut Vec<Block>, boxes: &mut Vec<Container>, caret: &mut 
     // edge the paper goes on, so a box started there gets the usual width.
     let usual = 360.0_f32.max(container::MIN_WIDTH);
     let width = if at.x + container::MIN_WIDTH <= room { (room - at.x).clamp(container::MIN_WIDTH, room).min(usual) } else { usual };
-    blocks.push(Block::Paragraph(Vec::new()));
+    blocks.push(Block::Paragraph(Vec::new(), Vec::new()));
     let block_idx = blocks.len() - 1;
     let box_idx = boxes.len();
     boxes.push(Container { x: at.x, y: at.y, width, blocks: 1 });
@@ -2060,9 +2077,9 @@ mod tests {
     #[test]
     fn a_printout_is_its_card_and_every_page() {
         use notecraft_formats::markdown::Block;
-        let image = |src: &str| Block::Image { alt: String::new(), src: src.into(), width: None, height: None };
+        let image = |src: &str| Block::Image { alt: String::new(), src: src.into(), width: None, height: None, emoji: Vec::new() };
         let blocks = vec![
-            Block::Paragraph(Vec::new()),
+            Block::Paragraph(Vec::new(), Vec::new()),
             image("assets/a.pdf.svg"),
             image("assets/a.pdf.printout-001.png"),
             image("assets/a.pdf.printout-002.png"),
@@ -2094,13 +2111,18 @@ mod tests {
     #[test]
     fn image_detection_covers_standalone_and_inline_images() {
         use notecraft_formats::markdown::{Block, Span};
-        assert!(block_has_image(&Block::Image { alt: "picture".into(), src: "assets/picture.png".into(), width: None, height: None }));
-        assert!(block_has_image(&Block::Paragraph(vec![Span {
-            image: Some("assets/picture.png".into()),
-            text: "picture".into(),
-            ..Span::default()
-        }])));
-        assert!(!block_has_image(&Block::Paragraph(vec![Span { text: "ordinary text".into(), ..Span::default() }])));
+        assert!(block_has_image(&Block::Image {
+            alt: "picture".into(),
+            src: "assets/picture.png".into(),
+            width: None,
+            height: None,
+            emoji: Vec::new()
+        }));
+        assert!(block_has_image(&Block::Paragraph(
+            vec![Span { image: Some("assets/picture.png".into()), text: "picture".into(), ..Span::default() }],
+            Vec::new()
+        )));
+        assert!(!block_has_image(&Block::Paragraph(vec![Span { text: "ordinary text".into(), ..Span::default() }], Vec::new())));
     }
 
     #[test]
@@ -2291,8 +2313,8 @@ more
     #[test]
     fn a_blank_box_the_caret_left_goes() {
         let mut blocks = page("one\n\ntwo\n");
-        blocks.insert(1, Block::Paragraph(Vec::new()));
-        blocks.insert(2, Block::Paragraph(Vec::new()));
+        blocks.insert(1, Block::Paragraph(Vec::new(), Vec::new()));
+        blocks.insert(2, Block::Paragraph(Vec::new(), Vec::new()));
         let mut boxes = vec![Container::new(0.0, 0.0, 300.0, 1), Container::new(0.0, 50.0, 300.0, 2), Container::new(0.0, 120.0, 300.0, 1)];
         // The caret has moved on to "two", in the last box.
         let mut caret = caret_at(3);
@@ -2309,7 +2331,7 @@ more
     fn a_box_with_anything_in_it_stays() {
         for md in ["x\n", "![a](assets/a.png)\n", "---\n", "| a |\n|---|\n| b |\n", "- [ ] \n"] {
             let mut blocks = page(md);
-            blocks.push(Block::Paragraph(Vec::new()));
+            blocks.push(Block::Paragraph(Vec::new(), Vec::new()));
             let n = blocks.len();
             let mut boxes = vec![Container::new(0.0, 0.0, 300.0, n)];
             let mut caret = None;
@@ -2322,7 +2344,7 @@ more
     /// The box the caret is still in is being written in, even when it is still blank.
     #[test]
     fn the_box_the_caret_is_in_stays() {
-        let mut blocks = vec![Block::Paragraph(Vec::new())];
+        let mut blocks = vec![Block::Paragraph(Vec::new(), Vec::new())];
         let mut boxes = vec![Container::new(0.0, 0.0, 300.0, 1)];
         let mut caret = caret_at(0);
         assert_eq!(drop_if_blank(&mut blocks, &mut boxes, &mut caret, 0), None);

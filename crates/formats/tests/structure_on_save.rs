@@ -20,7 +20,7 @@ fn a_windows_folder_link_stays_a_link() {
         let link = spans.iter().find(|s| s.link.is_some()).unwrap_or_else(|| panic!("no link in {line:?}: {spans:?}"));
         assert!(link.link.as_deref().is_some_and(|to| to.ends_with("Notes\\")), "{line:?} -> {spans:?}");
         for format in PageFormat::ALL {
-            let blocks = vec![Block::Paragraph(spans.clone())];
+            let blocks = vec![Block::Paragraph(spans.clone(), Vec::new())];
             assert_eq!(reopened(format, &blocks, None).0, blocks, "{format:?}: {line:?}");
         }
     }
@@ -30,7 +30,7 @@ fn a_windows_folder_link_stays_a_link() {
 fn bullet_text_that_looks_like_a_task_box_stays_text() {
     for format in PageFormat::ALL {
         for (task, text) in [(None, "[x] shipped"), (None, "[ ] not a box"), (Some(false), "[X] still words")] {
-            let blocks = vec![Block::Item { ordered: false, number: 0, task, depth: 0, spans: words(text) }];
+            let blocks = vec![Block::Item { ordered: false, number: 0, task, depth: 0, spans: words(text), emoji: Vec::new() }];
             assert_eq!(reopened(format, &blocks, None).0, blocks, "{format:?}: {text:?}");
         }
     }
@@ -40,9 +40,9 @@ fn bullet_text_that_looks_like_a_task_box_stays_text() {
 fn heading_and_quote_text_keep_their_leading_marks() {
     for format in PageFormat::ALL {
         let blocks = vec![
-            Block::Heading { level: 2, spans: words("#hashtag plans") },
-            Block::Quote(words("> quoted inside a quote")),
-            Block::Paragraph(words("after")),
+            Block::Heading { level: 2, spans: words("#hashtag plans"), emoji: Vec::new() },
+            Block::Quote(words("> quoted inside a quote"), Vec::new()),
+            Block::Paragraph(words("after"), Vec::new()),
         ];
         assert_eq!(reopened(format, &blocks, None).0, blocks, "{format:?}");
     }
@@ -52,7 +52,7 @@ fn heading_and_quote_text_keep_their_leading_marks() {
 fn a_closing_box_tag_typed_in_a_box_stays_in_that_box() {
     for format in PageFormat::ALL {
         for text in ["</div>", "<div class=\"nc-box\" data-x=\"1\" data-y=\"1\" data-width=\"9\">"] {
-            let blocks = vec![Block::Paragraph(words(text)), Block::Paragraph(words("next paragraph"))];
+            let blocks = vec![Block::Paragraph(words(text), Vec::new()), Block::Paragraph(words("next paragraph"), Vec::new())];
             let one_box = [Container::new(10.0, 20.0, 300.0, 2)];
             let (read, boxes) = reopened(format, &blocks, Some(&one_box));
             assert_eq!(read, blocks, "{format:?}: {text:?}");

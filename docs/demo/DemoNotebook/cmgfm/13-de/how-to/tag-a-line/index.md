@@ -40,6 +40,6 @@ eine Markierung aussieht, etwa #ideas ohne Leerzeichen dahinter, bleibt unberüh
 Eigene Markierungen und eine Übersichtsseite, die alle markierten Zeilen sammelt, sind nicht
 gebaut. Die Schaltfläche Markierungen suchen sagt das.
 
-Weiter: [Bilder und Dateien](../pictures-and-files/).
+Weiter: [Emoji in einem Block](../emoji-on-a-block/).
 
 *Diese Seite wurde von einem KI-Modell übersetzt. Korrekturen sind willkommen.*

@@ -53,7 +53,7 @@ fn plain(spans: &[Span]) -> String {
 pub fn tags_of(block: &Block) -> Vec<(Tag, String, Option<bool>)> {
     let (spans, task) = match block {
         Block::Item { spans, task, .. } => (spans, *task),
-        Block::Heading { spans, .. } | Block::Paragraph(spans) | Block::Quote(spans) => (spans, None),
+        Block::Heading { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) => (spans, None),
         _ => return Vec::new(),
     };
     let text = plain(spans);

@@ -73,10 +73,10 @@ fn validate_edition(payload: &Path, format: &str) -> io::Result<()> {
             matches!(number.parse::<u8>(), Ok(10..=23)) && language.len() == 2 && language.bytes().all(|byte| byte.is_ascii_lowercase())
         })
         .count();
-    if language_count != 13 {
+    if language_count != 14 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("the {format} User Assistance notebook has {language_count} language folders; expected 13"),
+            format!("the {format} User Assistance notebook has {language_count} language folders; expected 14"),
         ));
     }
     Ok(())
@@ -146,6 +146,7 @@ mod tests {
                 (16, "zh"),
                 (17, "ja"),
                 (18, "ko"),
+                (19, "tr"),
                 (20, "ar"),
                 (21, "fa"),
                 (22, "ur"),

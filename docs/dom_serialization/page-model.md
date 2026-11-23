@@ -55,6 +55,7 @@ rules below; they must not become hidden editor-only state.
 | `Image` and inline image `Span` | Markdown image/link syntax | `img` with `src` and `alt` |
 | Inline `Span` marks, links and font size | Emphasis, code, strike, math and links; font size uses `<span style="font-size: Npt">` | `b`, `i`, `s`, `code`, `span.math`, `a`, and a `span` with `font-size` |
 | `Container` layout | `div.nc-box` with `data-x`, `data-y`, `data-width` | `div.nc-box` with the same data attributes and browser positioning style |
+| `block.emoji` (on any block) | an HTML comment line above the block: `<!-- nc-emoji: 😀 👍 -->`; no line when the block has none | a `data-nc-emoji="😀 👍"` attribute on the block's element (`li` for an item); the HTML reader turns it into the same comment line |
 
 The writers are `render::blocks_to_markdown` / `spans_to_markdown` (CMGFM) and
 `render::blocks_to_html` / `spans_to_html` (HTML), both in `crates/formats/src/render.rs`; each is
