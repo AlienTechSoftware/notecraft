@@ -172,12 +172,28 @@ fn pieces_of(dir: &Path) -> Vec<Piece> {
 /// `query` with BM25 over each page's text, its alt text and its picture text. One hit per page,
 /// the best of its texts. At most `limit` hits.
 pub fn ranked(root: &Path, elsewhere: &[PathBuf], query: &str, limit: usize) -> Vec<Ranked> {
+    ranked_in(child_dirs(root).into_iter().chain(elsewhere.iter().cloned()), query, limit)
+}
+
+/// Rank one page, or the pages under a notebook or section.
+pub fn ranked_under(scope: &Path, query: &str, limit: usize) -> Vec<Ranked> {
+    if page_file(scope).is_some() { ranked_pages(vec![scope.to_path_buf()], query, limit) } else { ranked_in([scope.to_path_buf()], query, limit) }
+}
+
+fn ranked_in(roots: impl IntoIterator<Item = PathBuf>, query: &str, limit: usize) -> Vec<Ranked> {
     if query.split_whitespace().next().is_none() || limit == 0 {
         return Vec::new();
     }
     let mut pages = Vec::new();
-    for nb in child_dirs(root).into_iter().chain(elsewhere.iter().cloned()) {
-        collect_pages(&nb, &mut pages);
+    for root in roots {
+        collect_pages(&root, &mut pages);
+    }
+    ranked_pages(pages, query, limit)
+}
+
+fn ranked_pages(mut pages: Vec<PathBuf>, query: &str, limit: usize) -> Vec<Ranked> {
+    if query.split_whitespace().next().is_none() || limit == 0 {
+        return Vec::new();
     }
     let mut seen = std::collections::HashSet::new();
     pages.retain(|page| seen.insert(std::fs::canonicalize(page).unwrap_or_else(|_| page.clone())));
@@ -206,11 +222,10 @@ pub fn ranked(root: &Path, elsewhere: &[PathBuf], query: &str, limit: usize) -> 
             continue;
         }
         let snippet = snippet_around(&piece.text, &wanted);
-        let query_words = notecraft_search::tokenize(query);
         let boxes: Vec<Quad> = piece
             .lines
             .iter()
-            .filter(|(words, _)| notecraft_search::tokenize(words).iter().any(|w| query_words.contains(w)))
+            .filter(|(words, _)| notecraft_search::tokenize(words).iter().any(|w| wanted.contains(w)))
             .map(|(_, quad)| *quad)
             .collect();
         best.push(Ranked {
@@ -229,12 +244,17 @@ pub fn ranked(root: &Path, elsewhere: &[PathBuf], query: &str, limit: usize) -> 
     best
 }
 
+/// Byte ranges of whole words in a displayed excerpt that match the query.
+pub fn snippet_matches(snippet: &str, query: &str) -> Vec<std::ops::Range<usize>> {
+    notecraft_search::match_ranges(snippet, &notecraft_search::tokenize(query)).collect()
+}
+
 /// A short, single-line snippet of `text`, lowercased as the search has always shown them, centred on
 /// the first place a wanted word appears. With no match in view it starts at the top of the text.
 fn snippet_around(text: &str, wanted: &[String]) -> String {
     const WIDTH: usize = 120;
     let flat = text.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
-    let first = wanted.iter().filter_map(|w| flat.find(w.as_str())).min().unwrap_or(0);
+    let first = notecraft_search::match_ranges(&flat, wanted).next().map_or(0, |range| range.start);
     let chars: Vec<char> = flat.chars().collect();
     let at = flat[..first].chars().count();
     let start = at.saturating_sub(WIDTH / 3).min(chars.len().saturating_sub(WIDTH));
@@ -269,6 +289,22 @@ mod tests {
         assert_eq!(search(&root, "CAF\u{c9}", 10).len(), 1, "case-insensitive, non-ASCII");
         assert_eq!(search(&root, "minutes", 10).len(), 1, "title match");
         assert!(search(&root, "absent", 10).is_empty());
+    }
+
+    #[test]
+    fn a_page_scope_excludes_subpages_and_highlights_normalized_words() {
+        let t = TempDir::new("ranked-scope");
+        let root = fixture(&t);
+        let all = ranked(&root, &[], "budget", 1);
+        assert_eq!(all.len(), 1);
+        let parent = all[0].path.parent().expect("parent page");
+        assert!(ranked_under(parent, "budget", 1).is_empty());
+        let notebook = parent.parent().expect("notebook");
+        assert_eq!(ranked_under(notebook, "budget", 1), all);
+
+        let snippet = "cafeteria, cafe\u{301}, \u{645}\u{644}\u{641}";
+        let matches = snippet_matches(snippet, "CAF\u{c9} \u{645}\u{644}\u{641}");
+        assert_eq!(matches.into_iter().map(|range| &snippet[range]).collect::<Vec<_>>(), ["cafe\u{301}", "\u{645}\u{644}\u{641}"]);
     }
 
     /// Issue #104: on a CMGFM page a phrase is found whatever marks are round its words, as

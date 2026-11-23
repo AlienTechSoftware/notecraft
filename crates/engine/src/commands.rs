@@ -432,9 +432,12 @@ fn search_query(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
         Some(l) => l.trim().parse::<usize>().map_err(|_| EngineError::BadParam("limit must be a number".into()))?.min(500),
         None => 40,
     };
-    // Every open notebook, the ones opened from another folder too: the window calls this
-    // Search all pages (issue #127).
-    Ok(Output::Hits(search::ranked(s.root(), s.opened_elsewhere(), req(p, "q")?, limit)))
+    let query = req(p, "q")?;
+    let hits = match p.get("scope").map(|scope| scope.trim()).filter(|scope| !scope.is_empty()) {
+        Some(scope) => search::ranked_under(&s.resolve(scope)?, query, limit),
+        None => search::ranked(s.root(), s.opened_elsewhere(), query, limit),
+    };
+    Ok(Output::Hits(hits))
 }
 
 /// The tagged notes in a scope: what Find Tags lists in its Tags Summary (issue #166).
@@ -965,7 +968,7 @@ text (optional): the alt text; empty removes it",
     CommandSpec {
         id: "search.query",
         label: "Search all pages",
-        params: "q (required): text to find\nlimit (optional): at most this many hits (default 40, at most 500)",
+        params: "q (required): text to find\nlimit (optional): at most this many hits (default 40, at most 500)\nscope (optional): page or folder to search, relative to the notebooks folder; every open notebook when left out",
         changes_tree: false,
         run: search_query,
     },

@@ -399,6 +399,7 @@ Parameters:
 
 - q (required): text to find
 - limit (optional): at most this many hits (default 40, at most 500)
+- scope (optional): page or folder to search, relative to the notebooks folder; every open notebook when left out
 
 ## `tags.find`
 
