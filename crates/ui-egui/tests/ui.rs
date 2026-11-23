@@ -2531,7 +2531,17 @@ fn a_swatch_overrides_the_system_mode() {
     app.follow_system_theme(Accent::Default);
     assert_eq!(app.mode_pref(), ModePref::System);
     let mut h = Harness::builder().with_size(egui::vec2(1200.0, 760.0)).build_ui_state(|ui, a: &mut NoteCraftApp| a.show(ui), app);
-    h.run();
+    // Step until the window stops asking for frames. Image decoding in the background can keep it
+    // asking past the harness's default step cap on a slow runner, so `run()` is not enough here.
+    let mut settled = false;
+    for _ in 0..300 {
+        h.step();
+        if !h.ctx.has_requested_repaint() {
+            settled = true;
+            break;
+        }
+    }
+    assert!(settled, "the window never settled: it still asks for frames after 300 steps");
     // The harness reports a dark system, so the swatch to prove the point is the light one.
     let system = h.state().theme().mode;
     let (other, label) = if system == Mode::Dark { (Mode::Light, "Theme Light Default") } else { (Mode::Dark, "Theme Dark Default") };
