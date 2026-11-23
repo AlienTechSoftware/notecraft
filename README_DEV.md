@@ -40,8 +40,9 @@ OCR is not needed to build or run the app. To work on it:
   CC BY-SA 4.0, so the fetch is opt-in.
 - `run.cmd --ocr-lab` opens the OCR test and label lab, with its own guide and screenshots in
   [`tools/ocr-lab/README.md`](tools/ocr-lab/README.md). Its header light shows whether the models
-  are present and intact. Its folder, settings, log and saved runs stay under
-  `tools\ocr-lab\local\` and are never committed.
+  are present and intact. Its settings, log, reports and downloaded models stay under
+  `tools\ocr-lab\local\`, which is never committed. Saved runs (`<picture>.ocr-run.json`) and labels
+  (`<picture>.label.json`) are written beside each picture; the fixtures folder ignores them in git.
 
 ## The four local quality levels
 

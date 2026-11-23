@@ -111,7 +111,8 @@ fn read_lines_file(path: &Path) -> Vec<(String, Quad)> {
     text.lines()
         .filter_map(|record| {
             let (coords, words) = record.split_once('\t')?;
-            let nums: Vec<f32> = coords.split(',').filter_map(|n| n.parse().ok()).collect();
+            // A record with a missing, unreadable or non-finite coordinate is not a box: skip it.
+            let nums: Vec<f32> = coords.split(',').filter_map(|n| n.parse().ok()).filter(|n: &f32| n.is_finite()).collect();
             if nums.len() != 8 {
                 return None;
             }

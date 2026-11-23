@@ -227,22 +227,6 @@ fn attr_value(tag: &str, name: &str) -> Option<String> {
     Some(tag[at..at + close].replace("&quot;", "\"").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"))
 }
 
-/// Every CommonMark image in the body: (alt text, target).
-fn markdown_images(body: &str) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let mut rest = body;
-    while let Some(open) = rest.find("![") {
-        let after = &rest[open + 2..];
-        let Some(close) = after.find("](") else { break };
-        let alt = after[..close].replace('\\', "");
-        let tail = &after[close + 2..];
-        let Some(end) = tail.find(')') else { break };
-        out.push((alt, tail[..end].to_string()));
-        rest = &tail[end + 1..];
-    }
-    out
-}
-
 /// Replaces the alt of the `<img>` whose source is `target`. Returns the body and whether it was found.
 fn set_html_alt(body: &str, target: &str, text: &str) -> (String, bool) {
     let mut out = String::new();
@@ -283,22 +267,94 @@ fn with_html_alt(tag: &str, text: &str) -> String {
     }
 }
 
-/// Replaces the alt of the CommonMark image whose target is `target`. Returns the body and whether it was found.
+/// One CommonMark image: where its alt text sits in the body, and its target.
+struct MarkdownImage {
+    alt_start: usize,
+    alt_end: usize,
+    target: String,
+}
+
+/// Every `![alt](target)` in the body, in order. The alt text ends at the first `](` that is not
+/// escaped, so a link like `[name](assets/a.png)` is never mistaken for an image. An image with no
+/// closing `)` on its line is skipped.
+fn markdown_images_at(body: &str) -> Vec<MarkdownImage> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(rel) = body[i..].find("![") {
+        let start = i + rel + 2;
+        let mut j = start;
+        let mut alt_end = None;
+        while j < body.len() {
+            let rest = &body[j..];
+            if rest.starts_with('\\') {
+                j += rest.chars().nth(1).map_or(1, char::len_utf8) + 1;
+                continue;
+            }
+            if rest.starts_with("](") {
+                alt_end = Some(j);
+                break;
+            }
+            j += rest.chars().next().map_or(1, char::len_utf8);
+        }
+        let Some(alt_end) = alt_end else {
+            i = start;
+            continue;
+        };
+        let target_start = alt_end + 2;
+        match body[target_start..].find(')') {
+            Some(close) if !body[target_start..target_start + close].contains('\n') => {
+                let target = body[target_start..target_start + close].to_string();
+                out.push(MarkdownImage { alt_start: start, alt_end, target });
+                i = target_start + close + 1;
+            }
+            _ => i = start,
+        }
+    }
+    out
+}
+
+/// Undoes the escapes the writer adds: a backslash before punctuation stands for that character.
+fn unescape_alt(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' && chars.peek().is_some_and(|n| n.is_ascii_punctuation()) {
+            out.push(chars.next().unwrap_or(c));
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// The alt text as it is written in Markdown: escaped so it reads back unchanged, on one line.
+fn escape_alt(text: &str) -> String {
+    text.trim()
+        .chars()
+        .map(|c| match c {
+            '\\' | '[' | ']' => format!("\\{c}"),
+            '\n' | '\r' => " ".to_string(),
+            other => other.to_string(),
+        })
+        .collect()
+}
+
+/// The `(alt, target)` of every CommonMark image in the body.
+fn markdown_images(body: &str) -> Vec<(String, String)> {
+    markdown_images_at(body).into_iter().map(|img| (unescape_alt(&body[img.alt_start..img.alt_end]), img.target)).collect()
+}
+
+/// Replaces the alt of every image whose target is `target`. Edits by exact span, from the end of the
+/// body backwards, so a link or another image in the same line is left as it is. Returns the body
+/// and whether an image was found.
 fn set_markdown_alt(body: &str, target: &str, text: &str) -> (String, bool) {
-    let needle = format!("]({target})");
-    let escaped: String = text.trim().chars().map(|c| if c == '[' || c == ']' { format!("\\{c}") } else { c.to_string() }).collect();
+    let escaped = escape_alt(text);
     let mut out = body.to_string();
     let mut found = false;
-    let mut from = 0;
-    while let Some(rel) = out[from..].find(&needle) {
-        let at = from + rel;
-        match out[..at].rfind("![") {
-            Some(open) if !out[open + 2..at].contains('\n') => {
-                out.replace_range(open + 2..at, &escaped);
-                found = true;
-                from = open + 2 + escaped.len() + needle.len();
-            }
-            _ => from = at + needle.len(),
+    for img in markdown_images_at(body).into_iter().rev() {
+        if img.target == target {
+            out.replace_range(img.alt_start..img.alt_end, &escaped);
+            found = true;
         }
     }
     (out, found)
@@ -433,6 +489,63 @@ mod tests {
         let body = crate::page::load_page(&page).expect("load").body;
         assert_eq!(body.matches("alt=").count(), 1, "replaced, not added: {body}");
         assert!(body.contains("alt=\"changed\""), "{body}");
+    }
+
+    fn markdown_page(t: &TempDir, body: &str) -> std::path::PathBuf {
+        let s = Settings::at(t.path().join("s.toml"));
+        let nb = ops::create_notebook(&t.path().join("nb"), "NB", None, &s).expect("nb");
+        let page = ops::create_node(&nb, "P", NodeKind::Page, Some(notecraft_model::PageFormat::Cmgfm), &s).expect("page");
+        attach_bytes(&page, "cat.png", b"x").expect("cat");
+        attach_bytes(&page, "a.png", b"x").expect("a");
+        crate::page::save_body(&page, body).expect("save");
+        page
+    }
+
+    #[test]
+    fn a_plain_link_to_the_same_picture_is_never_edited_or_deleted() {
+        let t = TempDir::new("assets-md-link");
+        let body_before = "![cat](assets/cat.png) [download](assets/a.png)\n";
+        let page = markdown_page(&t, body_before);
+        // The page shows a.png only as a link, not as a picture: the edit is refused, and nothing changes.
+        assert!(set_alt_text(&page, "a.png", "new alt").is_err(), "a link is not a picture to describe");
+        let body = crate::page::load_page(&page).expect("load").body;
+        assert_eq!(body, body_before, "the page is unchanged");
+    }
+
+    #[test]
+    fn a_link_beside_an_image_of_the_same_file_keeps_both() {
+        let t = TempDir::new("assets-md-link-and-image");
+        let page = markdown_page(&t, "![old](assets/a.png) [download](assets/a.png)\n");
+        set_alt_text(&page, "a.png", "new alt").expect("writes the image's alt");
+        let body = crate::page::load_page(&page).expect("load").body;
+        assert_eq!(body, "![new alt](assets/a.png) [download](assets/a.png)\n", "only the image's alt changed");
+    }
+
+    #[test]
+    fn alt_text_with_brackets_backslashes_and_newlines_reads_back_unchanged() {
+        let t = TempDir::new("assets-md-escapes");
+        let page = markdown_page(&t, "![old](assets/a.png)\n");
+        let text = "see ](x) and C:\\new folder [1]\nsecond line";
+        set_alt_text(&page, "a.png", text).expect("writes");
+        let body = crate::page::load_page(&page).expect("load").body;
+        let read = alt_texts(&body, notecraft_model::PageFormat::Cmgfm);
+        assert_eq!(read, vec![("a.png".to_string(), "see ](x) and C:\\new folder [1] second line".to_string())], "{body}");
+        set_alt_text(&page, "a.png", "again").expect("a second edit still finds the image");
+        let body = crate::page::load_page(&page).expect("load").body;
+        assert!(body.contains("![again](assets/a.png)"), "{body}");
+    }
+
+    #[test]
+    fn two_images_on_one_line_are_each_found_by_their_own_target() {
+        let t = TempDir::new("assets-md-two");
+        let page = markdown_page(
+            &t,
+            "![cat](assets/cat.png) ![one](assets/a.png)
+",
+        );
+        set_alt_text(&page, "a.png", "second").expect("writes");
+        let body = crate::page::load_page(&page).expect("load").body;
+        assert!(body.contains("![cat](assets/cat.png) ![second](assets/a.png)"), "{body}");
     }
 
     #[test]

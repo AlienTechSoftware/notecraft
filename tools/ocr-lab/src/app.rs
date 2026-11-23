@@ -165,7 +165,6 @@ impl Lab {
         if let Some(dir) = models {
             lab.load_reader(&dir);
         }
-        lab.health = crate::models::check(lab.models.as_deref());
         lab.follow_system = saved_follow;
         if let Some(id) = saved_theme {
             lab.theme = Theme::all().into_iter().find(|t| t.id() == id).unwrap_or(Theme::DEFAULT);
@@ -221,6 +220,8 @@ impl Lab {
 
     fn select(&mut self, ctx: &egui::Context, index: usize) {
         let path = self.pictures[index].clone();
+        // The new picture's texture has no adjustments yet, so the sliders must be applied to it again.
+        self.applied_adjust = None;
         let name = self.relative_name(&path);
         let decoded = image::open(&path).map(|img| img.to_rgba8());
         let rgba = match decoded {

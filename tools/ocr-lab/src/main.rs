@@ -79,6 +79,10 @@ fn check(folder: &Path, models: Option<&Path>, mut log: telemetry::Log) -> i32 {
     };
     let mut failures = 0;
     let pictures = case::discover(folder);
+    if pictures.is_empty() {
+        eprintln!("no pictures found in {}", folder.display());
+        return 1;
+    }
     for picture in &pictures {
         let name = picture.strip_prefix(folder).unwrap_or(picture).to_string_lossy().replace('\\', "/");
         let labels = case::load_labels(picture).map(|f| f.labels).unwrap_or_default();

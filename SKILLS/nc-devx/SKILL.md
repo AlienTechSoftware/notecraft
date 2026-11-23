@@ -183,7 +183,8 @@ cargo run -p notecraft -- --notebooks ./my-notebooks --expand-all
 ### OCR test and label lab
 
 `tools/ocr-lab` is a developer tool for OCR. It is never shipped and is not a default workspace
-member, so the normal build and the release do not touch it. It runs the product's own OCR code
+member, so a bare `cargo build` and the release do not build it. `cargo xtask` gates and the CI use
+`--workspace`, so they do build and test it. It runs the product's own OCR code
 (`notecraft-ocr`), so what it shows is what the app would read.
 
 - **Start it:** `run.cmd --ocr-lab`. Extra flags pass through: `--folder <dir>` for the test

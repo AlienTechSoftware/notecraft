@@ -123,8 +123,11 @@ REM --ocr-lab: start the OCR test and label tool instead of NoteCraft. Its own a
 REM (--folder, --models) are passed through; the notebooks folder is not used.
 set OCR_TOOL=0
 for %%A in (%*) do if /i "%%A"=="--ocr-lab" set OCR_TOOL=1
-if "%OCR_TOOL%"=="1" (
-    cargo run -p notecraft-ocr-lab -- %*
-    exit /b %errorlevel%
-)
+REM A goto, not a parenthesised block: %errorlevel% inside a block is read before the command runs.
+if "%OCR_TOOL%"=="1" goto ocr_lab
 cargo run -p notecraft -- --notebooks .\my-notebooks %*
+exit /b %errorlevel%
+
+:ocr_lab
+cargo run -p notecraft-ocr-lab -- %*
+exit /b %errorlevel%

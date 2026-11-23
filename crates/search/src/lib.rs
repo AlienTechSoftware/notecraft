@@ -79,7 +79,10 @@ impl Index {
     /// Ranks the units that contain at least one query word, best first, at most `limit`.
     /// Ties keep the order the units were given, so the result is deterministic.
     pub fn search(&self, query: &str, limit: usize) -> Vec<Ranked> {
-        let words = tokenize(query);
+        // Each query word counts once, however often it is typed: 'bread bread' scores like 'bread'.
+        let mut words = tokenize(query);
+        words.sort();
+        words.dedup();
         if words.is_empty() || limit == 0 || self.ids.is_empty() {
             return Vec::new();
         }
@@ -161,5 +164,17 @@ mod tests {
         let index = Index::build(&[unit("empty", "  "), unit("full", "word")]);
         assert_eq!(index.len(), 2);
         assert_eq!(index.search("word", 10).len(), 1);
+    }
+
+    #[test]
+    fn a_word_typed_twice_scores_the_same_as_once() {
+        let index = Index::build(&[unit("a", "bread and jam"), unit("b", "bread bread bread")]);
+        let once = index.search("bread", 10);
+        let twice = index.search("bread bread", 10);
+        assert_eq!(once.len(), twice.len());
+        for (a, b) in once.iter().zip(&twice) {
+            assert_eq!(a.id, b.id);
+            assert!((a.score - b.score).abs() < 1e-9, "{a:?} vs {b:?}");
+        }
     }
 }
