@@ -10207,7 +10207,7 @@ impl NoteCraftApp {
                                 *follow = Some(href);
                             }
                             // A locked page is read here, and its menu still offers the lock (issue #441).
-                            crate::pagemenu::show(ui, ui.min_rect(), &mut page_acts, &tokens, ed.locked);
+                            crate::pagemenu::show(ui, ui.clip_rect(), &mut page_acts, &tokens, ed.locked);
                             ui.add_space(14.0);
                             ui.label(
                                 egui::RichText::new(crate::tl_id!("ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92"))
@@ -10218,7 +10218,7 @@ impl NoteCraftApp {
                             if let Some(href) = preview::show_zoomed(ui, &ed.blocks, &ed.dir, &tokens, page_dir, &ed.justified, zoom_scale) {
                                 *follow = Some(href);
                             }
-                            crate::pagemenu::show(ui, ui.min_rect(), &mut page_acts, &tokens, ed.locked);
+                            crate::pagemenu::show(ui, ui.clip_rect(), &mut page_acts, &tokens, ed.locked);
                         }
                     });
                 });

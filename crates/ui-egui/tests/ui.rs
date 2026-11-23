@@ -14785,3 +14785,18 @@ fn a_locked_page_menu_opens_on_empty_space_and_the_lock_mark_keeps_the_row_menu(
     settle(&mut h);
     assert_eq!(h.query_all_by_label("Unlock").count(), 1, "the lock mark still opens the row's menu");
 }
+
+/// Issue #441: a locked page with only a line of text still opens its menu on the empty area
+/// below the words. The menu's area is the visible page, not the words' extent.
+#[test]
+fn a_short_locked_page_menu_opens_on_its_empty_area() {
+    let (_t, app, s) = sample_app("ui-short-locked-empty");
+    notecraft_store::page::save_body(&s.md_page, "Only line\n").expect("a short body");
+    notecraft_store::page::set_read_only(&s.md_page, true).expect("lock the page on disk");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.click", json!({"x": 820.0, "y": 700.0, "button": "right"})).expect("right-click the empty area below the line");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Unlock").count(), 1, "the empty area of a short locked page offers Unlock");
+}
