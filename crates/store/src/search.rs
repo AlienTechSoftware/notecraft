@@ -385,6 +385,47 @@ Flat white 4.50
     }
 
     #[test]
+    fn a_chinese_or_japanese_run_is_found_only_as_a_whole_run() {
+        // Documented limit: there is no word segmentation for CJK, so the whole run is the word.
+        let t = TempDir::new("search-cjk");
+        let s = Settings::at(t.path().join("s.toml"));
+        let root = t.path().join("nb");
+        let nb = ops::create_notebook(&root, "NB", None, &s).expect("nb");
+        let page = ops::create_node(&nb, "Weather", NodeKind::Page, Some(PageFormat::Html), &s).expect("page");
+        save_body(&page, "<p>今日は良い天気です</p>").expect("save");
+        assert_eq!(ranked(&root, &[], "今日は良い天気です", 10).len(), 1, "the whole run is found");
+        assert!(ranked(&root, &[], "天気", 10).is_empty(), "a part of the run is not, until segmentation exists");
+    }
+
+    #[test]
+    fn malformed_box_records_are_skipped_and_the_hit_still_found() {
+        let t = TempDir::new("search-malformed-lines");
+        let (root, page) = picture_fixture(&t);
+        let assets = page.join("assets");
+        std::fs::write(assets.join("receipt.png.lines"), "NaN,0,110,0,110,40,10,40\tSourdough\ninf,0,1,0,1,1,0,1\tSourdough\n1,2,3\tSourdough\n")
+            .expect("bad boxes");
+        let hits = ranked(&root, &[], "sourdough", 10);
+        let hit = hits.iter().find(|h| h.path == page).expect("the page is still found from its text");
+        assert!(hit.boxes.is_empty(), "no record with a bad coordinate becomes a box: {:?}", hit.boxes);
+    }
+
+    #[test]
+    fn the_page_with_more_matches_ranks_first() {
+        let t = TempDir::new("search-order");
+        let s = Settings::at(t.path().join("s.toml"));
+        let root = t.path().join("nb");
+        let nb = ops::create_notebook(&root, "NB", None, &s).expect("nb");
+        let once = ops::create_node(&nb, "Once", NodeKind::Page, Some(PageFormat::Html), &s).expect("once");
+        save_body(&once, "<p>bread on the table</p>").expect("save");
+        let often = ops::create_node(&nb, "Often", NodeKind::Page, Some(PageFormat::Html), &s).expect("often");
+        save_body(&often, "<p>bread, more bread, and bread again</p>").expect("save");
+        let hits = ranked(&root, &[], "bread", 10);
+        assert_eq!(hits.len(), 2, "{hits:?}");
+        assert_eq!(hits[0].title, "Often", "{hits:?}");
+        assert!(hits[0].score >= hits[1].score);
+    }
+
+    #[test]
     fn a_word_in_alt_text_finds_the_page_with_that_picture() {
         let t = TempDir::new("search-ranked-alt");
         let (root, page) = picture_fixture(&t);

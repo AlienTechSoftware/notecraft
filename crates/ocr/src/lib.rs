@@ -316,6 +316,34 @@ mod tests {
     }
 
     #[test]
+    fn a_corrupt_hash_file_is_read_again() {
+        let dir = scratch("corrupt-hash");
+        let picture = dir.join("p.png");
+        std::fs::write(&picture, b"bytes").expect("picture");
+        let reader = CountingReader { calls: Cell::new(0) };
+        refresh_companion(&reader, &picture).expect("first");
+        std::fs::write(dir.join("p.png.ocr-hash"), "not a hash").expect("corrupt the hash");
+        assert_eq!(refresh_companion(&reader, &picture).expect("second"), Refresh::Rewritten);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_picture_that_cannot_be_decoded_writes_no_companions() {
+        struct Undecodable;
+        impl PictureReader for Undecodable {
+            fn read_picture(&self, path: &Path) -> Result<Vec<Line>, OcrError> {
+                Err(OcrError::Decode(format!("{}: not an image", path.display())))
+            }
+        }
+        let dir = scratch("undecodable");
+        let picture = dir.join("bad.png");
+        std::fs::write(&picture, b"not really a picture").expect("picture");
+        assert!(matches!(refresh_companion(&Undecodable, &picture), Err(OcrError::Decode(_))));
+        assert!(!dir.join("bad.png.txt").exists() && !dir.join("bad.png.lines").exists(), "nothing half-written");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn a_missing_boxes_file_is_made_again_rather_than_trusted() {
         let dir = scratch("missing-lines");
         let picture = dir.join("p.png");
@@ -419,8 +447,7 @@ mod tests {
 
     #[test]
     fn the_companion_job_works_with_any_reader_and_reads_only_on_change() {
-        let dir = std::env::temp_dir().join(format!("nc-ocr-unit-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("scratch folder");
+        let dir = scratch("unit");
         let picture = dir.join("picture.png");
         std::fs::write(&picture, b"first bytes").expect("picture");
         let reader = CountingReader { calls: Cell::new(0) };

@@ -645,6 +645,14 @@ mod tests {
     }
 
     #[test]
+    fn an_unterminated_quote_changes_nothing_and_reports_not_found() {
+        let body = "<p>x</p><img src=\"assets/a.png\" alt=\"old>";
+        let (out, found) = set_html_alt(body, "assets/a.png", "new");
+        assert!(!found, "a tag with an open quote is not a picture");
+        assert_eq!(out, body, "the body is unchanged");
+    }
+
+    #[test]
     fn html_alt_is_found_and_replaced_whatever_the_quotes_case_or_spacing() {
         for body in ["<IMG SRC=\"assets/a.png\" ALT='old'>", "<img src = 'assets/a.png' alt = \"old\" />", "<img alt=old src=assets/a.png>"] {
             let (out, found) = set_html_alt(body, "assets/a.png", "new");

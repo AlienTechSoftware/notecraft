@@ -13,7 +13,8 @@ fn fixture(relative: &str) -> PathBuf {
 }
 
 fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("nc-ocr-{name}-{}", std::process::id()));
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("nc-ocr-{name}-{}-{nanos}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("scratch folder");
     dir
 }
