@@ -369,8 +369,11 @@ impl Lab {
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
         }
         ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), H), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.add_space(10.0);
             ui.label(egui::RichText::new("NoteCraft OCR lab").size(13.0).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(6.0);
+                ui.spacing_mut().item_spacing.x = 6.0;
                 if ui.button(" ✕ ").on_hover_text("Close").clicked() {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
