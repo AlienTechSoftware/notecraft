@@ -43,13 +43,18 @@ fn main() -> eframe::Result {
     }
     settings::save(&settings::Settings {
         folder: Some(folder.clone()),
-        models: models.clone().filter(|m| settings::models_present(m)).or(saved.models),
+        models: models.clone().filter(|m| settings::models_present(m)).or(saved.models.clone()),
+        theme: saved.theme.clone(),
     });
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1400.0, 900.0]).with_title("NoteCraft OCR lab"),
         ..Default::default()
     };
-    eframe::run_native("NoteCraft OCR lab", options, Box::new(move |_cc| Ok(Box::new(Shell(app::Lab::new(folder, models, log))))))
+    eframe::run_native(
+        "NoteCraft OCR lab",
+        options,
+        Box::new(move |_cc| Ok(Box::new(Shell(app::Lab::new(folder, models, saved.theme.clone(), log))))),
+    )
 }
 
 /// Headless run for a test folder: reads every picture with the product's engine, scores it

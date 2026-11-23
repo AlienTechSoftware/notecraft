@@ -7,6 +7,7 @@ use crate::telemetry::{self, Log, Timing};
 use eframe::egui;
 use egui::{Color32, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 use notecraft_ocr::{Line, OcrsReader};
+use notecraft_ui_egui::theme::Theme;
 use std::path::{Path, PathBuf};
 
 const HANDLE_PX: f32 = 8.0;
@@ -48,6 +49,9 @@ pub struct Lab {
     reader_error: Option<String>,
     model_load_ms: Option<f64>,
     models: Option<PathBuf>,
+    theme: Theme,
+    /// The theme last applied to the window, so the visuals are set only when it changes.
+    applied_theme: Option<Theme>,
     mode: Mode,
     selected: Option<usize>,
     drag: Option<Drag>,
@@ -57,7 +61,7 @@ pub struct Lab {
 }
 
 impl Lab {
-    pub fn new(folder: PathBuf, models: Option<PathBuf>, mut log: Log) -> Lab {
+    pub fn new(folder: PathBuf, models: Option<PathBuf>, saved_theme: Option<String>, mut log: Log) -> Lab {
         let pictures = case::discover(&folder);
         log.event(&format!("lab opened: {} pictures in {}", pictures.len(), folder_name(&folder)));
         let mut lab = Lab {
@@ -70,6 +74,8 @@ impl Lab {
             ),
             model_load_ms: None,
             models: None,
+            theme: Theme::DEFAULT,
+            applied_theme: None,
             mode: Mode::Select,
             selected: None,
             drag: None,
@@ -79,6 +85,9 @@ impl Lab {
         };
         if let Some(dir) = models {
             lab.load_reader(&dir);
+        }
+        if let Some(id) = saved_theme {
+            lab.theme = Theme::all().into_iter().find(|t| t.id() == id).unwrap_or(Theme::DEFAULT);
         }
         lab.status = if lab.pictures.is_empty() { "No pictures in this folder.".to_string() } else { "Pick a picture to start.".to_string() };
         lab
@@ -120,7 +129,7 @@ impl Lab {
 
     /// Writes the folder and model choice to the local settings, so the next start has them.
     fn remember(&self) {
-        settings::save(&settings::Settings { folder: Some(self.folder.clone()), models: self.models.clone() });
+        settings::save(&settings::Settings { folder: Some(self.folder.clone()), models: self.models.clone(), theme: Some(self.theme.id()) });
     }
 
     fn select(&mut self, ctx: &egui::Context, index: usize) {
@@ -295,6 +304,10 @@ impl Lab {
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        if self.applied_theme != Some(self.theme) {
+            ctx.set_visuals(self.theme.visuals());
+            self.applied_theme = Some(self.theme);
+        }
         egui::Panel::left("cases").resizable(true).default_size(260.0).show(ui, |ui| self.case_list(&ctx, ui));
         egui::Panel::right("details").resizable(true).default_size(340.0).show(ui, |ui| self.details(ui));
         egui::Panel::bottom("status").show(ui, |ui| ui.label(&self.status));
@@ -306,6 +319,15 @@ impl Lab {
 
     fn case_list(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
         ui.heading("Test cases");
+        let before = self.theme;
+        egui::ComboBox::from_id_salt("theme").selected_text(self.theme.id()).show_ui(ui, |ui| {
+            for theme in Theme::all() {
+                ui.selectable_value(&mut self.theme, theme, theme.id());
+            }
+        });
+        if self.theme != before {
+            self.remember();
+        }
         ui.label(format!("{} pictures", self.pictures.len()));
         ui.monospace(folder_name(&self.folder));
         if ui.button("Open folder…").clicked()

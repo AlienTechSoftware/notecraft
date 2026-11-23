@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 pub struct Settings {
     pub folder: Option<PathBuf>,
     pub models: Option<PathBuf>,
+    /// The theme's id, such as `light-default` (see `notecraft_ui_egui::theme::Theme::id`).
+    pub theme: Option<String>,
 }
 
 fn file() -> PathBuf {

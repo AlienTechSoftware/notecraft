@@ -18,3 +18,4 @@ image = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
 rfd = { workspace = true }
+notecraft-ui-egui = { workspace = true }
