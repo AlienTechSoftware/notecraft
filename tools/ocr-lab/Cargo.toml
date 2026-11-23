@@ -21,3 +21,4 @@ rfd = { workspace = true }
 notecraft-ui-egui = { workspace = true }
 sha2 = "0.10"
 ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier"] }
+sysinfo = "0.40"

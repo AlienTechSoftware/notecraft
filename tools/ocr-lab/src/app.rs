@@ -52,6 +52,7 @@ pub struct Lab {
     theme: Theme,
     follow_system: bool,
     health: crate::models::Health,
+    metrics: crate::metrics::Metrics,
     /// The theme last applied to the window, so the visuals are set only when it changes.
     applied_theme: Option<Theme>,
     mode: Mode,
@@ -79,6 +80,7 @@ impl Lab {
             theme: Theme { mode: notecraft_ui_egui::theme::Mode::Dark, accent: notecraft_ui_egui::theme::Accent::Default },
             follow_system: false,
             health: crate::models::Health::NotSet,
+            metrics: crate::metrics::Metrics::new(),
             applied_theme: None,
             mode: Mode::Select,
             selected: None,
@@ -334,6 +336,8 @@ impl Lab {
             ctx.set_visuals(self.theme.visuals());
             self.applied_theme = Some(self.theme);
         }
+        self.metrics.tick();
+        ctx_repaint(ui);
         let band = self.theme.tokens().band;
         egui::Panel::top("header").frame(egui::Frame::new().fill(band)).show_separator_line(false).show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -522,6 +526,7 @@ impl Lab {
             ui.selectable_value(&mut self.mode, Mode::Draw, "Draw a label");
         });
         ui.checkbox(&mut self.show_engine, "Show the engine's lines (orange)");
+        egui::CollapsingHeader::new("Metrics").default_open(false).show(ui, |ui| self.metrics.show(ui));
         ui.separator();
         let Some(loaded) = self.loaded.as_ref() else {
             ui.label("No picture open.");
@@ -835,6 +840,11 @@ fn load_run(picture: &Path) -> Option<(Vec<Line>, Vec<Timing>)> {
         timings.push(Timing { step, ms: item.get("ms")?.as_f64()? });
     }
     Some((lines, timings))
+}
+
+/// Keeps the window redrawing about twice a second, so the metrics charts move while it is idle.
+fn ctx_repaint(ui: &egui::Ui) {
+    ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
 }
 
 #[cfg(test)]

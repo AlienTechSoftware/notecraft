@@ -562,6 +562,24 @@ fn run(task: &str, options: &[String]) -> Result<(), String> {
     }
 }
 
+/// The OCR checks a developer can run in one command: the OCR lab's unit tests, and, when the
+/// models are set (NOTECRAFT_OCR_MODELS, the folder with the two ONNX files), a headless read of the
+/// smoke fixtures. Without models the second part is skipped and says so.
+fn ocr_check(root: &Path, options: &[String]) -> Result<(), String> {
+    if !options.is_empty() {
+        return Err("usage: cargo xtask ocr-check".into());
+    }
+    cargo(root, &["test", "-p", "notecraft-ocr-lab"])?;
+    let Some(models) = std::env::var_os("NOTECRAFT_OCR_MODELS") else {
+        println!("ocr-check: models not set (NOTECRAFT_OCR_MODELS); skipped the headless read of the smoke fixtures");
+        return Ok(());
+    };
+    let folder = root.join("crates").join("ocr").join("tests").join("fixtures").join("mvp-smoke");
+    let folder = folder.to_string_lossy().into_owned();
+    let models = models.to_string_lossy().into_owned();
+    cargo(root, &["run", "-q", "-p", "notecraft-ocr-lab", "--", "--check", "--folder", &folder, "--models", &models])
+}
+
 fn run_task(root: &Path, task: &str, options: &[String]) -> Result<(), String> {
     match task {
         "fmt" => cargo(root, &["fmt", "--all", "--", "--check"]),
@@ -582,6 +600,7 @@ fn run_task(root: &Path, task: &str, options: &[String]) -> Result<(), String> {
             }
             text(root, fix)
         }
+        "ocr-check" => ocr_check(root, options),
         "screenshots" => screenshots(root),
         "coverage" => coverage::run(root, options),
         "check-branch" => quality::check_branch(root, options),

@@ -29,6 +29,20 @@ can launch it through [`setup.android.ps1`](SKILLS/nc-devx/scripts/setup.android
    cargo xtask ci
    ```
 
+## OCR (optional)
+
+OCR is not needed to build or run the app. To work on it:
+
+- `cargo xtask ocr-check` runs the OCR lab's tests, and the headless read of the smoke pictures
+  when the models are set (`NOTECRAFT_OCR_MODELS`, the folder with the two ONNX files).
+- `.\SKILLS
+c-devx\scripts\setup.ps1 -OcrModels` fetches the models into
+  `tools\ocr-lab\local\models` and checks them. They are about 12 MB and their weights are
+  CC BY-SA 4.0, so the fetch is opt-in.
+- `run.cmd --ocr-lab` opens the OCR test and label lab. Its header light shows whether the models
+  are present and intact. Its folder, settings, log and saved runs stay under
+  `tools\ocr-lab\local\` and are never committed.
+
 ## The four local quality levels
 
 The levels are cumulative:
