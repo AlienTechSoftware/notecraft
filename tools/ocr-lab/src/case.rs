@@ -47,6 +47,41 @@ pub struct LabelFile {
     pub labels: Vec<Label>,
 }
 
+/// Languages the navigator groups by. A picture's folder names decide: the first keyword found in
+/// its path wins. Anything else goes under "Other".
+const LANGUAGES: [(&str, &str); 9] = [
+    ("english", "English"),
+    ("arabic", "Arabic"),
+    ("chinese", "Chinese"),
+    ("japanese", "Japanese"),
+    ("korean", "Korean"),
+    ("turkish", "Turkish"),
+    ("french", "French"),
+    ("german", "German"),
+    ("hindi", "Hindi"),
+];
+
+/// Where a picture sits in the navigator: its kind (the first folder under the test folder, such as
+/// handwriting, drawings or scans) and its language (from the folder names, see `LANGUAGES`).
+pub fn group_of(folder: &Path, picture: &Path) -> (String, String) {
+    let relative = picture.strip_prefix(folder).unwrap_or(picture);
+    let parts: Vec<String> = relative.iter().map(|p| p.to_string_lossy().to_ascii_lowercase()).collect();
+    let kind = if parts.len() > 1 { title(&parts[0]) } else { "Loose pictures".to_string() };
+    let language = parts
+        .iter()
+        .find_map(|part| LANGUAGES.iter().find(|(key, _)| part.contains(key)).map(|(_, name)| name.to_string()))
+        .unwrap_or_else(|| "Other".to_string());
+    (kind, language)
+}
+
+fn title(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
 pub fn label_path(picture: &Path) -> PathBuf {
     let name = picture.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     picture.with_file_name(format!("{name}.label.json"))
@@ -143,6 +178,17 @@ mod tests {
     fn line(text: &str, x0: f32, y0: f32, x1: f32, y1: f32) -> Line {
         let quad = [Point { x: x0, y: y0 }, Point { x: x1, y: y0 }, Point { x: x1, y: y1 }, Point { x: x0, y: y1 }];
         Line::new(text, quad, None).expect("a line")
+    }
+
+    #[test]
+    fn a_picture_is_grouped_by_its_folder_kind_and_language() {
+        let folder = Path::new("/cases");
+        let (kind, language) = group_of(folder, Path::new("/cases/handwriting/english-gnhk/p1.png"));
+        assert_eq!((kind.as_str(), language.as_str()), ("Handwriting", "English"));
+        let (kind, language) = group_of(folder, Path::new("/cases/drawings/mermaid-diagrams/a.png"));
+        assert_eq!((kind.as_str(), language.as_str()), ("Drawings", "Other"));
+        let (kind, _) = group_of(folder, Path::new("/cases/loose.png"));
+        assert_eq!(kind, "Loose pictures");
     }
 
     #[test]

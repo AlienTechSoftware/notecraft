@@ -316,14 +316,34 @@ impl Lab {
         }
         ui.separator();
         let mut pick = None;
+        // Kind (handwriting, drawings, ...) first, then language, then the pictures.
+        let mut tree: std::collections::BTreeMap<String, std::collections::BTreeMap<String, Vec<usize>>> = std::collections::BTreeMap::new();
+        for (i, path) in self.pictures.iter().enumerate() {
+            let (kind, language) = case::group_of(&self.folder, path);
+            tree.entry(kind).or_default().entry(language).or_default().push(i);
+        }
         egui::ScrollArea::vertical().show(ui, |ui| {
-            for (i, path) in self.pictures.iter().enumerate() {
-                let current = self.loaded.as_ref().is_some_and(|l| l.index == i);
-                let labelled = case::label_path(path).is_file();
-                let mark = if labelled { "  ✎" } else { "" };
-                if ui.selectable_label(current, format!("{}{mark}", self.relative_name(path))).clicked() {
-                    pick = Some(i);
-                }
+            for (kind, languages) in &tree {
+                let count: usize = languages.values().map(Vec::len).sum();
+                egui::CollapsingHeader::new(format!("{kind} ({count})")).id_salt(kind).default_open(true).show(ui, |ui| {
+                    for (language, indexes) in languages {
+                        egui::CollapsingHeader::new(format!("{language} ({})", indexes.len())).id_salt((kind, language)).default_open(true).show(
+                            ui,
+                            |ui| {
+                                for &i in indexes {
+                                    let path = &self.pictures[i];
+                                    let current = self.loaded.as_ref().is_some_and(|l| l.index == i);
+                                    let labelled = case::label_path(path).is_file();
+                                    let mark = if labelled { "  ✎" } else { "" };
+                                    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                                    if ui.selectable_label(current, format!("{name}{mark}")).clicked() {
+                                        pick = Some(i);
+                                    }
+                                }
+                            },
+                        );
+                    }
+                });
             }
         });
         if let Some(i) = pick {
