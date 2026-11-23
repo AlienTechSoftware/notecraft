@@ -575,6 +575,20 @@ fn page_columns(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Text(notecraft_model::tablecols::write(&widths)))
 }
 
+fn page_read_only(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let path = s.resolve(req(p, "path")?)?;
+    let Some(want) = p.get("locked") else {
+        return Ok(Output::Text(page::read_only(&path)?.to_string()));
+    };
+    let locked = match want.trim() {
+        "true" => true,
+        "false" => false,
+        _ => return Err(EngineError::BadParam("locked is true or false".into())),
+    };
+    page::set_read_only(&path, locked)?;
+    Ok(Output::Text(locked.to_string()))
+}
+
 fn page_justify(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let path = s.resolve(req(p, "path")?)?;
     let Some(want) = p.get("blocks") else {
@@ -886,6 +900,14 @@ size (optional): auto, or a size (letter, legal, tabloid, executive, a3, a4, a5,
 widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden, and block@row.column=a,row.column=a for cells aligned l(eft), c(enter) or r(ight) and shaded with ~ and a colour (purple, blue, teal, green, yellow, orange, red, magenta or gray), as in 2@1.0=c~yellow, and block+row.column=RxC for a merged cell R rows by C columns from that cell, as in 2+1.0=1x2, with the heading as row 0; empty puts every table back to the usual width, borders, alignment, shading and cells. Without it, the current layout is reported",
         changes_tree: false,
         run: page_columns,
+    },
+    CommandSpec {
+        id: "page.read_only",
+        label: "Lock a page read only, or unlock it",
+        params: "path (required): the page
+locked (optional): true to lock the page read only, false to unlock it. Without it, the current state is reported as true or false",
+        changes_tree: false,
+        run: page_read_only,
     },
     CommandSpec {
         id: "page.justify",
@@ -1738,6 +1760,40 @@ mod tests {
         s.run("page.direction", &p(&[("path", "work/new-section-1/untitled-page"), ("dir", "auto")])).expect("auto");
         assert_eq!(text_of(s.run("page.direction", &page).expect("read")), "auto");
         assert!(s.run("page.direction", &p(&[("path", "work/new-section-1/untitled-page"), ("dir", "sideways")])).is_err());
+    }
+
+    /// A page can be locked read only and unlocked again. The lock is the page's own, so the
+    /// command reports it and the page's words are not touched.
+    #[test]
+    fn a_page_can_be_locked_read_only_and_unlocked() {
+        let t = TempDir::new("engine-read-only");
+        let mut s = session(&t);
+        s.run("notebook.create", &p(&[("name", "Work"), ("format", "cmgfm")])).expect("notebook");
+        let path = "work/new-section-1/untitled-page";
+        let page = p(&[("path", path)]);
+        assert_eq!(text_of(s.run("page.read_only", &page).expect("read")), "false", "a new page is editable");
+
+        s.run("page.read_only", &p(&[("path", path), ("locked", "true")])).expect("lock");
+        assert_eq!(text_of(s.run("page.read_only", &page).expect("read")), "true");
+        assert!(
+            s.run(
+                "page.save",
+                &p(&[
+                    ("path", path),
+                    (
+                        "body", "words
+"
+                    )
+                ])
+            )
+            .is_err(),
+            "a locked page refuses a save"
+        );
+        assert_eq!(text_of(s.run("page.read_only", &page).expect("read")), "true", "the refused save keeps the lock");
+
+        s.run("page.read_only", &p(&[("path", path), ("locked", "false")])).expect("unlock");
+        assert_eq!(text_of(s.run("page.read_only", &page).expect("read")), "false");
+        assert!(s.run("page.read_only", &p(&[("path", path), ("locked", "maybe")])).is_err());
     }
 
     /// Justification is told to the page by the paragraph's place among its blocks, and the

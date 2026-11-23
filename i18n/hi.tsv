@@ -438,6 +438,13 @@
 @id	ui.notebook_recycle_bin_2	नोटबुक रिसाइकिल बिन
 @id	ui.notebook_recycle_bin_3	नोटबुक\nरिसाइकिल बिन
 @id	ui.notebooks_2	नोटबुक्स
+@id	ui.save_the_page_before_locking_it	लॉक करने से पहले पेज सहेजें
+@id	ui.page_is_read_only	यह पेज केवल-पढ़ने के लिए लॉक है
+@id	ui.lock_read_only	केवल-पढ़ने के लिए लॉक करें
+@id	ui.unlock_read_only	अनलॉक करें
+@id	ui.page_locked_read_only	पेज केवल-पढ़ने के लिए लॉक किया गया
+@id	ui.page_unlocked	पेज अनलॉक किया गया
+@id	ui.page_unlocked_reopen_to_edit	पेज अनलॉक किया गया। संपादित करने के लिए इसे फिर से खोलें।
 @id	ui.notebooks_and_pages_in_their_own_columns	अपनी स्तंभों में नोटबुक्स और पृष्ठ
 @id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	एक स्तंभ में नोटबुक्स और खंड, अगले में पृष्ठ
 @id	ui.notebooks_folder_folder	नोटबुक्स फ़ोल्डर: {folder}

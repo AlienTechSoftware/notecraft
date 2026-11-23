@@ -30,6 +30,6 @@ Eine Datei über 256 KB zeigt ihren Anfang und sagt das dazu.
 
 Nichts ist versteckt: Was die Seite zeigt, steht in einer Datei in diesem Ordner.
 
-Weiter: [Von rechts nach links](../right-to-left/).
+Weiter: [Menüs und Navigation](../menus-and-moving-around/).
 
 *Diese Seite wurde von einem KI-Modell übersetzt. Korrekturen sind willkommen.*

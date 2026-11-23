@@ -14468,6 +14468,180 @@ fn a_pen_on_a_folded_ribbon_over_the_page_picks_up_no_pen() {
     assert_eq!(pointer(&mut h), "draw", "on the page itself it does");
 }
 
+/// Issue #441: a page locks read only from its row's menu and from the empty space in the
+/// navigator, and unlocks from either. The lock is in the page's own file, and the open page follows
+/// it: a locked page refuses edits, and an unlocked one takes them again.
+#[test]
+fn the_page_and_empty_space_menus_lock_a_page_read_only_and_unlock_it() {
+    let (_t, app, s) = sample_app("ui-read-only-lock");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let writable = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect").to_string().contains("\"writable\":true");
+    assert!(writable(&mut h), "a new page is editable");
+
+    // The page's own row: Lock read only, then Unlock once it is locked.
+    let title = notecraft_store::tree::read_node(&s.md_page).expect("page").title;
+    let row = h.get_all_by_label(&title).map(|n| n.rect()).min_by(|a, b| a.min.y.total_cmp(&b.min.y)).expect("page row");
+    h.get_all_by_label(&title).find(|n| n.rect() == row).expect("row").click_secondary();
+    settle(&mut h);
+    review(&mut h, "page-menu-lock");
+    assert_eq!(h.query_all_by_label("Lock read only").count(), 1, "the page menu offers the lock");
+    h.get_by_label("Lock read only").click();
+    settle(&mut h);
+    assert!(notecraft_store::page::read_only(&s.md_page).expect("read"), "the lock is written in the page file");
+    assert!(!writable(&mut h), "the open page refuses edits once it is locked");
+
+    // The navigator's empty space under the page's row: Unlock, then the page takes edits again.
+    let blank = egui::pos2(row.center().x, row.max.y + 60.0);
+    ask(&mut h, "ui.click", json!({"x": blank.x, "y": blank.y, "button": "right"})).expect("right-click the empty space");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Unlock").count(), 1, "the empty-space menu offers the unlock");
+    h.get_by_label("Unlock").click();
+    settle(&mut h);
+    assert!(!notecraft_store::page::read_only(&s.md_page).expect("read"), "the unlock is written in the page file");
+    assert!(writable(&mut h), "the open page takes edits again");
+    review(&mut h, "read-only-unlocked");
+}
+
+/// Issue #441: a locked page's title keeps its text. Typing into its title box changes nothing,
+/// and the page's title on disk stays as it was.
+#[test]
+fn a_locked_page_title_cannot_be_typed_over() {
+    let (_t, app, s) = sample_app("ui-locked-title");
+    notecraft_store::page::set_read_only(&s.md_page, true).expect("lock the page on disk");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let before = notecraft_store::tree::read_node(&s.md_page).expect("page").title;
+    ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    let title = h
+        .get_all_by_role(egui::accesskit::Role::MultilineTextInput)
+        .find(|node| node.value().as_deref() == Some(before.as_str()))
+        .expect("the title box")
+        .rect();
+    ask(&mut h, "ui.click", json!({"x": title.center().x, "y": title.center().y})).expect("click the title");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "Renamed while locked"})).expect("type");
+    settle(&mut h);
+    let shown = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(shown.pointer("/page/titleArea").and_then(Value::as_str), Some(before.as_str()), "the title box kept its text");
+    assert_eq!(notecraft_store::tree::read_node(&s.md_page).expect("page").title, before, "and the file did too");
+}
+
+/// Issue #441: the page body's own right-click menu offers the lock too, reading Lock read only
+/// for an editable page and Unlock for a locked one.
+#[test]
+fn the_page_body_menu_locks_and_unlocks_the_page() {
+    let (_t, app, s) = sample_app("ui-body-menu-lock");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let body_at = (820.0, 470.0);
+    ask(&mut h, "ui.click", json!({"x": body_at.0, "y": body_at.1, "button": "right"})).expect("right-click the body");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Lock read only").count(), 1, "the body menu offers the lock");
+    h.get_by_label("Lock read only").click();
+    settle(&mut h);
+    assert!(notecraft_store::page::read_only(&s.md_page).expect("read"), "the body menu locked the page");
+
+    ask(&mut h, "ui.click", json!({"x": body_at.0, "y": body_at.1, "button": "right"})).expect("right-click the body again");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Unlock").count(), 1, "a locked page's body menu offers Unlock");
+    h.get_by_label("Unlock").click();
+    settle(&mut h);
+    assert!(!notecraft_store::page::read_only(&s.md_page).expect("read"), "and unlocks it again");
+    review(&mut h, "body-menu-lock");
+}
+
+/// Issue #441: a locked page's body menu still opens on a right-click. Its edit commands are shown
+/// greyed out and do nothing; Copy and Unlock stay enabled. The ribbon has buttons with the same
+/// words, so only the entries drawn where the menu opened are checked.
+#[test]
+fn a_locked_page_body_menu_offers_only_unlock() {
+    let (_t, app, s) = sample_app("ui-locked-body-menu");
+    notecraft_store::page::set_read_only(&s.md_page, true).expect("lock the page on disk");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.click", json!({"x": 820.0, "y": 470.0, "button": "right"})).expect("right-click the body");
+    settle(&mut h);
+    // The ribbon has buttons with the same words, so only entries drawn where the menu opened count.
+    let in_menu = |h: &mut Harness<'_, NoteCraftApp>, label: &str| h.query_all_by_label(label).filter(|n| n.rect().min.y >= 470.0 - 4.0).count();
+    assert_eq!(in_menu(&mut h, "Unlock"), 1, "the menu opens and offers Unlock");
+    for other in ["Copy", "Paste", "Cut", "Table", "Link", "Equation", "Date and time", "Picture from a file", "Attach a file"] {
+        assert_eq!(in_menu(&mut h, other), 0, "{other} is not in a locked page's menu");
+    }
+}
+
+/// Issue #441: a locked page's navigator menu still opens. Rename, Move, Delete and the other
+/// changes to the page are greyed out; Unlock, Copy link and Page versions stay enabled.
+#[test]
+fn a_locked_page_navigator_menu_greys_out_its_edits_and_keeps_the_rest() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-locked-nav-menu");
+    notecraft_store::page::set_read_only(&s.md_page, true).expect("lock the page on disk");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let title = notecraft_store::tree::read_node(&s.md_page).expect("page").title;
+    let row = h
+        .get_all_by_label(&title)
+        .map(|n| n.rect())
+        .filter(|r| r.max.x < 300.0)
+        .min_by(|a, b| a.min.y.total_cmp(&b.min.y))
+        .expect("page row in the navigator");
+    h.get_all_by_label(&title).find(|n| n.rect() == row).expect("row").click_secondary();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Unlock").count(), 1, "the row menu offers Unlock");
+    for edit in ["Rename...", "Move or Copy...", "Delete..."] {
+        let disabled: Vec<bool> = h.query_all_by_label(edit).map(|n| n.accesskit_node().is_disabled()).collect();
+        assert!(!disabled.is_empty() && disabled.iter().all(|d| *d), "{edit} is greyed out on a locked page: {disabled:?}");
+    }
+    for kept in ["Copy link to page", "Page versions", "New page"] {
+        let disabled: Vec<bool> = h.query_all_by_label(kept).map(|n| n.accesskit_node().is_disabled()).collect();
+        assert!(disabled.iter().any(|d| !*d), "{kept} stays enabled: {disabled:?}");
+    }
+}
+
+/// Issue #441: locking a page with unsaved edits saves them first, so the lock never leaves edits
+/// behind that the store would refuse.
+#[test]
+fn locking_a_page_saves_its_unsaved_edits_first() {
+    let (_t, app, s) = sample_app("ui-lock-saves-first");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    pump(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "unsaved words"})).expect("type");
+    assert!(ask(&mut h, "ui.inspect", json!({})).expect("inspect").to_string().contains("unsaved words"), "the edit is in the page, not saved yet");
+    // The page's own row in the navigator: Lock read only, with no save in between.
+    let title = notecraft_store::tree::read_node(&s.md_page).expect("page").title;
+    let row = h
+        .get_all_by_label(&title)
+        .map(|n| n.rect())
+        .filter(|r| r.max.x < 300.0)
+        .min_by(|a, b| a.min.y.total_cmp(&b.min.y))
+        .expect("page row in the navigator");
+    h.get_all_by_label(&title).find(|n| n.rect() == row).expect("row").click_secondary();
+    settle_menu(&mut h);
+    h.get_by_label("Lock read only").click();
+    settle(&mut h);
+    assert!(notecraft_store::page::read_only(&s.md_page).expect("read"), "the page is locked");
+    let on_disk =
+        std::fs::read_to_string(s.md_page.join("index.md")).or_else(|_| std::fs::read_to_string(s.md_page.join("index.html"))).expect("page file");
+    assert!(on_disk.contains("unsaved words"), "the edit was saved before the lock took effect");
+}
+
+/// Steps a few frames so an open menu is drawn before it is looked up, without the settling
+/// that waits out an autosave.
+fn settle_menu(h: &mut Harness<'_, NoteCraftApp>) {
+    for _ in 0..3 {
+        pump(h);
+    }
+}
+
 /// The block header's `+` opens a popup of emoji; choosing one adds it beside the `+`, and
 /// choosing it again removes it. Acceptance criteria 1 to 3 of the emoji block-header POC.
 #[test]
@@ -14743,6 +14917,94 @@ fn status_footer_marks_an_error_apart_from_a_routine_status() {
     settle(&mut h);
     assert!(h.query_all_by_label_contains("! ").count() > 0, "the error line carries its own mark");
     review(&mut h, "status-footer-error");
+}
+
+/// Issue #441: a locked page shows a lock beside its name in the navigator, with the words
+/// "This page is locked read only" for its tooltip and its name. An unlocked page shows none.
+#[test]
+fn a_locked_page_shows_a_lock_in_the_navigator() {
+    let (_t, app, s) = sample_app("ui-nav-lock-mark");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("This page is locked read only").count(), 0, "an unlocked page shows no lock");
+    notecraft_store::page::set_read_only(&s.md_page, true).expect("lock the page on disk");
+    ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let marks = h.query_all_by_label("This page is locked read only").filter(|n| n.rect().max.x < 300.0).count();
+    assert_eq!(marks, 1, "the locked page shows one lock in the navigator");
+    review(&mut h, "nav-lock-mark");
+}
+
+/// Issue #441: a locked page's menu opens on an empty place in the page, below its words, and a
+/// right-click on the navigator's lock mark still opens the row's own menu.
+#[test]
+fn a_locked_page_menu_opens_on_empty_space_and_the_lock_mark_keeps_the_row_menu() {
+    let (_t, app, s) = sample_app("ui-locked-empty-space");
+    notecraft_store::page::set_read_only(&s.md_page, true).expect("lock the page on disk");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.click", json!({"x": 820.0, "y": 700.0, "button": "right"})).expect("right-click empty space in the page");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Unlock").count(), 1, "empty space in a locked page offers Unlock");
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("close the menu");
+    settle(&mut h);
+
+    let mark = h.query_all_by_label("This page is locked read only").map(|n| n.rect()).find(|r| r.max.x < 300.0).expect("the navigator's lock mark");
+    ask(&mut h, "ui.click", json!({"x": mark.center().x, "y": mark.center().y, "button": "right"})).expect("right-click the lock mark");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Unlock").count(), 1, "the lock mark still opens the row's menu");
+}
+
+/// Issue #441: a locked page with only a line of text still opens its menu on the empty area
+/// below the words. The menu's area is the visible page, not the words' extent.
+#[test]
+fn a_short_locked_page_menu_opens_on_its_empty_area() {
+    let (_t, app, s) = sample_app("ui-short-locked-empty");
+    notecraft_store::page::save_body(&s.md_page, "Only line\n").expect("a short body");
+    notecraft_store::page::set_read_only(&s.md_page, true).expect("lock the page on disk");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.click", json!({"x": 820.0, "y": 700.0, "button": "right"})).expect("right-click the empty area below the line");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Unlock").count(), 1, "the empty area of a short locked page offers Unlock");
+}
+
+/// Issue #441: locking or unlocking a page from its menu updates its navigator mark at once,
+/// without reopening the page or the window.
+#[test]
+fn the_navigator_lock_mark_follows_lock_and_unlock_at_once() {
+    let (_t, app, s) = sample_app("ui-nav-mark-refresh");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let title = notecraft_store::tree::read_node(&s.md_page).expect("page").title;
+    let row = |h: &mut Harness<'_, NoteCraftApp>| {
+        h.get_all_by_label(&title)
+            .map(|n| n.rect())
+            .filter(|r| r.max.x < 300.0)
+            .min_by(|a, b| a.min.y.total_cmp(&b.min.y))
+            .expect("page row in the navigator")
+    };
+    let marks = |h: &mut Harness<'_, NoteCraftApp>| h.query_all_by_label("This page is locked read only").filter(|n| n.rect().max.x < 300.0).count();
+    assert_eq!(marks(&mut h), 0, "an unlocked page has no mark");
+
+    let r = row(&mut h);
+    h.get_all_by_label(&title).find(|n| n.rect() == r).expect("row").click_secondary();
+    settle(&mut h);
+    h.get_by_label("Lock read only").click();
+    settle(&mut h);
+    assert_eq!(marks(&mut h), 1, "locking shows the mark without reopening");
+
+    let r = row(&mut h);
+    h.get_all_by_label(&title).find(|n| n.rect() == r).expect("row").click_secondary();
+    settle(&mut h);
+    h.get_by_label("Unlock").click();
+    settle(&mut h);
+    assert_eq!(marks(&mut h), 0, "unlocking removes the mark without reopening");
 }
 
 /// The emoji grid shows every choice, the party popper included, without scrolling.

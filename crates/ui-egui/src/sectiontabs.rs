@@ -238,7 +238,7 @@ mod tests {
     fn node(kind: NodeKind, title: &str, children: Vec<Node>) -> Node {
         Node {
             path: PathBuf::from(format!("/nb/{title}")),
-            info: NodeInfo { kind, title: title.into(), color: None, format: None, id: title.into(), order: 0 },
+            info: NodeInfo { kind, title: title.into(), color: None, format: None, id: title.into(), order: 0, read_only: false },
             children,
         }
     }

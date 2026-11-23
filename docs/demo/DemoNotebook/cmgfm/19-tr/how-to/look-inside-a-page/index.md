@@ -39,6 +39,6 @@ yazdığınız şeyden yeniden çizilir.
 
 Hiçbir şey gizli değildir: sayfa bir şey gösteriyorsa, bu klasördeki bir dosya onu tutar.
 
-Sonraki: [Sağdan sola](../right-to-left/).
+Sonraki: [Menüler ve gezinme](../menus-and-moving-around/).
 
 *Bu sayfa bir yapay zekâ modeli tarafından çevrildi. Düzeltmeler memnuniyetle karşılanır.*

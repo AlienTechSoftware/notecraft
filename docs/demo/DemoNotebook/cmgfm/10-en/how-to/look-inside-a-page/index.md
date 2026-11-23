@@ -39,4 +39,4 @@ A file over 256 KB shows its first part and says so.
 
 Nothing is hidden: if the page shows it, a file in this folder holds it.
 
-Next: [Right to left](../right-to-left/).
+Next: [Menus and moving around](../menus-and-moving-around/).

@@ -322,6 +322,15 @@ Parameters:
 - path (required): the page
 - widths (optional): block:w,w,w per table, separated by semicolons, with a ! after the widths (or on its own, as in 3:!) for a table whose borders are hidden, and block@row.column=a,row.column=a for cells aligned l(eft), c(enter) or r(ight) and shaded with ~ and a colour (purple, blue, teal, green, yellow, orange, red, magenta or gray), as in 2@1.0=c~yellow, and block+row.column=RxC for a merged cell R rows by C columns from that cell, as in 2+1.0=1x2, with the heading as row 0; empty puts every table back to the usual width, borders, alignment, shading and cells. Without it, the current layout is reported
 
+## `page.read_only`
+
+Lock a page read only, or unlock it.
+
+Parameters:
+
+- path (required): the page
+- locked (optional): true to lock the page read only, false to unlock it. Without it, the current state is reported as true or false
+
 ## `page.justify`
 
 Which paragraphs of a page are stretched to fill the column.

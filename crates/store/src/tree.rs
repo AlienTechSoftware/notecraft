@@ -17,6 +17,9 @@ pub struct NodeInfo {
     pub format: Option<PageFormat>,
     pub id: String,
     pub order: u32,
+    /// For a page, whether it is locked read only, as its own head says (issue #441). Always
+    /// false for a notebook, group or section.
+    pub read_only: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -106,6 +109,7 @@ pub fn read_node(dir: &Path) -> Option<NodeInfo> {
             format: Some(format),
             id: id.unwrap_or_default(),
             order: order.unwrap_or(0),
+            read_only: crate::page::read_only_in(format, &text),
         });
     }
     let text = fs::read_to_string(dir.join("_node.toml")).ok()?;
@@ -117,6 +121,7 @@ pub fn read_node(dir: &Path) -> Option<NodeInfo> {
         format: map.get("format").and_then(|f| PageFormat::parse(f).ok()),
         id: map.get("id").cloned().unwrap_or_default(),
         order: map.get("order").and_then(|v| v.parse().ok()).unwrap_or(0),
+        read_only: false,
     })
 }
 

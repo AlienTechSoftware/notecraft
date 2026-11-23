@@ -438,6 +438,13 @@
 @id	ui.notebook_recycle_bin_2	سطل بازیافت دفترچه
 @id	ui.notebook_recycle_bin_3	سطل بازیافت دفترچه\n
 @id	ui.notebooks_2	دفترچه‌ها
+@id	ui.save_the_page_before_locking_it	پیش از قفل کردن، صفحه را ذخیره کنید
+@id	ui.page_is_read_only	این صفحه به‌صورت فقط‌خواندنی قفل شده است
+@id	ui.lock_read_only	قفل فقط‌خواندنی
+@id	ui.unlock_read_only	باز کردن قفل
+@id	ui.page_locked_read_only	صفحه به‌صورت فقط‌خواندنی قفل شد
+@id	ui.page_unlocked	قفل صفحه باز شد
+@id	ui.page_unlocked_reopen_to_edit	قفل باز شد. برای ویرایش، صفحه را دوباره باز کنید.
 @id	ui.notebooks_and_pages_in_their_own_columns	دفترچه‌ها و صفحات در ستون‌های جداگانه
 @id	ui.notebooks_and_sections_in_one_column_pages_in_the_next	دفترچه‌ها و بخش‌ها در یک ستون، صفحات در ستون بعدی
 @id	ui.notebooks_folder_folder	پوشه دفترچه‌ها: {folder}

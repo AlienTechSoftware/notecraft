@@ -30,6 +30,6 @@ Un fichier de plus de 256 Ko montre son début et le dit.
 
 Rien n'est caché : si la page le montre, un fichier de ce dossier le contient.
 
-Suite : [De droite à gauche](../right-to-left/).
+Suite : [Menus et déplacements](../menus-and-moving-around/).
 
 *Cette page a été traduite par un modèle d'intelligence artificielle. Les corrections sont les bienvenues.*

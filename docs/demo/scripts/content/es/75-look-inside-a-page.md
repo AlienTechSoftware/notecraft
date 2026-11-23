@@ -30,6 +30,6 @@ Un archivo de más de 256 KB muestra su primera parte y lo dice.
 
 Nada está oculto: si la página lo muestra, hay un archivo en esta carpeta que lo contiene.
 
-Siguiente: [De derecha a izquierda](../right-to-left/).
+Siguiente: [Menús y navegación](../menus-and-moving-around/).
 
 *Esta página la tradujo un modelo de inteligencia artificial. Las correcciones son bienvenidas.*

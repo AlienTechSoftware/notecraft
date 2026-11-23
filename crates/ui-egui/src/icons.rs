@@ -75,6 +75,10 @@ pub enum Icon {
     /// Lines filling the column: justify with high kashida strength.
     JustifyHigh,
     /// Lines of text with an arrow under them pointing right: this reads left to right.
+    /// A closed padlock: the page is locked read only.
+    Lock,
+    /// An open padlock: the page is editable, and choosing it unlocks the page.
+    Unlock,
     DirLtr,
     /// The same, mirrored: this reads right to left.
     DirRtl,
@@ -273,6 +277,13 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line((10.0, 18.0), (20.0, 18.0)),
         ],
         Icon::Todo => vec![closed(&[(4.0, 5.0), (20.0, 5.0), (20.0, 19.0), (4.0, 19.0)]), path(&[(7.5, 12.0), (10.5, 15.5), (16.5, 8.5)])],
+        Icon::Lock => vec![
+            closed(&[(5.0, 11.0), (19.0, 11.0), (19.0, 20.5), (5.0, 20.5)]),
+            path(&[(8.0, 11.0), (8.0, 7.5), (12.0, 4.0), (16.0, 7.5), (16.0, 11.0)]),
+        ],
+        Icon::Unlock => {
+            vec![closed(&[(5.0, 11.0), (19.0, 11.0), (19.0, 20.5), (5.0, 20.5)]), path(&[(8.0, 11.0), (8.0, 7.5), (12.0, 4.0), (16.0, 7.5)])]
+        }
         Icon::Table => vec![
             closed(&[(3.5, 5.0), (20.5, 5.0), (20.5, 19.0), (3.5, 19.0)]),
             line((3.5, 9.5), (20.5, 9.5)),
@@ -671,7 +682,7 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 68] = [
+    pub const ALL: [Icon; 70] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
@@ -690,6 +701,8 @@ mod tests {
         Icon::ListBullet,
         Icon::ListNumber,
         Icon::Todo,
+        Icon::Lock,
+        Icon::Unlock,
         Icon::Table,
         Icon::Picture,
         Icon::Attach,

@@ -90,8 +90,9 @@ font-formatting support.
    **Ink is the one exception**: an ink file is drawn whether or not the page names it, and the
    page is made to name it (section 5.4). Hiding strokes a person drew because a line was lost
    would be the worse answer.
-4. **Metadata lives in the head.** Title, id, order, times, direction, and the paper and
-   colour the page is drawn on. The title is in
+4. **Metadata lives in the head.** Title, id, order, times, direction, the paper and
+   colour the page is drawn on, and whether the page is locked read only (`notecraft:read-only`
+   in HTML, `read-only: true` in Markdown; absent means editable). The title is in
    the head alone: a new page does not repeat it in its body, and a page that does - an
    older one, or one written by hand - has that heading left out of the live view, because
    the title area above the page is already showing it. The file is not changed; the code
@@ -396,6 +397,7 @@ text does not name.
 | The page file is editable whole, head included | 2026-10-19 | yes |
 | Ink is a file the page links to, not inline text; a setting is being weighed | current behaviour | yes, with the faults in 5.2 |
 | The folder decides what ink a page has: the page's text is made to name every ink file beside it, and none that is gone | 2026-10-19 | yes |
+| A page can be locked read only. The lock is an attribute of the page object (`Page.read_only`) written as a head line (`notecraft:read-only` / `read-only: true`), so it travels with the file; a locked page opens with its words unchanged and refuses edits. Set from the navigator's page menu and empty-space menus through the `page.read_only` command (issue #441) | 2026-11-23 | yes |
 | Which paragraphs are justified is a line in the page's head, by block number, and the stretching happens when the page is drawn so the words in the file are the writer's own (section 2.1) | 2026-10-19 | yes |
 
 Known faults are listed in 5.2.
