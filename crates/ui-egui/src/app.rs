@@ -2613,6 +2613,8 @@ impl NoteCraftApp {
         if self.run("page.read_only", &params(&[("path", &path_str(path)), ("locked", arg)])).is_none() {
             return;
         }
+        // The navigator's rows, and their lock marks, come from the tree the session holds.
+        self.session.refresh();
         let shown = self.editor.as_ref().is_some_and(|ed| ed.dir == path);
         if shown {
             let clean = self.editor.as_ref().is_some_and(|ed| ed.dirty_since.is_none() && ed.saving.is_none());

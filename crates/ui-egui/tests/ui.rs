@@ -14800,3 +14800,37 @@ fn a_short_locked_page_menu_opens_on_its_empty_area() {
     settle(&mut h);
     assert_eq!(h.query_all_by_label("Unlock").count(), 1, "the empty area of a short locked page offers Unlock");
 }
+
+/// Issue #441: locking or unlocking a page from its menu updates its navigator mark at once,
+/// without reopening the page or the window.
+#[test]
+fn the_navigator_lock_mark_follows_lock_and_unlock_at_once() {
+    let (_t, app, s) = sample_app("ui-nav-mark-refresh");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let title = notecraft_store::tree::read_node(&s.md_page).expect("page").title;
+    let row = |h: &mut Harness<'_, NoteCraftApp>| {
+        h.get_all_by_label(&title)
+            .map(|n| n.rect())
+            .filter(|r| r.max.x < 300.0)
+            .min_by(|a, b| a.min.y.total_cmp(&b.min.y))
+            .expect("page row in the navigator")
+    };
+    let marks = |h: &mut Harness<'_, NoteCraftApp>| h.query_all_by_label("This page is locked read only").filter(|n| n.rect().max.x < 300.0).count();
+    assert_eq!(marks(&mut h), 0, "an unlocked page has no mark");
+
+    let r = row(&mut h);
+    h.get_all_by_label(&title).find(|n| n.rect() == r).expect("row").click_secondary();
+    settle(&mut h);
+    h.get_by_label("Lock read only").click();
+    settle(&mut h);
+    assert_eq!(marks(&mut h), 1, "locking shows the mark without reopening");
+
+    let r = row(&mut h);
+    h.get_all_by_label(&title).find(|n| n.rect() == r).expect("row").click_secondary();
+    settle(&mut h);
+    h.get_by_label("Unlock").click();
+    settle(&mut h);
+    assert_eq!(marks(&mut h), 0, "unlocking removes the mark without reopening");
+}
