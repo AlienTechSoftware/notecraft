@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn a_label_file_with_a_byte_order_mark_still_loads() {
-        let dir = std::env::temp_dir().join(format!("ocr-lab-bom-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ocr-lab-bom-{}", crate::unique_suffix()));
         std::fs::create_dir_all(&dir).expect("dir");
         let picture = dir.join("q.png");
         image::RgbImage::new(4, 4).save(&picture).expect("picture");
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn a_label_file_round_trips_beside_its_picture() {
-        let dir = std::env::temp_dir().join(format!("ocr-lab-case-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ocr-lab-case-{}", crate::unique_suffix()));
         std::fs::create_dir_all(&dir).expect("dir");
         let picture = dir.join("p.png");
         image::RgbImage::new(20, 10).save(&picture).expect("picture");

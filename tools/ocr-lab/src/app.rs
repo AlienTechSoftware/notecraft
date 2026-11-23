@@ -1206,7 +1206,7 @@ mod tests {
 
     #[test]
     fn clearing_a_result_removes_only_its_run_file_and_says_when_there_was_none() {
-        let dir = std::env::temp_dir().join(format!("ocr-lab-clear-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ocr-lab-clear-{}", crate::unique_suffix()));
         std::fs::create_dir_all(&dir).expect("dir");
         let picture = dir.join("c.png");
         image::RgbImage::new(4, 4).save(&picture).expect("picture");
@@ -1219,7 +1219,7 @@ mod tests {
 
     #[test]
     fn a_saved_run_loads_back_for_the_same_picture_and_is_ignored_once_the_picture_changes() {
-        let dir = std::env::temp_dir().join(format!("ocr-lab-run-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ocr-lab-run-{}", crate::unique_suffix()));
         std::fs::create_dir_all(&dir).expect("dir");
         let picture = dir.join("p.png");
         image::RgbImage::new(20, 10).save(&picture).expect("picture");

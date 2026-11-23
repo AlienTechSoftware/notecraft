@@ -17,6 +17,13 @@ mod telemetry;
 use eframe::egui;
 use std::path::{Path, PathBuf};
 
+/// A name for a scratch folder that no other test run shares: the process ID plus the time now.
+#[cfg(test)]
+pub fn unique_suffix() -> String {
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    format!("{}-{nanos}", std::process::id())
+}
+
 /// This tool's own folder (its `local` output lives under it).
 pub fn lab_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -142,7 +149,7 @@ mod tests {
 
     #[test]
     fn the_headless_check_says_it_needs_models_and_fails_without_them() {
-        let dir = std::env::temp_dir().join(format!("ocr-lab-check-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ocr-lab-check-{}", crate::unique_suffix()));
         std::fs::create_dir_all(&dir).expect("dir");
         let log = telemetry::Log::open(&dir.join("log.txt"));
         assert_eq!(check(&dir, None, log), 2, "no models given");

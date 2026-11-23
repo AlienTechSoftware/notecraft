@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn no_folder_is_not_set_and_an_empty_folder_is_missing() {
         assert_eq!(check(None), Health::NotSet);
-        let dir = std::env::temp_dir().join(format!("ocr-lab-models-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ocr-lab-models-{}", crate::unique_suffix()));
         std::fs::create_dir_all(&dir).expect("dir");
         assert_eq!(check(Some(&dir)), Health::Missing("text-detection.onnx".to_string()));
         std::fs::remove_dir_all(&dir).expect("clean up");
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn a_file_of_the_wrong_size_is_corrupt() {
-        let dir = std::env::temp_dir().join(format!("ocr-lab-models-size-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ocr-lab-models-size-{}", crate::unique_suffix()));
         std::fs::create_dir_all(&dir).expect("dir");
         std::fs::write(dir.join("text-detection.onnx"), b"short").expect("file");
         assert!(matches!(check(Some(&dir)), Health::Corrupt(_)));
