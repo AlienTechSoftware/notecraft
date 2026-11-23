@@ -50,6 +50,7 @@ pub struct Lab {
     model_load_ms: Option<f64>,
     models: Option<PathBuf>,
     theme: Theme,
+    follow_system: bool,
     /// The theme last applied to the window, so the visuals are set only when it changes.
     applied_theme: Option<Theme>,
     mode: Mode,
@@ -61,7 +62,7 @@ pub struct Lab {
 }
 
 impl Lab {
-    pub fn new(folder: PathBuf, models: Option<PathBuf>, saved_theme: Option<String>, mut log: Log) -> Lab {
+    pub fn new(folder: PathBuf, models: Option<PathBuf>, saved_theme: Option<String>, saved_follow: bool, mut log: Log) -> Lab {
         let pictures = case::discover(&folder);
         log.event(&format!("lab opened: {} pictures in {}", pictures.len(), folder_name(&folder)));
         let mut lab = Lab {
@@ -75,6 +76,7 @@ impl Lab {
             model_load_ms: None,
             models: None,
             theme: Theme { mode: notecraft_ui_egui::theme::Mode::Dark, accent: notecraft_ui_egui::theme::Accent::Default },
+            follow_system: false,
             applied_theme: None,
             mode: Mode::Select,
             selected: None,
@@ -86,6 +88,7 @@ impl Lab {
         if let Some(dir) = models {
             lab.load_reader(&dir);
         }
+        lab.follow_system = saved_follow;
         if let Some(id) = saved_theme {
             lab.theme = Theme::all().into_iter().find(|t| t.id() == id).unwrap_or(Theme::DEFAULT);
         }
@@ -129,7 +132,12 @@ impl Lab {
 
     /// Writes the folder and model choice to the local settings, so the next start has them.
     fn remember(&self) {
-        settings::save(&settings::Settings { folder: Some(self.folder.clone()), models: self.models.clone(), theme: Some(self.theme.id()) });
+        settings::save(&settings::Settings {
+            folder: Some(self.folder.clone()),
+            models: self.models.clone(),
+            theme: Some(self.theme.id()),
+            follow_system: self.follow_system,
+        });
     }
 
     fn select(&mut self, ctx: &egui::Context, index: usize) {
@@ -304,11 +312,18 @@ impl Lab {
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        if self.follow_system
+            && let Some(system) = ctx.system_theme()
+        {
+            let mode = if system == egui::Theme::Dark { notecraft_ui_egui::theme::Mode::Dark } else { notecraft_ui_egui::theme::Mode::Light };
+            self.theme = Theme { mode, accent: self.theme.accent };
+        }
         if self.applied_theme != Some(self.theme) {
             ctx.set_visuals(self.theme.visuals());
             self.applied_theme = Some(self.theme);
         }
-        egui::Panel::top("header").show(ui, |ui| {
+        let band = self.theme.tokens().band;
+        egui::Panel::top("header").frame(egui::Frame::new().fill(band)).show_separator_line(false).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("NoteCraft OCR lab");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.theme_button(ui));
@@ -323,8 +338,8 @@ impl Lab {
         }
     }
 
-    /// The sun or moon in the header, as in the app: a click opens the 14 swatches (light and dark,
-    /// seven accents each). The choice is saved with the folder and models.
+    /// The sun or moon in the header. A click opens the app's own theme chooser: the 14 swatches
+    /// and the switch that follows the system, the same grid the app shows.
     fn theme_button(&mut self, ui: &mut egui::Ui) {
         let current = self.theme;
         let tokens = current.tokens();
@@ -340,24 +355,17 @@ impl Lab {
             notecraft_ui_egui::icons::paint(&painter, icon_rect, notecraft_ui_egui::icons::Icon::Sun, tokens.accent);
         }
         let resp = resp.on_hover_text(format!("Theme: {}. Click to change it.", current.label()));
-        let mut pick: Option<Theme> = None;
+        let mut pick: Option<(notecraft_ui_egui::theme::Mode, notecraft_ui_egui::theme::Accent)> = None;
+        let mut follow = self.follow_system;
         egui::Popup::menu(&resp).show(|ui| {
-            egui::Grid::new("lab-theme-grid").spacing([6.0, 6.0]).show(ui, |ui| {
-                for mode in [notecraft_ui_egui::theme::Mode::Light, notecraft_ui_egui::theme::Mode::Dark] {
-                    ui.label(mode.label());
-                    for accent in notecraft_ui_egui::theme::Accent::ALL {
-                        let theme = Theme { mode, accent };
-                        let swatch = ui.add(egui::Button::new("     ").fill(theme.tokens().accent)).on_hover_text(theme.label());
-                        if swatch.clicked() {
-                            pick = Some(theme);
-                        }
-                    }
-                    ui.end_row();
-                }
-            });
+            notecraft_ui_egui::app::theme_grid(ui, current, &mut pick, &mut follow);
         });
-        if let Some(theme) = pick {
-            self.theme = theme;
+        if let Some((mode, accent)) = pick {
+            self.follow_system = false;
+            self.theme = Theme { mode, accent };
+            self.remember();
+        } else if follow != self.follow_system {
+            self.follow_system = follow;
             self.remember();
         }
     }

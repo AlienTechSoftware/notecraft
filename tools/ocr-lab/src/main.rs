@@ -45,6 +45,7 @@ fn main() -> eframe::Result {
         folder: Some(folder.clone()),
         models: models.clone().filter(|m| settings::models_present(m)).or(saved.models.clone()),
         theme: saved.theme.clone(),
+        follow_system: saved.follow_system,
     });
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1400.0, 900.0]).with_title("NoteCraft OCR lab"),
@@ -53,7 +54,7 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "NoteCraft OCR lab",
         options,
-        Box::new(move |_cc| Ok(Box::new(Shell(app::Lab::new(folder, models, saved.theme.clone(), log))))),
+        Box::new(move |_cc| Ok(Box::new(Shell(app::Lab::new(folder, models, saved.theme.clone(), saved.follow_system, log))))),
     )
 }
 

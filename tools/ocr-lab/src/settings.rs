@@ -10,6 +10,9 @@ pub struct Settings {
     pub models: Option<PathBuf>,
     /// The theme's id, such as `light-default` (see `notecraft_ui_egui::theme::Theme::id`).
     pub theme: Option<String>,
+    /// Follow the system's light or dark setting, as the app's switch does.
+    #[serde(default)]
+    pub follow_system: bool,
 }
 
 fn file() -> PathBuf {

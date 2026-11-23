@@ -13199,7 +13199,7 @@ fn first_page_under(tree: &[Node], at: &Path) -> Option<PathBuf> {
 
 /// The 14 swatches and the switch that follows the system, shared by the sun or moon button
 /// and the ribbon's Theme button.
-fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, follow: &mut bool) {
+pub fn theme_grid(ui: &mut Ui, current: Theme, pick: &mut Option<(Mode, Accent)>, follow: &mut bool) {
     egui::Grid::new("theme-grid").spacing([6.0, 6.0]).show(ui, |ui| {
         for mode in [Mode::Light, Mode::Dark] {
             ui.label(crate::tl!(mode.label()));
