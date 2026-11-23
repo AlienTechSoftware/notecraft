@@ -340,35 +340,83 @@ impl Lab {
         ctx_repaint(ui);
         let band = self.theme.tokens().band;
         egui::Panel::top("header").frame(egui::Frame::new().fill(band)).show_separator_line(false).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                // The header is the window's title bar (the window has no system frame): dragging
-                // the title moves the window, and the buttons at the right close, shrink and grow it.
-                let title = ui.heading("NoteCraft OCR lab");
-                if title.interact(egui::Sense::drag()).dragged() {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(" ✕ ").on_hover_text("Close").clicked() {
-                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                    let maximized = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
-                    if ui.button(if maximized { " ❐ " } else { " □ " }).on_hover_text("Maximize").clicked() {
-                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
-                    }
-                    if ui.button(" – ").on_hover_text("Minimize").clicked() {
-                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-                    }
-                    self.theme_button(ui);
-                    self.health_light(ui);
-                });
-            });
+            self.title_row(ui);
         });
+        self.frame_edges(&ctx);
         egui::Panel::left("cases").resizable(true).default_size(260.0).show(ui, |ui| self.case_list(&ctx, ui));
         egui::Panel::right("details").resizable(true).default_size(340.0).show(ui, |ui| self.details(ui));
         egui::Panel::bottom("status").show(ui, |ui| ui.label(&self.status));
         egui::CentralPanel::default().show(ui, |ui| self.picture_area(ui));
         if self.selected.is_some() && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Delete)) {
             self.delete_selected();
+        }
+    }
+
+    /// The 30-pixel title row, as in the app: the bare band drags the window (double-click
+    /// maximises it), and the controls on top keep their own clicks. Also holds the title, the
+    /// theme button and the models light.
+    fn title_row(&mut self, ui: &mut egui::Ui) {
+        const H: f32 = 30.0;
+        let ctx = ui.ctx().clone();
+        let row = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), H));
+        // Added first, so the controls drawn over it win the pointer.
+        let handle = ui.interact(row, ui.scope_id().with("title-handle"), Sense::click_and_drag());
+        if handle.drag_started_by(egui::PointerButton::Primary) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+        }
+        if handle.double_clicked() {
+            let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+        }
+        ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), H), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.label(egui::RichText::new("NoteCraft OCR lab").size(13.0).strong());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button(" ✕ ").on_hover_text("Close").clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+                if ui.button(if maximized { " ❐ " } else { " □ " }).on_hover_text("Maximize").clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                }
+                if ui.button(" – ").on_hover_text("Minimize").clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                }
+                self.theme_button(ui);
+                self.health_light(ui);
+            });
+        });
+    }
+
+    /// A line round the window, and the edge and corner resize, as in the app.
+    fn frame_edges(&self, ctx: &egui::Context) {
+        if ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
+            return;
+        }
+        let r = ctx.content_rect();
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("window-edge"))).rect_stroke(
+            r,
+            0.0,
+            egui::Stroke::new(1.0, self.theme.tokens().band),
+            egui::StrokeKind::Inside,
+        );
+        let Some(pos) = ctx.pointer_latest_pos() else { return };
+        const E: f32 = 6.0;
+        let (west, east, north, south) = (pos.x - r.min.x < E, r.max.x - pos.x < E, pos.y - r.min.y < E, r.max.y - pos.y < E);
+        use egui::{CursorIcon as C, viewport::ResizeDirection as D};
+        let (dir, cursor) = match (west, east, north, south) {
+            (true, _, true, _) => (D::NorthWest, C::ResizeNorthWest),
+            (_, true, true, _) => (D::NorthEast, C::ResizeNorthEast),
+            (true, _, _, true) => (D::SouthWest, C::ResizeSouthWest),
+            (_, true, _, true) => (D::SouthEast, C::ResizeSouthEast),
+            (true, ..) => (D::West, C::ResizeWest),
+            (_, true, ..) => (D::East, C::ResizeEast),
+            (_, _, true, _) => (D::North, C::ResizeNorth),
+            (_, _, _, true) => (D::South, C::ResizeSouth),
+            _ => return,
+        };
+        ctx.set_cursor_icon(cursor);
+        if ctx.input(|i| i.pointer.primary_pressed()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(dir));
         }
     }
 
