@@ -1101,8 +1101,10 @@ page-color: yellow
             assert_eq!(html_group.info.title, cmgfm_group.info.title);
             assert_eq!(html_group.children.len(), cmgfm_group.children.len(), "matching structure in {}", html_group.path.display());
             if html_group.info.kind == notecraft_model::NodeKind::SectionGroup {
-                // Every language has its How to section and its OCR section.
-                let expected = 2;
+                let folder = html_group.path.file_name().and_then(|name| name.to_str()).expect("language group folder");
+                let language = LANGUAGES.iter().find(|language| language.folder() == folder).expect("known language group");
+                // OCR remains optional for languages without authored OCR content.
+                let expected = 1 + usize::from(content_dir().join(language.code).join(OCR_FOLDER).is_dir());
                 assert_eq!(html_group.children.len(), expected, "sections in {}", html_group.path.display());
                 assert!(html_group.children[0].children.len() >= 8, "the same pages in every language");
             }
@@ -1251,7 +1253,7 @@ A nested test page.
     }
 
     /// The two pictures the OCR pages added from the CC0 dataset are real files, linked from the
-    /// Arabic text and handwriting pages in every language, with alt text, and credited.
+    /// Arabic text and handwriting pages in every language with authored OCR content.
     #[test]
     fn the_dataset_pictures_are_linked_with_alt_text_and_credited() {
         let pictures = ["ocr-receipt-ar-photo.jpg", "ocr-letter-ar.jpg"];
@@ -1283,7 +1285,8 @@ A nested test page.
                 assert!(!alt.trim().is_empty(), "{} has alt text for {picture}", ocr.join(page).display());
             }
         }
-        assert_eq!(languages, LANGUAGES.len(), "every language has the OCR pages");
+        let languages_with_ocr = LANGUAGES.iter().filter(|lang| content_dir().join(lang.code).join(OCR_FOLDER).is_dir()).count();
+        assert_eq!(languages, languages_with_ocr, "every language with OCR content links the dataset pictures");
     }
 
     /// English is the most used language, so its OCR pages always carry an English printed example
