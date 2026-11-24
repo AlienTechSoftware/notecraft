@@ -130,22 +130,23 @@ fn selection_box_id() -> Id {
     Id::new("containers-selection-box")
 }
 
-/// The pictures, by source, that share a box with other blocks and so can be taken out of it
-/// (issue #481). Written every frame the boxes are drawn; the picture's menu reads it to offer
-/// Take out of box.
+/// The pictures, by block, that share a box with other blocks and so can be taken out of it
+/// (issue #481). By block, not source: two copies of one picture are two pictures. Written every
+/// frame the boxes are drawn; the picture's menu reads it to offer Take out of box.
 pub fn unboxable_id() -> Id {
     Id::new("containers-unboxable")
 }
 
-/// A picture, by source, that its menu asked to be taken out of its box (issue #481): the next
-/// frame the boxes are drawn it is lifted out where it stands, as a drag would, without moving.
+/// A picture, by block, that its menu asked to be taken out of its box (issue #481): the next frame
+/// the boxes are drawn it is lifted out where it stands, as a drag would, without moving. It is
+/// lifted only if that block is still a picture sharing a box.
 pub fn unbox_request_id() -> Id {
     Id::new("containers-unbox-request")
 }
 
-/// Whether the picture `src` shares a box with other blocks, as last drawn.
-pub fn can_unbox(ctx: &egui::Context, src: &str) -> bool {
-    ctx.data(|d| d.get_temp::<Vec<String>>(unboxable_id())).is_some_and(|all| all.iter().any(|s| s == src))
+/// Whether the picture in `block` shares a box with other blocks, as last drawn.
+pub fn can_unbox(ctx: &egui::Context, block: usize) -> bool {
+    ctx.data(|d| d.get_temp::<Vec<usize>>(unboxable_id())).is_some_and(|all| all.contains(&block))
 }
 
 /// True when a container took this frame's right click, so the page's own menu stays shut.
@@ -356,8 +357,8 @@ pub fn show(
     let mut lift_picture: Option<PictureLift> = None;
     // Take out of box, picked in the picture's menu last frame, and the pictures it can be
     // offered for this frame.
-    let unbox_asked = ui.data_mut(|d| d.remove_temp::<String>(unbox_request_id()));
-    let mut unboxable: Vec<String> = Vec::new();
+    let unbox_asked = ui.data_mut(|d| d.remove_temp::<usize>(unbox_request_id()));
+    let mut unboxable: Vec<usize> = Vec::new();
     let mut object_sel = selected_object(ui.ctx(), page_dir);
     // Ctrl and a click, while something is selected, adds the box clicked or takes it out of the
     // selection, as in OneNote: the click does not also put the caret in its words or pick up a
@@ -639,17 +640,9 @@ pub fn show(
                 let lifted = printout.clone().unwrap_or(*block..*block + 1);
                 // The whole of what is lifted, as drawn: every page and the card above them.
                 let drawn = || hits.iter().filter(|(b, ..)| lifted.contains(b)).fold(*rect, |all, (_, r, _)| all.union(*r));
-                let src = match blocks.get(*block) {
-                    Some(Block::Image { src, .. }) => Some(src.as_str()),
-                    _ => None,
-                };
-                if printout.as_ref() != Some(&range)
-                    && let Some(src) = src
-                {
-                    if !unboxable.iter().any(|s| s == src) {
-                        unboxable.push(src.to_string());
-                    }
-                    if lift_picture.is_none() && unbox_asked.as_deref() == Some(src) {
+                if printout.as_ref() != Some(&range) {
+                    unboxable.push(*block);
+                    if lift_picture.is_none() && unbox_asked == Some(*block) {
                         lift_picture = Some(PictureLift { container: i, block: *block, blocks: lifted.clone(), rect: drawn(), drag: false });
                     }
                 }

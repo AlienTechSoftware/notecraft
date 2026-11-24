@@ -18,6 +18,12 @@ pub fn id() -> egui::Id {
     egui::Id::new("image-menu")
 }
 
+/// The block of the picture the menu is open for, kept beside its state: two copies of one
+/// picture share a source but are two pictures.
+fn block_id() -> egui::Id {
+    id().with("block")
+}
+
 /// Validates that `src` is a safe path within `page_dir/assets/` and reads the original file bytes
 /// without re-encoding. Returns the resolved file path on disk, default file name, and raw bytes.
 pub fn validate_and_read_image(page_dir: &Path, src: &str) -> Result<(PathBuf, String, Vec<u8>), std::io::Error> {
@@ -47,7 +53,10 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens) {
         if let Some(hit) = hit_image {
             let at = pointer.unwrap_or(hit.rect.min);
             log::debug!("image menu: right-clicked at {:?} on {:?}", at, hit.src);
-            ui.data_mut(|d| d.insert_temp(id(), (at, hit.src)));
+            ui.data_mut(|d| {
+                d.insert_temp(id(), (at, hit.src));
+                d.insert_temp(block_id(), hit.block);
+            });
             crate::containers::claim_right_click(ui.ctx());
         } else {
             ui.data_mut(|d| d.remove::<(egui::Pos2, String)>(id()));
@@ -69,8 +78,11 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens) {
                 }
                 // A picture or printout that shares a box with other blocks can be taken out of it
                 // where it stands, as dragging it out does, without the drag (issue #481).
-                if crate::containers::can_unbox(ui.ctx(), &src) && floating::menu_row(ui, None, crate::tl_id!("ui.take_out_of_box"), t).clicked() {
-                    ui.data_mut(|d| d.insert_temp(crate::containers::unbox_request_id(), src.clone()));
+                if let Some(block) = ui.data(|d| d.get_temp::<usize>(block_id()))
+                    && crate::containers::can_unbox(ui.ctx(), block)
+                    && floating::menu_row(ui, None, crate::tl_id!("ui.take_out_of_box"), t).clicked()
+                {
+                    ui.data_mut(|d| d.insert_temp(crate::containers::unbox_request_id(), block));
                     ui.ctx().request_repaint();
                     picked = true;
                 }

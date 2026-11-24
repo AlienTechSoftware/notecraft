@@ -8024,6 +8024,77 @@ fn a_picture_is_taken_out_of_its_box_from_its_menu() {
     }
 }
 
+/// Issue #481: Take out of box on a printout page takes the whole printout out, its card and every
+/// page, and none of it moves: the card above the first page is part of what comes out, so the
+/// pages stay where they were drawn rather than dropping by the card's height.
+#[test]
+fn a_printout_is_taken_out_of_its_box_where_it_stands() {
+    let t = TempDir::new("ui-printout-take-out");
+    let mut s = session(&t);
+    let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+    let path = sample.md_page.to_string_lossy().into_owned();
+    s.attach_bytes(&path, "a.pdf", b"%PDF-1.4\n").expect("pdf");
+    s.attach_bytes(&path, "a.pdf.svg", b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"/>").expect("card");
+    s.attach_bytes(&path, "a.pdf.printout-001.png", LOGO_PNG).expect("page 1");
+    s.attach_bytes(&path, "a.pdf.printout-002.png", LOGO_PNG).expect("page 2");
+    let body = "Before\n\n[![a.pdf](assets/a.pdf.svg)](assets/a.pdf)\n\n<img src=\"assets/a.pdf.printout-001.png\" alt=\"Printout page 1\" width=\"200\" height=\"100\">\n\n<img src=\"assets/a.pdf.printout-002.png\" alt=\"Printout page 2\" width=\"200\" height=\"100\">\n\nAfter\n";
+    s.run("page.save", &params(&[("path", &path), ("body", body)])).expect("page");
+    s.run("page.containers", &params(&[("path", &path), ("boxes", "0,0,500,5")])).expect("one box");
+    let mut app = NoteCraftApp::new(s);
+    app.open_path(&path);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let (one, two) = (rendered_picture_rect(&h, 2), rendered_picture_rect(&h, 3));
+
+    ask(&mut h, "ui.click", json!({"x": two.center().x, "y": two.center().y, "button": "right"})).expect("right click page two");
+    settle(&mut h);
+    h.get_by_label("Take out of box").click();
+    settle(&mut h);
+    let state = look_at(&mut h);
+    let counts: Vec<u64> = state
+        .pointer("/page/containers")
+        .and_then(Value::as_array)
+        .map(|b| b.iter().filter_map(|c| c.get("blocks").and_then(Value::as_u64)).collect())
+        .unwrap_or_default();
+    assert_eq!(counts, vec![1, 3, 1], "the words, the card and both pages, the words: {state}");
+    let (one_now, two_now) = (rendered_picture_rect(&h, 2), rendered_picture_rect(&h, 3));
+    assert!((one_now.min - one.min).length() < 2.0, "the first page is drawn where it was: {one:?} then {one_now:?}");
+    assert!((two_now.min - two.min).length() < 2.0, "the second page is drawn where it was: {two:?} then {two_now:?}");
+}
+
+/// Issue #481: two copies of the same picture in one box are two pictures. Take out of box on the
+/// second takes out the second, not the first copy with the same source.
+#[test]
+fn take_out_of_box_takes_out_the_copy_that_was_right_clicked() {
+    let t = TempDir::new("ui-picture-take-out-copy");
+    let mut s = session(&t);
+    let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+    let path = sample.md_page.to_string_lossy().into_owned();
+    s.attach_bytes(&path, "picture.png", LOGO_PNG).expect("picture");
+    let img = "<img src=\"assets/picture.png\" alt=\"picture\" width=\"200\" height=\"100\">";
+    let body = format!("Before\n\n{img}\n\nMiddle\n\n{img}\n\nAfter\n\n{img}\n");
+    s.run("page.save", &params(&[("path", &path), ("body", &body)])).expect("page");
+    // Five blocks share the first box; the last copy is alone in a box of its own far below.
+    s.run("page.containers", &params(&[("path", &path), ("boxes", "0,0,400,5;0,900,400,1")])).expect("boxes");
+    let mut app = NoteCraftApp::new(s);
+    app.open_path(&path);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let second = rendered_picture_rect(&h, 3);
+
+    ask(&mut h, "ui.click", json!({"x": second.center().x, "y": second.center().y, "button": "right"})).expect("right click the second copy");
+    settle(&mut h);
+    h.get_by_label("Take out of box").click();
+    settle(&mut h);
+    let state = look_at(&mut h);
+    let counts: Vec<u64> = state
+        .pointer("/page/containers")
+        .and_then(Value::as_array)
+        .map(|b| b.iter().filter_map(|c| c.get("blocks").and_then(Value::as_u64)).collect())
+        .unwrap_or_default();
+    assert_eq!(counts, vec![3, 1, 1, 1], "the second copy came out, the first is still with the words: {state}");
+}
+
 /// A printout is one thing on the page, as in OneNote. Taking hold of any of its pages moves the
 /// whole printout, its card and every page: in a box of its own the box moves, and in a box shared
 /// with words the printout is lifted out together rather than page by page. One Ctrl+Z puts a
