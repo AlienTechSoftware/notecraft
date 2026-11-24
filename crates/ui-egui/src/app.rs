@@ -194,6 +194,12 @@ const INDENT: f32 = 14.0;
 
 /// Shared title treatment for modal dialogs. Keeping this here makes dialogs use the
 /// same opaque, theme-owned title band instead of inheriting egui's platform-gray title bar.
+/// What the first-use wizard leaves around itself on a small screen: its frame's margin and
+/// stroke on both sides, and a gap to the screen's edge.
+const WIZARD_SCREEN_MARGIN: f32 = 2.0 * (16.0 + 2.0 + 8.0);
+/// The height kept below the wizard's scrolling body for its Back, Next and Finish buttons.
+const WIZARD_BUTTON_ROW: f32 = 56.0;
+
 fn modal_frame(tokens: &Tokens) -> egui::Frame {
     egui::Frame::NONE.fill(tokens.panel).stroke(egui::Stroke::new(1.5, tokens.accent)).inner_margin(egui::Margin::same(16))
 }
@@ -10986,6 +10992,13 @@ impl NoteCraftApp {
                     _ => crate::tl_id!("ui.welcome_wizard_done_title"),
                 }
                 .to_string();
+                // The wizard is 520 points wide where there is room. On a phone it takes the
+                // screen's width, less its frame and a margin, and the banner shrinks with it,
+                // so the banner and the buttons stay on screen (issue #477).
+                let screen = ctx.content_rect();
+                let width = (screen.width() - WIZARD_SCREEN_MARGIN).clamp(1.0, 520.0);
+                let banner_width = width.min(480.0);
+                let body_height = (screen.height() - WIZARD_SCREEN_MARGIN - WIZARD_BUTTON_ROW).max(80.0);
                 egui::Window::new(title.as_str())
                     .title_bar(false)
                     .collapsible(false)
@@ -10993,55 +11006,59 @@ impl NoteCraftApp {
                     .order(egui::Order::Foreground)
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .frame(modal_frame(&self.tokens))
+                    .max_width(width)
                     .show(ctx, |ui| {
                         stay_above(ui, backdrop);
-                        ui.set_min_width(520.0);
-                        if *step == 0 {
-                            ui.add(egui::Image::from_bytes(banner_uri, banner_bytes).fit_to_exact_size(vec2(480.0, 240.0)));
-                            ui.add_space(8.0);
-                        }
-                        modal_title(ui, &self.tokens, title.as_str());
-                        match *step {
-                            0 => {}
-                            1 => {
-                                ui.label(crate::tl_id!("ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac"));
-                                ui.add_space(6.0);
-                                ui.label(crate::tl_id!("ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0"));
-                                egui::ComboBox::from_label(crate::tl_id!("ui.local_collection_level"))
-                                    .selected_text(crate::tl!(level.as_str()))
-                                    .show_ui(ui, |ui| {
-                                        for choice in ["none", "usage", "warning", "error", "debug"] {
-                                            ui.selectable_value(level, choice.into(), crate::tl!(choice));
-                                        }
-                                    });
-                            }
-                            2 => {
-                                ui.label(crate::tl_id!("ui.welcome_format_body"));
+                        ui.set_min_width(width);
+                        ui.set_max_width(width);
+                        egui::ScrollArea::vertical().max_height(body_height).auto_shrink([false, true]).show(ui, |ui| {
+                            if *step == 0 {
+                                ui.add(egui::Image::from_bytes(banner_uri, banner_bytes).fit_to_exact_size(vec2(banner_width, banner_width / 2.0)));
                                 ui.add_space(8.0);
-                                for choice in PageFormat::ALL {
-                                    ui.radio_value(&mut *format, choice, choice.label());
+                            }
+                            modal_title(ui, &self.tokens, title.as_str());
+                            match *step {
+                                0 => {}
+                                1 => {
+                                    ui.label(crate::tl_id!("ui.privacy_is_our_top_priority_all_logs_and_telemetry_s_d87cae4eac"));
+                                    ui.add_space(6.0);
+                                    ui.label(crate::tl_id!("ui.choose_a_local_collection_level_logging_is_off_by_de_5dfbe386e0"));
+                                    egui::ComboBox::from_label(crate::tl_id!("ui.local_collection_level"))
+                                        .selected_text(crate::tl!(level.as_str()))
+                                        .show_ui(ui, |ui| {
+                                            for choice in ["none", "usage", "warning", "error", "debug"] {
+                                                ui.selectable_value(level, choice.into(), crate::tl!(choice));
+                                            }
+                                        });
+                                }
+                                2 => {
+                                    ui.label(crate::tl_id!("ui.welcome_format_body"));
+                                    ui.add_space(8.0);
+                                    for choice in PageFormat::ALL {
+                                        ui.radio_value(&mut *format, choice, choice.label());
+                                    }
+                                }
+                                3 => {
+                                    ui.label(crate::tl_id!("ui.welcome_notebook_prompt_body"));
+                                    ui.label(crate::i18n::format_message_id("ui.welcome_notebook_prompt_format", &[("format", format.label())]));
+                                    ui.add_space(6.0);
+                                    ui.colored_label(self.tokens.warn, crate::tl_id!("ui.welcome_notebook_replace_warning"));
+                                    ui.add_space(8.0);
+                                    ui.radio_value(&mut *add_demo, true, crate::tl_id!("ui.welcome_notebook_add_yes"));
+                                    ui.radio_value(&mut *add_demo, false, crate::tl_id!("ui.welcome_notebook_add_no"));
+                                }
+                                _ => {
+                                    ui.label(crate::tl_id!("ui.welcome_wizard_done_body"));
                                 }
                             }
-                            3 => {
-                                ui.label(crate::tl_id!("ui.welcome_notebook_prompt_body"));
-                                ui.label(crate::i18n::format_message_id("ui.welcome_notebook_prompt_format", &[("format", format.label())]));
-                                ui.add_space(6.0);
-                                ui.colored_label(self.tokens.warn, crate::tl_id!("ui.welcome_notebook_replace_warning"));
+                            if let Some(message) = error {
                                 ui.add_space(8.0);
-                                ui.radio_value(&mut *add_demo, true, crate::tl_id!("ui.welcome_notebook_add_yes"));
-                                ui.radio_value(&mut *add_demo, false, crate::tl_id!("ui.welcome_notebook_add_no"));
+                                ui.colored_label(
+                                    self.tokens.warn,
+                                    crate::i18n::format_message_id("ui.welcome_notebook_action_failed", &[("error", message)]),
+                                );
                             }
-                            _ => {
-                                ui.label(crate::tl_id!("ui.welcome_wizard_done_body"));
-                            }
-                        }
-                        if let Some(message) = error {
-                            ui.add_space(8.0);
-                            ui.colored_label(
-                                self.tokens.warn,
-                                crate::i18n::format_message_id("ui.welcome_notebook_action_failed", &[("error", message)]),
-                            );
-                        }
+                        });
                         ui.add_space(14.0);
                         ui.horizontal(|ui| {
                             if *step > 0 && modal_button(ui, &self.tokens, crate::tl_id!("ui.welcome_wizard_back"), false).clicked() {
