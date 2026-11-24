@@ -107,6 +107,8 @@ struct TabletToolDataInner {
     down: bool,
     /// True when the frame in progress changed the pressure.
     pressure_changed: bool,
+    /// Barrel buttons held down, to be let go if the pen leaves before they are.
+    held: Vec<MouseButton>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -234,6 +236,22 @@ fn frame_steps(mut pending: Vec<ToolStep>, pressure_changed: bool, down: bool) -
     pending
 }
 
+/// Notes a barrel button going down or up in `held`, and says whether to report it: a release
+/// of a button that is not held (let go already, as the pen left) is not reported twice.
+fn track_button(held: &mut Vec<MouseButton>, button: MouseButton, pressed: bool) -> bool {
+    if pressed {
+        if !held.contains(&button) {
+            held.push(button);
+        }
+        true
+    } else if let Some(at) = held.iter().position(|b| *b == button) {
+        held.remove(at);
+        true
+    } else {
+        false
+    }
+}
+
 /// Report one step of a tool over one of our windows.
 fn deliver(
     state: &mut WinitState,
@@ -265,6 +283,7 @@ fn deliver(
             }
             if leaving {
                 inner.pressure = None;
+                inner.held.clear();
             }
             return;
         },
@@ -308,10 +327,22 @@ fn deliver(
                 inner.down = false;
                 sink.push_window_event(touch(TouchPhase::Cancelled, inner.force()), window_id);
             }
+            // A button still held as the pen leaves is let go here: its release goes to whatever
+            // the pen is over next, or nowhere, and the window would keep it pressed.
+            for button in std::mem::take(&mut inner.held) {
+                let state = ElementState::Released;
+                sink.push_window_event(WindowEvent::MouseInput { device_id, state, button }, window_id);
+            }
             inner.pressure = None;
             sink.push_window_event(WindowEvent::CursorLeft { device_id }, window_id);
         },
         ToolStep::Button(button, pressed) => {
+            if !track_button(&mut inner.held, button, pressed) {
+                return;
+            }
+            // A toolkit places a button where the cursor last was, and egui-winit forgets that
+            // once a touch ends: with the pen held still after a stroke, the button went nowhere.
+            sink.push_window_event(WindowEvent::CursorMoved { device_id, position: location }, window_id);
             let state = if pressed { ElementState::Pressed } else { ElementState::Released };
             sink.push_window_event(WindowEvent::MouseInput { device_id, state, button }, window_id);
         },
@@ -398,6 +429,19 @@ mod tests {
         assert_eq!(tool_button(0x14c), MouseButton::Right);
         assert_eq!(tool_button(0x149), MouseButton::Back);
         assert_eq!(tool_button(0x150), MouseButton::Other(0x150));
+    }
+
+    #[test]
+    fn a_held_button_is_let_go_once() {
+        let mut held = Vec::new();
+        assert!(track_button(&mut held, MouseButton::Right, true));
+        assert_eq!(held, vec![MouseButton::Right], "held while down");
+        assert!(track_button(&mut held, MouseButton::Right, false), "its release is reported");
+        assert!(held.is_empty());
+        // Let go as the pen left (the held list emptied), the compositor's release comes after.
+        assert!(track_button(&mut held, MouseButton::Middle, true));
+        held.clear();
+        assert!(!track_button(&mut held, MouseButton::Middle, false), "not reported twice");
     }
 
     #[test]
