@@ -2736,8 +2736,9 @@ fn a_click_on_blank_paper_starts_writing_under_the_pointer_when_zoomed() {
     let new = boxes.last().expect("the new box");
     let (ox, oy) = (st["page"]["origin"][0].as_f64().unwrap_or(0.0) as f32, st["page"]["origin"][1].as_f64().unwrap_or(0.0) as f32);
     let (x, y) = (new["x"].as_f64().unwrap_or(0.0) as f32, new["y"].as_f64().unwrap_or(0.0) as f32);
-    // The box's words begin a pad in and a handle's height down from its corner (6 and 14 points).
-    let words = egui::pos2(ox + (x + 6.0) * 2.0, oy + (y + 14.0) * 2.0);
+    // The box's words begin a pad in from its corner, and below the first block's header row and
+    // the box's handle (6, 24 and 14 points).
+    let words = egui::pos2(ox + (x + 6.0) * 2.0, oy + (y + 24.0 + 14.0) * 2.0);
     assert!((words - click).length() < 3.0, "clicked at {click:?}, the box's words begin at {words:?}");
 }
 
@@ -5225,9 +5226,10 @@ fn a_box_stays_drawn_while_the_pointer_is_on_its_drag_strip() {
 /// A click on open paper writes nothing to the page's file: the place it puts the cursor is not
 /// something on the page until something is written there. A save rewrites the file, which on a
 /// synced folder (a OneDrive mount) took about a second with the window frozen, so a click that
-/// saved held up the clicks after it. Pressing on that place does not drag it either.
+/// saved held up the clicks after it. (The new block's bar can be dragged, as
+/// `a_new_block_can_be_dragged_by_its_bar` has it.)
 #[test]
-fn a_click_on_open_paper_saves_nothing_and_its_place_cannot_be_dragged() {
+fn a_click_on_open_paper_saves_nothing() {
     let (_t, app, s) = sample_app("ui-click-no-save");
     let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 800.0));
     settle(&mut h);
@@ -5260,26 +5262,10 @@ fn a_click_on_open_paper_saves_nothing_and_its_place_cannot_be_dragged() {
     settle(&mut h);
     let placed = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
     assert!(placed["caret"] != Value::Null, "the cursor is placed: {placed}");
-    let place = placed["containers"].as_array().and_then(|b| b.last()).cloned().unwrap_or_default();
     // Nothing to save, and nothing for Undo to take back: the page is as it was.
     assert_eq!(placed["dirty"], json!(false), "a click does not count as a change: {placed}");
     let steps = |p: &Value| p["history"]["steps"].clone();
     assert_eq!(steps(&placed), steps(&before_click), "a click adds no step to undo: {placed}");
-
-    // A press just above the cursor, where a box's drag strip would be, and a drag.
-    ask(&mut h, "ui.press", json!({"x": at.x + 20.0, "y": at.y - 10.0})).expect("down");
-    pump(&mut h);
-    for step in 1..=5 {
-        ask(&mut h, "ui.move", json!({"x": at.x + 20.0 + 30.0 * step as f32, "y": at.y - 10.0 + 30.0 * step as f32})).expect("drag");
-        pump(&mut h);
-    }
-    let dragging = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["page"].clone();
-    let now =
-        dragging["containers"].as_array().and_then(|b| b.iter().find(|c| c["blocks"] == place["blocks"] && c["width"] == place["width"]).cloned());
-    if let Some(now) = now {
-        assert_eq!((now["x"].clone(), now["y"].clone()), (place["x"].clone(), place["y"].clone()), "the cursor's place is not dragged: {dragging}");
-    }
-    ask(&mut h, "ui.release", json!({"x": at.x + 170.0, "y": at.y + 140.0})).expect("up");
 
     // Long past the autosave's wait.
     for _ in 0..4 {
@@ -15298,4 +15284,67 @@ fn a_colour_emoji_is_drawn_in_colour() {
         "ui-colour-apple",
     );
     assert!(with_apple > plain + 40, "the apple is drawn in colour: {with_apple} coloured pixels with it, {plain} without");
+}
+
+/// A click on a line of words puts the caret in that line, where the pointer is: not in the
+/// line below it.
+#[test]
+fn a_click_on_a_line_puts_the_caret_in_that_line() {
+    for boxed in [false, true] {
+        let (_t, mut app, s) = sample_app("ui-caret-at-the-click");
+        let md = s.md_page.to_string_lossy().to_string();
+        app.open_path(&md);
+        let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+        settle(&mut h);
+        let lines = ["Alpha line", "Bravo line", "Charlie line", "Delta line", "Echo line"];
+        let body = lines.join("\n\n") + "\n";
+        ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": md.clone(), "body": body}})).expect("write the page");
+        if boxed {
+            ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": md.clone(), "boxes": "0,0,400,5"}}))
+                .expect("one box");
+        }
+        ask(&mut h, "ui.open", json!({"path": md.clone()})).expect("open");
+        settle(&mut h);
+        for (n, line) in lines.iter().enumerate() {
+            let Some(rect) = h.query_by_label(line).map(|node| node.rect()) else { panic!("boxed={boxed}: {line} is shown") };
+            let at = egui::pos2(rect.left() + 20.0, rect.center().y);
+            ask(&mut h, "ui.click", json!({"x": at.x, "y": at.y})).expect("click the line");
+            settle(&mut h);
+            let state = look_at(&mut h);
+            let block = state.pointer("/page/caret/block").and_then(Value::as_u64);
+            assert_eq!(
+                block,
+                Some(n as u64),
+                "boxed={boxed}: a click on {line:?} at {at:?} put the caret in its line: {}",
+                state.pointer("/page/caret").cloned().unwrap_or(Value::Null)
+            );
+        }
+    }
+}
+
+/// A click on open paper puts the caret where the pointer is: the line the caret stands in
+/// is under the pointer, not a header's height below it.
+#[test]
+fn a_click_on_open_paper_puts_the_caret_under_the_pointer() {
+    let (_t, mut app, s) = sample_app("ui-caret-on-open-paper");
+    let md = s.md_page.to_string_lossy().to_string();
+    app.open_path(&md);
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    settle(&mut h);
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": md.clone(), "body": "Alpha line\n"}})).expect("write the page");
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": md.clone(), "boxes": "0,0,300,1"}})).expect("one box");
+    ask(&mut h, "ui.open", json!({"path": md.clone()})).expect("open");
+    settle(&mut h);
+    let origin = page_origin(&mut h);
+    let at = origin + egui::vec2(500.0, 300.0);
+    ask(&mut h, "ui.click", json!({"x": at.x, "y": at.y})).expect("click open paper");
+    settle(&mut h);
+    let focused = h.ctx.memory(|m| m.focused()).and_then(|id| h.ctx.read_response(id)).map(|r| r.rect);
+    let state = look_at(&mut h);
+    let Some(line) = focused else { panic!("a caret was placed: {}", state.pointer("/page").cloned().unwrap_or(Value::Null)) };
+    assert!(
+        line.top() - 4.0 <= at.y && at.y <= line.bottom() + 4.0,
+        "the caret's line {line:?} is under the click at {at:?}: {}",
+        state.pointer("/page/containers").cloned().unwrap_or(Value::Null)
+    );
 }
