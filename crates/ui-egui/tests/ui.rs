@@ -15227,3 +15227,34 @@ fn paragraphs_draw_no_plus_and_keep_the_box_top_header() {
     assert_eq!(h.query_all_by_label("Add emoji to block 4").count(), 0, "a paragraph in a box draws no +");
     assert_eq!(h.query_all_by_label("Add emoji to block 5").count(), 0, "a list item draws no +");
 }
+
+/// A paragraph and a list item hold emoji by accident: they draw no `+` and show no emoji, but the
+/// emoji stay in the page file. The box's top block keeps its header above the frame.
+#[test]
+fn a_paragraph_and_a_list_item_hide_their_emoji_but_keep_the_data() {
+    let (_t, app, s) = sample_app("ui-hidden-emoji-data");
+    let body = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"400\"><h2>Box heading</h2><p data-nc-emoji=\"\u{1F600}\">Hidden paragraph</p><ul><li data-nc-emoji=\"\u{1F3AF}\">Hidden item</li></ul></div>";
+    notecraft_store::page::save_body(&s.html_page, body).expect("a box with a heading, a paragraph and a list item");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Add emoji to block 1").count(), 1, "the box's top block keeps its +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 2").count(), 0, "a paragraph with emoji draws no +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 3").count(), 0, "a list item with emoji draws no +");
+    let on_disk = notecraft_store::page::load_page(&s.html_page).expect("the page").body;
+    assert!(on_disk.contains("\u{1F600}"), "the paragraph's emoji stay in the file: {on_disk}");
+    assert!(on_disk.contains("\u{1F3AF}"), "the list item's emoji stay in the file: {on_disk}");
+}
+
+/// A heading below the page's top block draws no `+`: the `+` belongs to the box frame, and the top
+/// block is the one that keeps its header above it.
+#[test]
+fn a_heading_below_the_top_block_draws_no_plus() {
+    let (_t, app, s) = sample_app("ui-later-heading");
+    notecraft_store::page::save_body(&s.html_page, "<p>Some words</p><h2>Later heading</h2>").expect("a paragraph and a heading");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Add emoji to block 1").count(), 1, "the top block keeps its +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 2").count(), 0, "a heading below the top block draws no +");
+}

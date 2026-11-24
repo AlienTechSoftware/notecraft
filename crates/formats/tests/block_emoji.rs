@@ -43,3 +43,16 @@ fn every_kind_of_block_can_hold_emoji() {
         assert_eq!(back[0].emoji(), emoji(&["\u{2705}"]).as_slice(), "kind of block from {src:?}");
     }
 }
+
+#[test]
+fn emoji_on_a_paragraph_and_a_list_item_survive_another_block_being_written() {
+    // The owner hides a paragraph's and a list item's emoji from the display, but the data stays.
+    let mut blocks = markdown::parse("First paragraph\n\nA paragraph\n\n- an item\n\nLast line\n");
+    blocks[1].set_emoji(emoji(&["\u{1F642}"]));
+    blocks[2].set_emoji(emoji(&["\u{1F3AF}"]));
+    let written = render::blocks_to_markdown(&blocks);
+    let back = markdown::parse(&written);
+    assert_eq!(back[3], blocks[3], "the last line reads back unchanged");
+    assert_eq!(back[1].emoji(), emoji(&["\u{1F642}"]).as_slice(), "paragraph emoji kept: {written}");
+    assert_eq!(back[2].emoji(), emoji(&["\u{1F3AF}"]).as_slice(), "list item emoji kept: {written}");
+}
