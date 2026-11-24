@@ -29,18 +29,105 @@ pub fn install_edition(payload: &Path, notebooks_root: &Path, format: &str) -> i
         return Err(error);
     }
     let had_previous = destination.exists();
-    if had_previous {
-        fs_rename(&destination, &backup)?;
+    if had_previous && let Err(error) = rename_with_retry(&destination, &backup) {
+        // On Windows a folder cannot be moved while a file under it is open, by NoteCraft
+        // itself, a virus scanner, a search indexer or a sync client: "Access is denied"
+        // (issue #486). The files themselves can still be written, so the edition is put in
+        // place file by file instead.
+        if error.kind() != io::ErrorKind::PermissionDenied {
+            remove_tree_if_present(&staging);
+            return Err(error);
+        }
+        let replaced = replace_in_place(&staging, &destination);
+        remove_tree_if_present(&staging);
+        return replaced.map(|()| destination);
     }
-    if let Err(error) = fs_rename(&staging, &destination) {
+    if let Err(error) = rename_with_retry(&staging, &destination) {
         if had_previous {
-            let _ = fs_rename(&backup, &destination);
+            let _ = rename_with_retry(&backup, &destination);
         }
         remove_tree_if_present(&staging);
         return Err(error);
     }
     remove_tree_if_present(&backup);
     Ok(destination)
+}
+
+/// Renames, trying again for a few seconds while the system refuses with "Access is denied".
+/// On Windows that refusal is often brief: a scanner or indexer that opened a file a moment
+/// ago lets go of it again.
+fn rename_with_retry(from: &Path, to: &Path) -> io::Result<()> {
+    const ATTEMPTS: u32 = 6;
+    let mut wait = std::time::Duration::from_millis(50);
+    let mut attempt = 1;
+    loop {
+        match fs_rename(from, to) {
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied && attempt < ATTEMPTS => {
+                std::thread::sleep(wait);
+                wait = (wait * 2).min(std::time::Duration::from_millis(800));
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
+}
+
+/// Makes `destination` hold exactly what `staging` holds, without moving `destination` itself:
+/// every staged file is written over its counterpart, and what the new edition no longer has is
+/// removed. A file that cannot be removed is left; a file that cannot be written fails the install.
+fn replace_in_place(staging: &Path, destination: &Path) -> io::Result<()> {
+    let mut wanted = std::collections::HashSet::new();
+    for entry in std::fs::read_dir(staging)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let target = destination.join(&name);
+        wanted.insert(name);
+        if entry.file_type()?.is_dir() {
+            if target.is_file() {
+                std::fs::remove_file(&target)?;
+            }
+            if !target.is_dir() {
+                std::fs::create_dir(&target)?;
+            }
+            replace_in_place(&entry.path(), &target)?;
+        } else {
+            if target.is_dir() {
+                std::fs::remove_dir_all(&target)?;
+            }
+            make_writable(&target);
+            write_over(&entry.path(), &target)?;
+        }
+    }
+    for entry in std::fs::read_dir(destination)? {
+        let entry = entry?;
+        if wanted.contains(&entry.file_name()) {
+            continue;
+        }
+        let path = entry.path();
+        let _ = if entry.file_type().is_ok_and(|kind| kind.is_dir()) { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
+    }
+    Ok(())
+}
+
+/// Writes `source` over `target` through the file's own contents, never by deleting or replacing
+/// the file: a file another program holds open for reading and writing can still be written.
+fn write_over(source: &Path, target: &Path) -> io::Result<()> {
+    let mut out =
+        if target.exists() { std::fs::OpenOptions::new().write(true).truncate(true).open(target)? } else { std::fs::File::create_new(target)? };
+    std::io::copy(&mut std::fs::File::open(source)?, &mut out)?;
+    Ok(())
+}
+
+/// Clears the read-only mark so a file can be written over. A file that is not there is fine.
+fn make_writable(path: &Path) {
+    if let Ok(metadata) = std::fs::metadata(path) {
+        let mut permissions = metadata.permissions();
+        if permissions.readonly() {
+            #[allow(clippy::permissions_set_readonly_false)]
+            permissions.set_readonly(false);
+            let _ = std::fs::set_permissions(path, permissions);
+        }
+    }
 }
 
 /// Checks that one edition is complete before anything in the notebooks folder is replaced.
@@ -224,6 +311,74 @@ mod tests {
         assert!(!destination.join("old-page.txt").exists(), "stale demo data is removed");
         assert_eq!(fs::read(destination.join("00-start/welcome/index.html")).expect("new demo"), b"updated HTML");
         assert_eq!(fs::read(other.join("notes.txt")).expect("user notes"), b"keep my notes");
+    }
+
+    #[test]
+    fn replacing_in_place_writes_every_file_and_removes_what_the_new_edition_dropped() {
+        let (_temp, source, notebooks) = fixture();
+        let destination = install_edition(&source, &notebooks, "html").expect("initial install");
+        fs::write(destination.join("old-page.txt"), "old version").expect("a page the new edition dropped");
+        fs::create_dir_all(destination.join("retired-section/page")).expect("a section the new edition dropped");
+        fs::write(destination.join("00-start/welcome/index.html"), "old welcome").expect("the old welcome page");
+        let staging = notebooks.join("staged");
+        fs::create_dir_all(&staging).expect("staging folder");
+        copy_tree(&source.join("html"), &staging).expect("stage the new edition");
+        fs::write(staging.join("00-start/welcome/index.html"), "new welcome").expect("the new welcome page");
+
+        replace_in_place(&staging, &destination).expect("replace in place");
+
+        assert_eq!(fs::read(destination.join("00-start/welcome/index.html")).expect("welcome page"), b"new welcome");
+        assert!(destination.join("_node.toml").is_file());
+        assert!(destination.join("23-he").is_dir());
+        assert!(!destination.join("old-page.txt").exists(), "a dropped page is removed");
+        assert!(!destination.join("retired-section").exists(), "a dropped section is removed");
+    }
+
+    #[test]
+    fn a_read_only_file_in_the_old_demo_is_written_over_in_place() {
+        let (_temp, source, notebooks) = fixture();
+        let destination = install_edition(&source, &notebooks, "html").expect("initial install");
+        let page = destination.join("00-start/welcome/index.html");
+        let mut permissions = fs::metadata(&page).expect("page metadata").permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&page, permissions).expect("mark the old page read-only");
+        let staging = notebooks.join("staged");
+        fs::create_dir_all(&staging).expect("staging folder");
+        copy_tree(&source.join("html"), &staging).expect("stage the new edition");
+        fs::write(staging.join("00-start/welcome/index.html"), "new welcome").expect("the new welcome page");
+
+        replace_in_place(&staging, &destination).expect("replace in place");
+
+        assert_eq!(fs::read(&page).expect("welcome page"), b"new welcome");
+    }
+
+    /// Issue #486: with a file of the old Welcome notebook held open, Windows refuses to move the
+    /// notebook folder ("Access is denied", os error 5). The update still goes in, file by file.
+    #[cfg(windows)]
+    #[test]
+    fn an_update_goes_in_while_a_file_of_the_old_demo_is_open() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 1;
+        const FILE_SHARE_WRITE: u32 = 2;
+        let (_temp, source, notebooks) = fixture();
+        let destination = install_edition(&source, &notebooks, "html").expect("initial install");
+        let held = destination.join("00-start/welcome/index.html");
+        let _open = fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE).open(&held).expect("hold the page open");
+        assert_eq!(
+            fs::rename(&destination, notebooks.join("moved")).expect_err("Windows refuses to move the folder").kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        fs::write(source.join("html/00-start/welcome/index.html"), "updated HTML").expect("update payload");
+
+        assert_eq!(install_edition(&source, &notebooks, "html").expect("update in place"), destination);
+
+        assert_eq!(fs::read(&held).expect("updated page"), b"updated HTML");
+        let leftovers: Vec<_> = fs::read_dir(&notebooks)
+            .expect("notebooks folder")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with('.'))
+            .collect();
+        assert!(leftovers.is_empty(), "no staging or backup folder is left behind");
     }
 
     #[test]
