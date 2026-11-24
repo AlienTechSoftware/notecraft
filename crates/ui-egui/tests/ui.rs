@@ -15216,7 +15216,7 @@ fn a_paragraph_emoji_header_sits_under_the_paragraph() {
 #[test]
 fn paragraphs_draw_no_plus_and_keep_the_box_top_header() {
     let (_t, app, s) = sample_app("ui-paragraph-no-plus");
-    let body = "<h2>Plain heading</h2><p>Plain paragraph</p><div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"400\"><h2>Boxed heading</h2><p>Boxed paragraph</p></div>";
+    let body = "<h2>Plain heading</h2><p>Plain paragraph</p><div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"400\"><h2>Boxed heading</h2><p>Boxed paragraph</p></div><ul><li>Listed item</li></ul>";
     notecraft_store::page::save_body(&s.html_page, body).expect("a heading, a paragraph and a box");
     let mut h = harness(app, LIGHT);
     h.state_mut().open_path(&s.html_page.to_string_lossy());
@@ -15225,4 +15225,5 @@ fn paragraphs_draw_no_plus_and_keep_the_box_top_header() {
     assert_eq!(h.query_all_by_label("Add emoji to block 2").count(), 0, "a paragraph draws no +");
     assert_eq!(h.query_all_by_label("Add emoji to block 3").count(), 1, "a heading in a box keeps its +");
     assert_eq!(h.query_all_by_label("Add emoji to block 4").count(), 0, "a paragraph in a box draws no +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 5").count(), 0, "a list item draws no +");
 }

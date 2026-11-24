@@ -2383,8 +2383,8 @@ pub fn show_blocks(
         // has none.
         let drawn_above_box = ui.data(|d| d.get_temp::<Option<usize>>(crate::block_emoji::box_first_header_id()).flatten()) == Some(i);
         // A paragraph's header goes under its words instead (see `paragraph_header_below`).
-        // Paragraphs draw no emoji `+` and show no emoji for now. Their emoji data stays in the page.
-        let paragraph = matches!(blocks[i], Block::Paragraph(..));
+        // Paragraphs and list items draw no emoji `+` and show no emoji for now. Their emoji data stays in the page.
+        let paragraph = crate::block_emoji::is_text_block(&blocks[i]);
         if !drawn_above_box
             && !paragraph
             && let Some(next) = crate::block_emoji::header(ui, page_dir, i, blocks[i].emoji(), true, zoom)
