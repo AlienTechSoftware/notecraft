@@ -191,16 +191,150 @@ fn ranked_in(roots: impl IntoIterator<Item = PathBuf>, query: &str, limit: usize
     ranked_pages(pages, query, limit)
 }
 
+// ---------- the ranked search cache (issue #460) ----------
+//
+// The search runs on every keystroke. Reading every page, rendering it and tokenizing it each
+// time made typing slow on a large notebook, so what a page contributes is kept between
+// searches, and so is the index built from all of them.
+//
+// The rule for using what is kept: a page's texts come only from files in the page's own folder
+// (its node file and page file) and in its `assets` folder (pictures, `.txt`, `.lines`,
+// `.ocr-hash`). The name, size and modification time of every one of those files is the page's
+// stamp. What is kept for a page is used only while its stamp is unchanged; any edit, added or
+// removed picture, or changed companion file changes it. A file changed so recently that a second
+// change could keep the same time and size is never trusted: a page with such a file is read again
+// on every search until its time has settled.
+
+/// How long after a file's last change its time and size are trusted to tell a later change.
+/// File times on some file systems are only two seconds apart.
+const SETTLE: std::time::Duration = std::time::Duration::from_secs(3);
+/// How many built indexes are kept, one for each set of pages searched (a notebook, a section).
+const KEPT_INDEXES: usize = 4;
+
+/// The name, size and modification time of each file a page's texts are read from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Stamp(Vec<(std::ffi::OsString, u64, std::time::SystemTime)>);
+
+/// The page's stamp, or `None` when it cannot be trusted: a file's time is missing, in the
+/// future, or too recent to tell a second change from the first.
+fn stamp_of(dir: &Path) -> Option<Stamp> {
+    let now = std::time::SystemTime::now();
+    let mut files = Vec::new();
+    for (folder, prefix) in [(dir.to_path_buf(), ""), (dir.join("assets"), "assets/")] {
+        let Ok(entries) = std::fs::read_dir(&folder) else { continue };
+        for entry in entries {
+            let entry = entry.ok()?;
+            let metadata = entry.metadata().ok()?;
+            if !metadata.is_file() {
+                continue;
+            }
+            let modified = metadata.modified().ok()?;
+            if now.duration_since(modified).map_or(true, |age| age < SETTLE) {
+                return None;
+            }
+            let mut name = std::ffi::OsString::from(prefix);
+            name.push(entry.file_name());
+            files.push((name, metadata.len(), modified));
+        }
+    }
+    files.sort();
+    Some(Stamp(files))
+}
+
+/// What one page gives the search: its texts, and every word in them.
+struct PageTexts {
+    pieces: Vec<Piece>,
+    words: std::collections::HashSet<String>,
+}
+
+fn texts_of(dir: &Path) -> PageTexts {
+    let pieces = pieces_of(dir);
+    let words = pieces.iter().flat_map(|piece| notecraft_search::tokenize(&piece.text)).collect();
+    PageTexts { pieces, words }
+}
+
+/// An index over a set of pages, and the pages' texts in the order the index numbers them.
+struct Built {
+    key: Vec<(PathBuf, Stamp)>,
+    pages: Vec<std::sync::Arc<PageTexts>>,
+    /// For each unit of the index: the page and the piece within it.
+    units: Vec<(usize, usize)>,
+    index: notecraft_search::Index,
+}
+
+#[derive(Default)]
+struct Cache {
+    pages: std::collections::HashMap<PathBuf, (Stamp, std::sync::Arc<PageTexts>)>,
+    built: std::collections::VecDeque<std::sync::Arc<Built>>,
+}
+
+fn cache() -> std::sync::MutexGuard<'static, Cache> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<Cache>> = std::sync::OnceLock::new();
+    let lock = CACHE.get_or_init(|| std::sync::Mutex::new(Cache::default()));
+    // A search that panicked part way left nothing half-written that matters: start again.
+    lock.lock().unwrap_or_else(|poisoned| {
+        let mut guard = poisoned.into_inner();
+        *guard = Cache::default();
+        guard
+    })
+}
+
+/// The index over `pages`, built now or kept from an earlier search of the same, unchanged pages.
+fn built_for(pages: &[PathBuf]) -> std::sync::Arc<Built> {
+    let stamps: Vec<Option<Stamp>> = pages.iter().map(|dir| stamp_of(dir)).collect();
+    let settled: Option<Vec<(PathBuf, Stamp)>> =
+        pages.iter().zip(&stamps).map(|(dir, stamp)| stamp.clone().map(|stamp| (dir.clone(), stamp))).collect();
+    if let Some(key) = &settled
+        && let Some(built) = cache().built.iter().find(|built| &built.key == key)
+    {
+        return std::sync::Arc::clone(built);
+    }
+    let texts: Vec<std::sync::Arc<PageTexts>> = pages
+        .iter()
+        .zip(stamps)
+        .map(|(dir, stamp)| {
+            let Some(stamp) = stamp else { return std::sync::Arc::new(texts_of(dir)) };
+            if let Some((kept, texts)) = cache().pages.get(dir)
+                && *kept == stamp
+            {
+                return std::sync::Arc::clone(texts);
+            }
+            let texts = std::sync::Arc::new(texts_of(dir));
+            cache().pages.insert(dir.clone(), (stamp, std::sync::Arc::clone(&texts)));
+            texts
+        })
+        .collect();
+    let mut units = Vec::new();
+    let mut texts_in_order = Vec::new();
+    for (page, page_texts) in texts.iter().enumerate() {
+        for (piece, text) in page_texts.pieces.iter().enumerate() {
+            units.push((page, piece));
+            texts_in_order.push(notecraft_search::Unit { id: texts_in_order.len().to_string(), text: text.text.clone() });
+        }
+    }
+    let index = notecraft_search::Index::build(&texts_in_order);
+    let built = std::sync::Arc::new(Built { key: settled.clone().unwrap_or_default(), pages: texts, units, index });
+    if settled.is_some() {
+        let mut cache = cache();
+        cache.built.push_front(std::sync::Arc::clone(&built));
+        cache.built.truncate(KEPT_INDEXES);
+        // Pages no kept index uses are forgotten, so deleted and renamed pages do not pile up.
+        let in_use: std::collections::HashSet<&PathBuf> = cache.built.iter().flat_map(|built| built.key.iter().map(|(dir, _)| dir)).collect();
+        let forget: Vec<PathBuf> = cache.pages.keys().filter(|dir| !in_use.contains(dir)).cloned().collect();
+        for dir in forget {
+            cache.pages.remove(&dir);
+        }
+    }
+    built
+}
+
 fn ranked_pages(mut pages: Vec<PathBuf>, query: &str, limit: usize) -> Vec<Ranked> {
     if query.split_whitespace().next().is_none() || limit == 0 {
         return Vec::new();
     }
     let mut seen = std::collections::HashSet::new();
     pages.retain(|page| seen.insert(std::fs::canonicalize(page).unwrap_or_else(|_| page.clone())));
-    let pieces: Vec<Piece> = pages.iter().flat_map(|dir| pieces_of(dir)).collect();
-    let units: Vec<notecraft_search::Unit> =
-        pieces.iter().enumerate().map(|(i, piece)| notecraft_search::Unit { id: i.to_string(), text: piece.text.clone() }).collect();
-    let index = notecraft_search::Index::build(&units);
+    let built = built_for(&pages);
     // A page qualifies when every word of the query appears somewhere on it: its title, its text,
     // its alt text or the text read from its pictures. The ranking then orders the matches.
     let wanted: Vec<String> = {
@@ -209,16 +343,12 @@ fn ranked_pages(mut pages: Vec<PathBuf>, query: &str, limit: usize) -> Vec<Ranke
         words.dedup();
         words
     };
-    let mut words_on_page: std::collections::HashMap<&Path, std::collections::HashSet<String>> = std::collections::HashMap::new();
-    for piece in &pieces {
-        words_on_page.entry(piece.page.as_path()).or_default().extend(notecraft_search::tokenize(&piece.text));
-    }
-    let qualifies = |page: &Path| words_on_page.get(page).is_some_and(|words| wanted.iter().all(|w| words.contains(w)));
     let mut best: Vec<Ranked> = Vec::new();
-    for hit in index.search(query, usize::MAX) {
-        let Ok(i) = hit.id.parse::<usize>() else { continue };
-        let piece = &pieces[i];
-        if best.iter().any(|r| r.path == piece.page) || !qualifies(&piece.page) {
+    for hit in built.index.search(query, usize::MAX) {
+        let Some(&(page, i)) = hit.id.parse::<usize>().ok().and_then(|unit| built.units.get(unit)) else { continue };
+        let page_texts = &built.pages[page];
+        let piece = &page_texts.pieces[i];
+        if best.iter().any(|r| r.path == piece.page) || !wanted.iter().all(|w| page_texts.words.contains(w)) {
             continue;
         }
         let snippet = snippet_around(&piece.text, &wanted);
@@ -559,5 +689,99 @@ Flat white 4.50
         let (root, _) = picture_fixture(&t);
         let hits = ranked(&root, &[], "bakery", 10);
         assert!(hits[0].boxes.is_empty());
+    }
+
+    // ---------- the ranked search cache (issue #460) ----------
+
+    /// Gives every file under `dir` a modification time `minutes_ago` minutes in the past, the way
+    /// files look a while after they were last written. Only then does the search keep their texts.
+    fn age(dir: &Path, minutes_ago: u64) {
+        let when = std::time::SystemTime::now() - std::time::Duration::from_secs(60 * minutes_ago);
+        for entry in std::fs::read_dir(dir).expect("folder") {
+            let path = entry.expect("entry").path();
+            if path.is_dir() {
+                age(&path, minutes_ago);
+            } else {
+                std::fs::File::options().write(true).open(&path).expect("file").set_modified(when).expect("set the time");
+            }
+        }
+    }
+
+    #[test]
+    fn a_page_edit_of_the_same_size_is_found_after_the_index_was_kept() {
+        let t = TempDir::new("ranked-cache-edit");
+        let root = fixture(&t);
+        age(&root, 60);
+        assert_eq!(ranked(&root, &[], "budget", 10).len(), 1);
+        assert_eq!(ranked(&root, &[], "budget", 10).len(), 1, "the kept index gives the same answer");
+        let minutes = ranked(&root, &[], "budget", 10)[0].path.clone();
+        // "budget" becomes "bucket": the page file keeps its size, only its time tells.
+        save_body(&minutes, "# Minutes\n\n- [ ] Review the caf\u{e9} bucket\n").expect("edit");
+        age(&minutes, 30);
+        assert!(ranked(&root, &[], "budget", 10).is_empty(), "the old word is gone");
+        assert_eq!(ranked(&root, &[], "bucket", 10).len(), 1, "the new word is found");
+    }
+
+    #[test]
+    fn a_page_written_a_moment_ago_is_read_again_every_time() {
+        let t = TempDir::new("ranked-cache-fresh");
+        let root = fixture(&t);
+        assert_eq!(ranked(&root, &[], "budget", 10).len(), 1);
+        let minutes = ranked(&root, &[], "budget", 10)[0].path.clone();
+        save_body(&minutes, "# Minutes\n\n- [ ] Review the caf\u{e9} bucket\n").expect("edit at once");
+        assert!(ranked(&root, &[], "budget", 10).is_empty());
+        assert_eq!(ranked(&root, &[], "bucket", 10).len(), 1);
+    }
+
+    #[test]
+    fn changed_picture_text_and_boxes_are_found_after_the_index_was_kept() {
+        let t = TempDir::new("ranked-cache-ocr");
+        let (root, page) = picture_fixture(&t);
+        age(&root, 60);
+        assert_eq!(ranked(&root, &[], "sourdough", 10).len(), 1);
+        let assets = page.join("assets");
+        std::fs::write(assets.join("receipt.png.txt"), "Rye loaf 6.00\nFlat white 4.50\n").expect("new ocr text");
+        std::fs::write(assets.join("receipt.png.lines"), "1,2,3,2,3,4,1,4\tRye loaf 6.00\n20,50,100,50,100,70,20,70\tFlat white 4.50\n")
+            .expect("new boxes");
+        age(&assets, 30);
+        assert!(ranked(&root, &[], "sourdough", 10).is_empty(), "the old picture text is gone");
+        let hits = ranked(&root, &[], "rye", 10);
+        assert_eq!(hits.len(), 1, "the new picture text is found");
+        assert_eq!(hits[0].boxes, vec![[[1.0, 2.0], [3.0, 2.0], [3.0, 4.0], [1.0, 4.0]]], "with the new boxes");
+    }
+
+    #[test]
+    fn a_removed_or_added_picture_is_seen_after_the_index_was_kept() {
+        let t = TempDir::new("ranked-cache-picture");
+        let (root, page) = picture_fixture(&t);
+        age(&root, 60);
+        assert_eq!(ranked(&root, &[], "sourdough", 10).len(), 1);
+        let picture = page.join("assets").join("receipt.png");
+        std::fs::remove_file(&picture).expect("remove the picture");
+        assert!(ranked(&root, &[], "sourdough", 10).is_empty(), "the text of a removed picture no longer counts");
+        std::fs::write(&picture, b"the picture again").expect("add the picture back");
+        age(&root, 20);
+        assert_eq!(ranked(&root, &[], "sourdough", 10).len(), 1, "an added picture's text counts again");
+    }
+
+    #[test]
+    fn a_deleted_page_is_not_found_after_the_index_was_kept() {
+        let t = TempDir::new("ranked-cache-delete");
+        let root = fixture(&t);
+        age(&root, 60);
+        let minutes = ranked(&root, &[], "budget", 10)[0].path.clone();
+        std::fs::remove_dir_all(&minutes).expect("delete the page");
+        assert!(ranked(&root, &[], "budget", 10).is_empty());
+    }
+
+    #[test]
+    fn a_page_scope_and_the_whole_folder_are_kept_apart() {
+        let t = TempDir::new("ranked-cache-scopes");
+        let root = fixture(&t);
+        age(&root, 60);
+        let all = ranked(&root, &[], "budget", 10);
+        let parent = all[0].path.parent().expect("parent page").to_path_buf();
+        assert!(ranked_under(&parent, "budget", 10).is_empty(), "the parent page alone does not say budget");
+        assert_eq!(ranked(&root, &[], "budget", 10).len(), 1, "the whole folder still does");
     }
 }

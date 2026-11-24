@@ -2249,6 +2249,37 @@ fn copy_tree(source: &std::path::Path, destination: &std::path::Path) {
     }
 }
 
+/// Issue #477: on a phone the first-use wizard was wider than the screen. Its banner ran off the
+/// left edge and its Next button off the right, so nothing in it could be reached. Every step now
+/// fits the window, and each button is on screen and works.
+#[test]
+fn the_first_use_wizard_fits_a_phone_and_every_step_can_be_reached() {
+    let t = TempDir::new("ui-welcome-wizard-phone");
+    let s = session(&t);
+    s.settings.set("ui_language", "en").expect("English UI setting");
+    s.settings.set("privacy_welcome_seen", "").expect("first use: the wizard opens");
+    let app = NoteCraftApp::new(s).with_welcome_notebook_setup(|root, _format| Ok(root.join("welcome-to-notecraft")));
+    let size = egui::vec2(360.0, 740.0);
+    let mut h = sized_harness(app, LIGHT, size);
+    settle(&mut h);
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+    for (index, step) in
+        ["Welcome to NoteCraft", "Local collection level", "Choose a page format", "Add the Welcome notebook?"].into_iter().enumerate()
+    {
+        review(&mut h, &format!("first-use-wizard-phone-{index}"));
+        let next = h.get_by_label("Next").rect();
+        assert!(screen.contains_rect(next), "{step}: the Next button {next:?} is on the {size:?} screen");
+        h.get_by_label("Next").click();
+        settle(&mut h);
+    }
+    let finish = h.get_by_label("Finish").rect();
+    assert!(screen.contains_rect(finish), "the Finish button {finish:?} is on the {size:?} screen");
+    // The window's own Back arrow shares the name; both must be on screen.
+    for back in h.query_all_by_label("Back").map(|node| node.rect()) {
+        assert!(screen.contains_rect(back), "the Back button {back:?} is on the {size:?} screen");
+    }
+}
+
 #[test]
 fn welcome_notebook_prompt_can_replace_and_open_the_release_copy() {
     let t = TempDir::new("ui-welcome-prompt-yes");
