@@ -86,6 +86,8 @@ fn fetch_page_files(dir: &Path, wait: Duration) -> Option<std::sync::mpsc::Recei
     }
 }
 
+/// How far a pen may move in a tap that is still a click, in points (egui allows a mouse 6).
+const PEN_CLICK_DIST: f32 = 12.0;
 const AUTOSAVE_AFTER: Duration = Duration::from_millis(900);
 #[cfg(feature = "voice")]
 mod voice;
@@ -13203,6 +13205,14 @@ impl NoteCraftApp {
         // Pen pressure, where the platform reports it. Nothing draws with it yet; it is
         // read here so `ui.inspect` can say whether a pen reaches this window at all.
         ctx.input(|i| self.stylus.update(&i.events));
+        crate::ribbon::note_touches(ctx);
+        // A pen on a tablet mapped to a large screen moves further in a tap than a mouse does
+        // in a click: past the six points egui allows, a tap on a button did nothing. Once a pen
+        // has been seen, a click may move twice as far.
+        let click_dist = if self.stylus.sample().pen { PEN_CLICK_DIST } else { egui::InputOptions::default().max_click_dist };
+        if ctx.options(|o| o.input_options.max_click_dist) != click_dist {
+            ctx.options_mut(|o| o.input_options.max_click_dist = click_dist);
+        }
         // An update is ready to be put in place: save the page and close, so the script that
         // waits for this window can replace the program and start the new one.
         if !self.update_closing && self.update.lock().is_ok_and(|s| matches!(*s, crate::update::Status::Restart { .. })) {

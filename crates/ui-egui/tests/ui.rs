@@ -15335,6 +15335,131 @@ fn a_colour_emoji_is_drawn_in_colour() {
     assert!(with_apple > plain + 40, "the apple is drawn in colour: {with_apple} coloured pixels with it, {plain} without");
 }
 
+/// A finger on a touch screen scrolls the ribbon sideways by dragging it, after a pause too: the
+/// ribbon has to be ready for the drag before the finger comes down.
+#[test]
+fn a_finger_swipe_scrolls_the_ribbon() {
+    let (_t, mut app, s) = sample_app("ui-finger-swipe-ribbon");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(700.0, 900.0));
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    let finger = |phase, pos| egui::Event::Touch { device_id: egui::TouchDeviceId(1), id: egui::TouchId(3), phase, pos, force: None };
+    let swipe = |h: &mut Harness<'_, NoteCraftApp>, from: egui::Pos2, by: f32| {
+        h.input_mut().events.push(finger(egui::TouchPhase::Start, from));
+        h.input_mut().events.push(egui::Event::PointerMoved(from));
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: from,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+        for n in 1..=6 {
+            let at = from - egui::vec2(by * n as f32 / 6.0, 0.0);
+            h.input_mut().events.push(finger(egui::TouchPhase::Move, at));
+            h.input_mut().events.push(egui::Event::PointerMoved(at));
+            h.step();
+        }
+        let to = from - egui::vec2(by, 0.0);
+        h.input_mut().events.push(finger(egui::TouchPhase::End, to));
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: to,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+    };
+    // A first touch: the window learns it has a touch screen, as egui's own scrolling does.
+    let add = h.get_by_label("Add").rect().center();
+    swipe(&mut h, add, 0.0);
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    for _ in 0..10 {
+        h.step();
+    }
+    let from = h.get_by_label("Add").rect().center();
+    swipe(&mut h, from, 200.0);
+    settle(&mut h);
+    let after = h.get_by_label("Add").rect().center();
+    assert!(after.x < from.x - 100.0, "the finger's swipe scrolled the ribbon: {from:?} -> {after:?}");
+}
+
+/// A pen on a tablet arrives as a touch with a force, and a tap with it moves a pixel or two
+/// before it lifts: on the ribbon that is a click on the control under it. The ribbon scrolls
+/// sideways under a finger, but a pen, and a mouse once a pen has been used, do not scroll it.
+#[test]
+fn a_pen_tap_on_the_ribbon_clicks_and_does_not_scroll_it() {
+    let (_t, mut app, s) = sample_app("ui-pen-tap-ribbon");
+    app.open_path(&s.md_page.to_string_lossy());
+    // Narrow, so the Draw tab is wider than the window and its ribbon scrolls.
+    let mut h = sized_harness(app, LIGHT, egui::vec2(700.0, 900.0));
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    let add = h.get_by_label("Add").rect().center();
+    let contact = |phase, pos| egui::Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(7), phase, pos, force: Some(0.5) };
+    h.input_mut().events.push(egui::Event::PointerMoved(add));
+    h.step();
+    h.input_mut().events.push(contact(egui::TouchPhase::Start, add));
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: add,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    // The pen wobbles on the way, as it does on a tablet mapped to a large screen: more than
+    // the six points egui gives a mouse click. (One frame: the harness steps a quarter of a
+    // second, and a press held past 0.8 s is not a click.)
+    let up = add + egui::vec2(9.0, 3.0);
+    h.input_mut().events.push(contact(egui::TouchPhase::Move, up));
+    h.input_mut().events.push(egui::Event::PointerMoved(up));
+    h.step();
+    h.input_mut().events.push(contact(egui::TouchPhase::End, up));
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: up,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    settle(&mut h);
+    assert!(h.query_by_label("Add Pen").is_some(), "the pen's tap opened Add");
+    let still = h.get_by_label("Add").rect().center();
+    assert!((still.x - add.x).abs() < 1.0, "the ribbon did not scroll under the pen: {add:?} -> {still:?}");
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+
+    // A mouse drag on the ribbon, now that a pen has been seen, does not scroll it either.
+    let from = h.get_by_label("Add").rect().center();
+    h.input_mut().events.push(egui::Event::PointerMoved(from));
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    for n in 1..=10 {
+        h.input_mut().events.push(egui::Event::PointerMoved(from - egui::vec2(20.0 * n as f32, 0.0)));
+        h.step();
+    }
+    let to = from - egui::vec2(200.0, 0.0);
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    settle(&mut h);
+    let after = h.get_by_label("Add").rect().center();
+    assert!((after.x - from.x).abs() < 1.0, "a mouse drag did not scroll the ribbon: {from:?} -> {after:?}");
+}
+
 #[test]
 fn emoji_picker_escape_clear_and_outside_click_are_local_to_one_opening() {
     let (_t, app, s) = sample_app("ui-emoji-picker-dismiss");
