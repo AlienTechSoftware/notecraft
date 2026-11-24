@@ -171,12 +171,43 @@ fn name_of(emoji: &str) -> String {
     CHOICES.iter().position(|c| *c == emoji).and_then(|at| CHOICE_NAMES.get(at)).map_or_else(|| "emoji".to_string(), |n| (*n).to_string())
 }
 
-/// The popup that is open, if any: the block it belongs to. This is view state only; the emoji
-/// themselves belong to the block.
-type Open = Option<(std::path::PathBuf, usize)>;
+/// A new opening owns its search text and selected category; nothing leaks to the next block.
+#[derive(Clone, Default)]
+struct Picker {
+    block: (std::path::PathBuf, usize),
+    query: String,
+    tab: usize,
+    focus_search: bool,
+    trigger: Option<egui::Id>,
+}
 
-fn open_id() -> egui::Id {
-    egui::Id::new("block-emoji-open")
+fn open_id(ctx: &egui::Context) -> egui::Id {
+    egui::Id::new(("block-emoji-open", ctx.viewport_id()))
+}
+
+fn popup_id(ctx: &egui::Context) -> egui::Id {
+    open_id(ctx).with("popup")
+}
+
+fn close(ctx: &egui::Context) {
+    let id = open_id(ctx);
+    let focus = popup_id(ctx).with("search");
+    ctx.data_mut(|d| d.remove::<Picker>(id));
+    ctx.memory_mut(|memory| memory.surrender_focus(focus));
+}
+
+/// The active picker owns Escape before page widgets or global search can consume it.
+pub(crate) fn handle_escape(ctx: &egui::Context) {
+    let id = open_id(ctx);
+    if let Some(open) = ctx.data(|d| d.get_temp::<Picker>(id))
+        && ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    {
+        crate::usage::record(crate::usage::Level::Usage, "block_emoji_popup_closed", &[("block", &open.block.1.to_string()), ("how", "escape")]);
+        close(ctx);
+        if let Some(trigger) = open.trigger {
+            ctx.memory_mut(|memory| memory.request_focus(trigger));
+        }
+    }
 }
 
 /// Draws the header row above block `i`: a round `+` at the left, then the block's emoji beside
@@ -205,12 +236,15 @@ pub fn header(ui: &mut egui::Ui, page_dir: &std::path::Path, i: usize, emoji: &[
         // Named for the block it belongs to, so tests and screen readers can tell the headers apart.
         button.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, editable, format!("Add emoji to block {}", i + 1)));
         if button.clicked() {
-            let now = ui.ctx().data(|d| d.get_temp::<Open>(open_id()).unwrap_or_default());
-            let next: Open = if now.as_ref() == Some(&key) { None } else { Some(key.clone()) };
-            if next.is_some() {
+            let id = open_id(ui.ctx());
+            if ui.ctx().data(|d| d.get_temp::<Picker>(id)).is_some_and(|open| open.block == key) {
+                close(ui.ctx());
+            } else {
                 crate::usage::record(crate::usage::Level::Usage, "block_header_plus_opened", &[("block", &i.to_string())]);
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(id, Picker { block: key.clone(), focus_search: true, trigger: Some(button.id), ..Picker::default() })
+                });
             }
-            ui.ctx().data_mut(|d| d.insert_temp(open_id(), next));
         }
         for (at, e) in emoji.iter().enumerate() {
             // Clicking an emoji on the block takes it off the block.
@@ -227,76 +261,101 @@ pub fn header(ui: &mut egui::Ui, page_dir: &std::path::Path, i: usize, emoji: &[
         button.rect
     };
     ui.add_space(height);
-    let plus = egui::InnerResponse::new(plus_rect, ui.interact(area_rect, ui.id().with(("block-header-row", i)), egui::Sense::hover()));
-    let open = ui.ctx().data(|d| d.get_temp::<Open>(open_id()).unwrap_or_default());
+    ui.interact(area_rect, ui.id().with(("block-header-row", i)), egui::Sense::hover());
     if let Some(at) = removed {
         let mut next = emoji.to_vec();
         let gone = next.remove(at);
         crate::usage::record(crate::usage::Level::Usage, "block_emoji_removed", &[("block", &i.to_string()), ("emoji", &gone)]);
         return Some(next);
     }
-    if open.as_ref() != Some(&key) || !editable {
+    let ctx = ui.ctx().clone();
+    let id = open_id(&ctx);
+    let mut open = ctx.data(|d| d.get_temp::<Picker>(id)).filter(|open| open.block == key)?;
+    if !editable {
+        close(&ctx);
         return None;
     }
+
+    let area_id = popup_id(&ctx);
+    let room = ctx.content_rect();
+    let width = (300.0 * zoom).clamp(174.0, (room.width() - 24.0).max(174.0));
+    let grid_height = (room.height() * 0.40).min(300.0 * zoom);
+    let below = room.bottom() - plus_rect.bottom();
+    let above = plus_rect.top() - room.top();
+    let flip = below < grid_height + 80.0 && above > below;
+    let position =
+        egui::pos2(plus_rect.left().min(room.right() - width - 16.0).max(room.left() + 8.0), if flip { plus_rect.top() } else { plus_rect.bottom() });
+    let area = egui::Area::new(area_id)
+        .order(egui::Order::Foreground)
+        .sense(egui::Sense::hover())
+        .pivot(if flip { egui::Align2::LEFT_BOTTOM } else { egui::Align2::LEFT_TOP })
+        .fixed_pos(position);
     let mut pick = None;
-    let area = egui::Area::new(ui.id().with(("block-emoji-popup", i))).order(egui::Order::Foreground).fixed_pos(plus.inner.left_bottom()).show(
-        ui.ctx(),
-        |ui| {
-            egui::Frame::popup(ui.style()).show(ui, |ui| {
-                // A small search field: typing a word narrows the grid to the emoji named by it.
-                let search_id = open_id().with("search");
-                let mut query: String = ui.data(|d| d.get_temp::<String>(search_id)).unwrap_or_default();
-                let field = ui.add(egui::TextEdit::singleline(&mut query).hint_text("Search emoji").desired_width(260.0 * zoom));
-                field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextInput, true, "Search emoji"));
-                ui.data_mut(|d| d.insert_temp(search_id, query.clone()));
-                let needle = query.trim().to_lowercase();
-                // The tab shown: the last one picked, or the first; ignored while searching.
-                let tab_id = open_id().with("tab");
-                let mut tab: usize = ui.data(|d| d.get_temp::<usize>(tab_id)).unwrap_or(0);
-                if needle.is_empty() {
-                    ui.horizontal(|ui| {
-                        for (n, (name, _)) in TABS.iter().enumerate() {
-                            if ui.selectable_label(tab == n, *name).clicked() {
-                                tab = n;
-                            }
-                        }
-                    });
-                    ui.data_mut(|d| d.insert_temp(tab_id, tab));
+    // An invisible modal backdrop receives the entire outside gesture; a click used to
+    // dismiss the picker must not move the caret, pick another block, or invoke a ribbon command.
+    let popup = egui::Modal::new(area_id).area(area).backdrop_color(egui::Color32::TRANSPARENT).show(&ctx, |ui| {
+        ui.set_width(width);
+        let field_id = area_id.with("search");
+        ui.horizontal(|ui| {
+            let field = ui.add(
+                egui::TextEdit::singleline(&mut open.query)
+                    .id(field_id)
+                    .hint_text(crate::tl_id!("ui.block_emoji_search"))
+                    .desired_width((width - 72.0).max(80.0)),
+            );
+            field.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextInput, true, crate::tl_id!("ui.block_emoji_search")));
+            if open.focus_search {
+                field.request_focus();
+                open.focus_search = false;
+            }
+            if ui.add_enabled(!open.query.is_empty(), egui::Button::new(crate::tl_id!("ui.block_emoji_clear_search"))).clicked() {
+                open.query.clear();
+                field.request_focus();
+            }
+        });
+
+        let needle = open.query.trim().to_lowercase();
+        if needle.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                for (n, (name, _)) in TABS.iter().enumerate() {
+                    if ui.selectable_label(open.tab == n, *name).clicked() {
+                        open.tab = n;
+                    }
                 }
-                let shown = if needle.is_empty() { TABS[tab.min(TABS.len() - 1)].1.clone() } else { 0..CHOICES.len() };
-                // Wide and tall enough to show every choice; the grid scrolls only past that.
-                egui::ScrollArea::vertical().max_height(300.0 * zoom).show(ui, |ui| {
-                    ui.set_max_width(10.0 * 36.0 * zoom);
-                    ui.horizontal_wrapped(|ui| {
-                        for (index, (c, name)) in CHOICES.iter().zip(CHOICE_NAMES).enumerate() {
-                            if !shown.contains(&index) {
-                                continue;
-                            }
-                            if !needle.is_empty() && !name.contains(needle.as_str()) {
-                                continue;
-                            }
-                            let label = if can_draw(ui, c) { c.to_string() } else { name_of(c) };
-                            if ui.add(egui::Button::new(label).min_size(egui::vec2(32.0 * zoom, 28.0 * zoom))).clicked() {
-                                pick = Some(*c);
-                            }
-                        }
-                    });
-                });
             });
-        },
-    );
+        }
+        let shown = if needle.is_empty() { TABS[open.tab].1.clone() } else { 0..CHOICES.len() };
+        let matches: Vec<_> = shown.filter(|index| needle.is_empty() || CHOICE_NAMES[*index].contains(needle.as_str())).collect();
+        if matches.is_empty() {
+            ui.weak(crate::tl_id!("ui.block_emoji_no_matches"));
+            return;
+        }
+        egui::ScrollArea::vertical().max_height(grid_height.min((if flip { above } else { below } - 84.0).max(28.0))).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                for index in matches {
+                    let emoji = CHOICES[index];
+                    let name = CHOICE_NAMES[index];
+                    let label = if can_draw(ui, emoji) { emoji } else { name };
+                    let button = ui.add(egui::Button::new(label).min_size(egui::vec2(32.0 * zoom, 28.0 * zoom)));
+                    if button.clicked() {
+                        pick = Some(emoji);
+                    }
+                }
+            });
+        });
+    });
     if let Some(c) = pick {
-        ui.ctx().data_mut(|d| d.insert_temp::<Open>(open_id(), None));
+        close(&ctx);
         let mut next = emoji.to_vec();
         if add(&mut next, c) {
             crate::usage::record(crate::usage::Level::Usage, "block_emoji_added", &[("block", &i.to_string()), ("emoji", c)]);
             return Some(next);
         }
-        return None;
-    }
-    if area.response.clicked_elsewhere() && !plus.inner.contains(ui.input(|i| i.pointer.hover_pos()).unwrap_or_default()) {
+    } else if popup.should_close() {
         crate::usage::record(crate::usage::Level::Usage, "block_emoji_popup_closed", &[("block", &i.to_string()), ("how", "outside")]);
-        ui.ctx().data_mut(|d| d.insert_temp::<Open>(open_id(), None));
+        close(&ctx);
+    } else {
+        ctx.data_mut(|d| d.insert_temp(id, open));
     }
     None
 }

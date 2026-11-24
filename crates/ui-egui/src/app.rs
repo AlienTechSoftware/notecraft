@@ -9380,8 +9380,12 @@ impl NoteCraftApp {
         let mut acts = Vec::new();
         // A phone-width window has room for one column, so it always shows the one tree.
         let compact = self.compact;
+        let width = ui.available_width();
+        // Use different panel IDs so a constrained frame never overwrites the
+        // user's desktop splitter widths in egui's persisted memory.
+        let narrow = (!compact && width < 960.0).then_some(width);
         if self.split_panes && !compact {
-            self.organiser_panes(ui, &mut acts);
+            self.organiser_panes(ui, &mut acts, narrow);
             for a in acts {
                 self.apply(a);
             }
@@ -9391,7 +9395,9 @@ impl NoteCraftApp {
         // Compact: the list fills the window (a panel of its own, so the desktop width the
         // tree was dragged to is kept for a wider window).
         let panel = if compact {
-            egui::Panel::left("tree-compact").resizable(false).exact_size(ui.available_width())
+            egui::Panel::left("tree-compact").resizable(false).exact_size(width)
+        } else if let Some(width) = narrow {
+            egui::Panel::left("tree-narrow").resizable(false).show_separator_line(true).exact_size((width * 0.34).min(280.0))
         } else {
             egui::Panel::left("tree").resizable(true).show_separator_line(true).default_size(300.0).size_range(200.0..=700.0)
         };
@@ -9652,14 +9658,19 @@ impl NoteCraftApp {
     /// The side panel as two columns: the organisers (notebooks, section groups and
     /// sections) and then the pages of whichever section is chosen, the way OneNote splits
     /// them. The three-bar button in the top bar hides the first column.
-    fn organiser_panes(&mut self, ui: &mut Ui, acts: &mut Vec<Act>) {
+    fn organiser_panes(&mut self, ui: &mut Ui, acts: &mut Vec<Act>, narrow: Option<f32>) {
         let scroll = || egui::containers::scroll_area::ScrollSource {
             drag: egui::containers::scroll_area::DragScroll::OnTouch,
             ..egui::containers::scroll_area::ScrollSource::default()
         };
         let mut toggle = false;
         if self.organisers {
-            egui::Panel::left("organisers").resizable(true).show_separator_line(true).default_size(240.0).size_range(160.0..=520.0).show(ui, |ui| {
+            let panel = if let Some(width) = narrow {
+                egui::Panel::left("organisers-narrow").resizable(false).show_separator_line(true).exact_size((width * 0.205).floor())
+            } else {
+                egui::Panel::left("organisers").resizable(true).show_separator_line(true).default_size(240.0).size_range(160.0..=520.0)
+            };
+            panel.show(ui, |ui| {
                 ui.add_space(4.0);
                 // The three-bar button sits at the top left of the notebooks, where
                 // OneNote keeps it, and hides this column.
@@ -9696,7 +9707,12 @@ impl NoteCraftApp {
             });
         }
         let section = self.current_section(self.session.tree()).map(|n| (n.path.clone(), n.info.title.clone(), n.children.clone(), n.info.color));
-        egui::Panel::left("pages").resizable(true).show_separator_line(true).default_size(230.0).size_range(150.0..=520.0).show(ui, |ui| {
+        let panel = if let Some(width) = narrow {
+            egui::Panel::left("pages-narrow").resizable(false).show_separator_line(true).exact_size((width * 0.205).floor())
+        } else {
+            egui::Panel::left("pages").resizable(true).show_separator_line(true).default_size(230.0).size_range(150.0..=520.0)
+        };
+        panel.show(ui, |ui| {
             ui.add_space(4.0);
             match &section {
                 Some((path, title, pages, colour)) => {
@@ -13153,6 +13169,9 @@ impl NoteCraftApp {
         crate::i18n::set_current(&self.ui_language);
         let ctx = ui.ctx().clone();
         let ctx = &ctx;
+        if self.dialog.is_none() {
+            crate::block_emoji::handle_escape(ctx);
+        }
         // Search owns Escape before text widgets and the page can consume it.
         let search_id = Id::new(("page-search", ctx.viewport_id()));
         if self.dialog.is_none()

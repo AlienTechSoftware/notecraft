@@ -12,9 +12,10 @@
 use crate::pagetext;
 use crate::preview;
 use crate::theme::Tokens;
-use egui::text::LayoutJob;
+use egui::text::{CCursor, CharIndex, LayoutJob};
 use egui::{Key, Sense, Ui, vec2};
 use notecraft_formats::markdown::{Block, Span, parse_inline};
+use unicode_segmentation::GraphemeCursor;
 mod inline_edit;
 pub use inline_edit::InlineEdit;
 
@@ -836,7 +837,7 @@ pub fn insert_at_caret(text: &str, selection: (usize, usize), insert: &str) -> (
 /// words. Returns false when there is nothing to change.
 /// Applies `kind` to one line of a code block: the lines before and after stay code.
 pub fn split_code_line(blocks: &mut Vec<Block>, at: usize, line: usize, kind: &str) -> bool {
-    let Some(Block::Code { lang, text, .. }) = blocks.get(at).cloned() else { return false };
+    let Some(Block::Code { lang, text, emoji }) = blocks.get(at).cloned() else { return false };
     let lines: Vec<&str> = text.split('\n').collect();
     if line >= lines.len() {
         return false;
@@ -854,6 +855,10 @@ pub fn split_code_line(blocks: &mut Vec<Block>, at: usize, line: usize, kind: &s
     if line + 1 < lines.len() {
         out.push(Block::Code { lang, text: lines[line + 1..].join("\n"), emoji: Vec::new() });
     }
+    // The badge belongs to the original block. Keep it once, at its original top.
+    if let Some(first) = out.first_mut() {
+        first.set_emoji(emoji);
+    }
     blocks.splice(at..at + 1, out);
     true
 }
@@ -862,7 +867,7 @@ pub fn split_code_line(blocks: &mut Vec<Block>, at: usize, line: usize, kind: &s
 /// A collapsed selection targets the caret line; a non-empty selection includes
 /// the line containing its first and last selected characters.
 pub fn split_code_selection(blocks: &mut Vec<Block>, at: usize, selection: (usize, usize), kind: &str) -> bool {
-    let Some(Block::Code { lang, text, .. }) = blocks.get(at).cloned() else { return false };
+    let Some(Block::Code { lang, text, emoji }) = blocks.get(at).cloned() else { return false };
     // Keep trailing empty lines. In the live editor, every trailing newline can
     // represent a blank line the user just created, and the caret can sit there.
     let lines: Vec<&str> = text.split('\n').collect();
@@ -896,6 +901,10 @@ pub fn split_code_selection(blocks: &mut Vec<Block>, at: usize, selection: (usiz
     if last + 1 < lines.len() {
         out.push(Block::Code { lang, text: lines[last + 1..].join("\n"), emoji: Vec::new() });
     }
+    // The badge belongs to the original block. Keep it once, at its original top.
+    if let Some(first) = out.first_mut() {
+        first.set_emoji(emoji);
+    }
     blocks.splice(at..at + 1, out);
     true
 }
@@ -927,14 +936,15 @@ pub fn set_kind(blocks: &mut [Block], at: usize, kind: &str) -> bool {
         return false;
     }
     // Code stays code with its words as they are; only whether its lines are numbered changes.
-    if let (Block::Code { lang, text, .. }, "codeblock" | "codenumbers") = (block, kind)
+    if let (Block::Code { lang, text, emoji }, "codeblock" | "codenumbers") = (block, kind)
         && block_kind(block) != kind
     {
         let language = notecraft_formats::markdown::code_lang(lang).1.to_string();
         let lang = if kind == "codenumbers" { format!("{}{language}", notecraft_formats::markdown::NUMBERED) } else { language };
         let text = text.clone();
+        let emoji = emoji.clone();
         if let Some(b) = blocks.get_mut(at) {
-            *b = Block::Code { lang, text, emoji: Vec::new() };
+            *b = Block::Code { lang, text, emoji };
         }
         return true;
     }
@@ -968,6 +978,7 @@ pub fn set_kind(blocks: &mut [Block], at: usize, kind: &str) -> bool {
     };
     // Asking for what it already is turns it back into ordinary text, like a toggle.
     let same = std::mem::discriminant(&new) == std::mem::discriminant(block) && block_kind(block) == kind;
+    let emoji = block.emoji().to_vec();
     if let Some(b) = blocks.get_mut(at) {
         *b = if same {
             Block::Paragraph(
@@ -977,6 +988,7 @@ pub fn set_kind(blocks: &mut [Block], at: usize, kind: &str) -> bool {
         } else {
             new
         };
+        b.set_emoji(emoji);
     }
     renumber(blocks);
     true
@@ -992,14 +1004,15 @@ pub fn set_tag(blocks: &mut [Block], at: usize, tag: Tag) -> bool {
     }
     if tag == Tag::ToDo {
         let already = matches!(block, Block::Item { task: Some(_), .. });
+        let emoji = block.emoji().to_vec();
         let mut inline = InlineEdit::new(block, true);
         let text = inline.text().to_owned();
         let spans = inline.parse(&text);
         if let Some(b) = blocks.get_mut(at) {
             *b = if already {
-                Block::Paragraph(spans, Vec::new())
+                Block::Paragraph(spans, emoji)
             } else {
-                Block::Item { ordered: false, number: 0, task: Some(false), depth: 0, spans, emoji: Vec::new() }
+                Block::Item { ordered: false, number: 0, task: Some(false), depth: 0, spans, emoji }
             };
         }
         renumber(blocks);
@@ -1516,7 +1529,7 @@ fn table(
                                 };
                                 let at = (i, caret.text.clone(), caret.selection);
                                 let out = steady_blink(ui, (at.0, &at.1, at.2), |ui| {
-                                    egui::TextEdit::singleline(&mut caret.text)
+                                    egui::TextEdit::singleline(&mut GraphemeBuffer(&mut caret.text))
                                         .id(id)
                                         .frame(egui::Frame::NONE)
                                         .horizontal_align(halign)
@@ -2553,8 +2566,10 @@ pub fn show_blocks(
                         }
                         c.selection = (at, at);
                     }
-                    let pre_key = egui::TextEdit::load_state(ui.ctx(), id).and_then(|st| st.cursor.char_range().map(|r| r.primary.index.0)).unwrap_or(0);
-                    ui.data_mut(|d| d.insert_temp(pre_key_caret_id(), (id, pre_key)));
+                    let pre_key = egui::TextEdit::load_state(ui.ctx(), id).and_then(|st| st.cursor.char_range());
+                    // A deletion that moves the caret to zero is not a block join.
+                    at_start = pre_key.is_some_and(|r| r.primary.index.0 == 0 && r.secondary.index.0 == 0);
+                    ui.data_mut(|d| d.insert_temp(pre_key_caret_id(), (id, pre_key.map_or(0, |r| r.primary.index.0))));
                     let out = if multiline {
                         // The same box the finished block is drawn in (preview.rs), so the block does not
                         // change its look when the caret arrives in it.
@@ -2571,7 +2586,7 @@ pub fn show_blocks(
                                 }
                                 let at = (i, c.text.clone(), c.selection);
                                 steady_blink(ui, (at.0, &at.1, at.2), |ui| {
-                                    egui::TextEdit::multiline(&mut c.text)
+                                    egui::TextEdit::multiline(&mut GraphemeBuffer(&mut c.text))
                                         .id(id)
                                         .frame(egui::Frame::NONE)
                                         .desired_width(ui.available_width())
@@ -2634,7 +2649,7 @@ pub fn show_blocks(
                         }
                         let at = (i, c.text.clone(), c.selection);
                         steady_blink(ui, (at.0, &at.1, at.2), |ui| {
-                            egui::TextEdit::singleline(&mut c.text)
+                            egui::TextEdit::singleline(&mut GraphemeBuffer(&mut c.text))
                                 .id(id)
                                 .frame(egui::Frame::NONE)
                                 .desired_width(ui.available_width())
@@ -2695,7 +2710,6 @@ pub fn show_blocks(
                     if let Some(range) = cursor_range {
                         input_caret = Some(out.galley.pos_from_cursor(range.primary).translate(out.galley_pos.to_vec2()));
                     }
-                    at_start = cursor_range.is_some_and(|r| r.primary.index.0 == 0 && r.secondary.index.0 == 0);
                     if let Some(r) = cursor_range {
                         selection = Some((r.primary.index.0, r.secondary.index.0));
                     }
@@ -2782,7 +2796,9 @@ pub fn show_blocks(
             if resp.has_focus() || resp.lost_focus() {
                 if enter && !multiline {
                     action = Some(Action::Split(i));
-                } else if backspace && at_start {
+                } else if backspace && (at_start || (range.len() == 1 && c.text.is_empty())) {
+                    // An emptied one-block box still goes away, as before. A nonempty block
+                    // whose caret just moved to zero should not join its neighbor.
                     action = Some(Action::JoinBack(i));
                 } else if tab && !multiline {
                     action = Some(Action::Indent(i, !shift));
@@ -3391,6 +3407,47 @@ fn chars_of(text: &str, byte: usize) -> usize {
     text.get(..byte.min(text.len())).map(|s| s.chars().count()).unwrap_or(0)
 }
 
+// Find the grapheme immediately before the caret or surrounding it. Segment the full
+// text, not a truncated prefix: arrows can place the caret inside a cluster.
+fn backspace_grapheme(text: &str, at: usize) -> Option<std::ops::Range<usize>> {
+    let mut cursor = GraphemeCursor::new(at, text.len(), true);
+    let start = cursor.prev_boundary(text, 0).ok().flatten()?;
+    let end = cursor.next_boundary(text, 0).ok().flatten()?;
+    Some(start..end)
+}
+
+// Selective override: TextEdit still handles selections, word deletion, IME and undo.
+struct GraphemeBuffer<'a>(&'a mut String);
+
+impl egui::TextBuffer for GraphemeBuffer<'_> {
+    fn is_mutable(&self) -> bool {
+        true
+    }
+
+    fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    fn insert_text(&mut self, text: &str, at: CharIndex) -> usize {
+        egui::TextBuffer::insert_text(self.0, text, at)
+    }
+
+    fn delete_char_range(&mut self, range: std::ops::Range<CharIndex>) {
+        egui::TextBuffer::delete_char_range(self.0, range);
+    }
+
+    fn delete_previous_char(&mut self, cursor: CCursor) -> CCursor {
+        let Some(range) = backspace_grapheme(self.0, byte_of(self.0, cursor.index.0)) else { return cursor };
+        let at = chars_of(self.0, range.start);
+        self.0.replace_range(range, "");
+        CCursor { index: CharIndex(at), prefer_next_row: true }
+    }
+
+    fn type_id(&self) -> std::any::TypeId {
+        std::any::TypeId::of::<GraphemeBuffer<'static>>()
+    }
+}
+
 /// What one frame of writing in a right-to-left line did.
 pub struct Wrote {
     pub response: egui::Response,
@@ -3560,10 +3617,9 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
                 at = a;
                 anchor = a;
                 changed = true;
-            } else if at > 0 {
-                let prev = c.text.get(..at).and_then(|s| s.chars().next_back()).map(char::len_utf8).unwrap_or(0);
-                c.text.replace_range(at - prev..at, "");
-                at -= prev;
+            } else if let Some(range) = backspace_grapheme(&c.text, at) {
+                at = range.start;
+                c.text.replace_range(range, "");
                 anchor = at;
                 changed = true;
             }
@@ -3728,7 +3784,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
             // Enter on an empty list item ends the list, as it does in every editor.
             if matches!(blocks.get(at), Some(Block::Item { spans, .. }) if spans.is_empty()) {
                 if let Some(b) = blocks.get_mut(at) {
-                    *b = Block::Paragraph(Vec::new(), Vec::new());
+                    *b = Block::Paragraph(Vec::new(), b.emoji().to_vec());
                 }
                 *caret =
                     Some(Caret { block: at, text: String::new(), focus: true, selection: (0, 0), place: None, cell: None, span: None, inline: None });
@@ -3779,7 +3835,7 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
                 // The first block: a heading becomes a paragraph, nothing is lost.
                 if let Some(Block::Heading { .. }) = blocks.first() {
                     if let Some(b) = blocks.get_mut(0) {
-                        *b = Block::Paragraph(spans_of(b).unwrap_or_default().to_vec(), Vec::new());
+                        *b = Block::Paragraph(spans_of(b).unwrap_or_default().to_vec(), b.emoji().to_vec());
                     }
                     *caret = Some(Caret { block: 0, text, focus: true, selection: (0, 0), place: None, cell: None, span: None, inline: None });
                     changed.blocks = true;
@@ -5001,6 +5057,53 @@ A note to self.
         assert!(caret_on_last_line(text, 20));
         assert!(!caret_on_last_line(text, 0));
         assert!(!caret_on_last_line(text, 6), "second line");
+    }
+
+    #[test]
+    fn block_kind_and_todo_conversions_keep_badges() {
+        let badges = vec!["\u{1F4CC}".to_owned(), "\u{1F680}".to_owned()];
+        let mut blocks = [Block::Paragraph(parse_inline("Keep **this**."), badges.clone())];
+        for kind in ["h1", "h1", "h2", "quote", "bullet", "number", "todo", "codeblock", "codeblock", "p"] {
+            assert!(set_kind(&mut blocks, 0, kind));
+            assert_eq!(blocks[0].emoji(), badges, "{kind}");
+            let visible = spans_of(&blocks[0])
+                .map(|spans| spans.iter().map(|span| span.text.as_str()).collect::<String>())
+                .unwrap_or_else(|| block_text(&blocks[0]));
+            assert_eq!(visible, "Keep this.", "{kind}");
+        }
+        for _ in 0..2 {
+            assert!(set_tag(&mut blocks, 0, Tag::ToDo));
+            assert_eq!(blocks[0].emoji(), badges);
+        }
+    }
+
+    #[test]
+    fn code_line_conversions_keep_badges_on_the_first_result_once() {
+        let badges = vec!["\u{1F4CC}".to_owned(), "\u{1F680}".to_owned()];
+        let code = Block::Code { lang: "rust".into(), text: "first\nsecond\nthird".into(), emoji: badges.clone() };
+        let mut blocks = vec![code.clone()];
+        assert!(split_code_line(&mut blocks, 0, 0, "quote"));
+        assert_eq!(blocks[0].emoji(), badges);
+        assert!(blocks[1].emoji().is_empty());
+        let mut blocks = vec![code];
+        assert!(split_code_selection(&mut blocks, 0, (6, 13), "h1"));
+        assert_eq!(blocks[0].emoji(), badges);
+        assert!(blocks[1..].iter().all(|block| block.emoji().is_empty()));
+    }
+
+    #[test]
+    fn backward_delete_removes_one_grapheme_even_at_an_interior_caret() {
+        for cluster in ["e\u{301}", "\u{1F1E8}\u{1F1E6}", "\u{2764}\u{FE0F}", "\u{1F44D}\u{1F3FD}", "\u{1F469}\u{200D}\u{1F4BB}"] {
+            for offset in 1..=cluster.chars().count() {
+                let mut text = format!("a{cluster}b");
+                let at = byte_of(&text, 1 + offset);
+                let range = backspace_grapheme(&text, at).expect("cluster");
+                text.replace_range(range, "");
+                assert_eq!(text, "ab", "offset {offset}");
+            }
+        }
+        assert_eq!(backspace_grapheme("abc", 0), None);
+        assert_eq!(backspace_grapheme("abc", 2), Some(1..2));
     }
 
     #[test]
