@@ -1521,6 +1521,41 @@ fn the_notebooks_and_the_pages_can_have_columns_of_their_own() {
     review(&mut h, "panes");
 }
 
+/// A small desktop window still offers both navigation columns without sacrificing
+/// most of the editing canvas. The full desktop layout keeps its normal width.
+#[test]
+fn small_desktop_navigation_leaves_room_to_edit() {
+    let (_t, mut app, s) = split_sample_app("ui-panes-small-desktop");
+    app.open_path(&s.md_page.to_string_lossy());
+    let wide_size = egui::vec2(1200.0, 800.0);
+    let mut h = sized_harness(app, LIGHT, wide_size);
+    settle(&mut h);
+    let wide = h.state().page_rect().expect("wide page canvas");
+    h.set_size(egui::vec2(800.0, 540.0));
+    settle(&mut h);
+    let rect = h.state().page_rect().expect("page canvas");
+    assert!(rect.width() >= 440.0, "split panes must leave a majority-width canvas: {rect:?}");
+    let v = ask(&mut h, "ui.inspect", json!({})).expect("inspect");
+    assert_eq!(v.pointer("/panes/organisers"), Some(&json!(true)));
+    assert_eq!(v.pointer("/panes/compact"), Some(&json!(false)));
+    let before = h.state().title().map(str::to_owned);
+    h.get_by_label("Add page").click();
+    settle(&mut h);
+    assert_ne!(h.state().title(), before.as_deref(), "a page can be opened from narrow navigation");
+    h.get_by_label("\u{2630}").click();
+    settle(&mut h);
+    let expanded = h.state().page_rect().expect("page canvas");
+    assert!(expanded.width() > rect.width() + 100.0, "user can still hide the organisers");
+    h.get_by_label("\u{2630}").click();
+    settle(&mut h);
+    let restored = h.state().page_rect().expect("page canvas");
+    assert!((restored.width() - rect.width()).abs() < 2.0);
+    h.set_size(wide_size);
+    settle(&mut h);
+    let wide_again = h.state().page_rect().expect("restored wide page canvas");
+    assert!((wide_again.min.x - wide.min.x).abs() < 2.0, "desktop splitter positions survive the narrow layout");
+}
+
 /// The line between two pages, which OneNote shows on hover, makes a page in that place.
 #[test]
 fn a_page_can_be_added_between_two_others() {
@@ -15423,4 +15458,182 @@ fn a_pen_tap_on_the_ribbon_clicks_and_does_not_scroll_it() {
     settle(&mut h);
     let after = h.get_by_label("Add").rect().center();
     assert!((after.x - from.x).abs() < 1.0, "a mouse drag did not scroll the ribbon: {from:?} -> {after:?}");
+#[test]
+fn emoji_picker_escape_clear_and_outside_click_are_local_to_one_opening() {
+    let (_t, app, s) = sample_app("ui-emoji-picker-dismiss");
+    let html = r#"<div class="nc-box" data-x="0" data-y="0" data-width="220"><h2>First heading</h2></div>
+<div class="nc-box" data-x="350" data-y="140" data-width="220"><h2>Second heading</h2></div>"#;
+    notecraft_store::page::save_body(&s.html_page, html).expect("two boxes with independent emoji pickers");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    let outside = h.get_by_label("File").rect().center();
+    h.get_by_label("Add emoji to block 1").click();
+    settle(&mut h);
+    h.get_by_label("Search emoji").type_text("no-such-emoji");
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("No emoji match.").count(), 1);
+    h.get_by_label("Clear").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Smileys").count(), 1);
+
+    h.get_by_label("Search emoji").type_text("no-such-emoji");
+    settle(&mut h);
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Search emoji").count(), 0);
+
+    h.get_by_label("Add emoji to block 1").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("No emoji match.").count(), 0);
+    h.get_by_label("Search emoji").type_text("no-such-emoji");
+    settle(&mut h);
+    // Click through the backdrop toward the ribbon. No File screen should open.
+    h.event(egui::Event::PointerMoved(outside));
+    h.event(egui::Event::PointerButton { pos: outside, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
+    h.run();
+    h.event(egui::Event::PointerButton { pos: outside, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Search emoji").count(), 0);
+
+    h.get_by_label("Add emoji to block 2").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Search emoji").count(), 1);
+    assert_eq!(h.query_all_by_label("No emoji match.").count(), 0);
+    assert_eq!(h.query_all_by_label("Smileys").count(), 1);
+}
+
+#[test]
+fn restyling_a_badged_block_keeps_the_badge_after_save_and_reload() {
+    let (_t, app, s) = sample_app("ui-restyle-keeps-badge");
+    let badge = "\u{1F4CC}";
+    notecraft_store::page::save_body(&s.md_page, &format!("<!-- nc-emoji: {badge} -->\nStyled text.\n")).expect("Markdown fixture");
+    notecraft_store::page::save_body(&s.html_page, &format!("<p data-nc-emoji=\"{badge}\">Styled text.</p>")).expect("HTML fixture");
+    let mut h = harness(app, LIGHT);
+    for (page, file, heading) in [
+        (&s.md_page, "index.md", format!("<!-- nc-emoji: {badge} -->\n## Styled text.")),
+        (&s.html_page, "index.html", format!("<h2 data-nc-emoji=\"{badge}\">Styled text.</h2>")),
+    ] {
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+        pump(&mut h);
+        ask(&mut h, "ui.block", json!({"kind": "h2"})).expect("heading");
+        settle(&mut h);
+        let body = h.state().body().unwrap_or_default();
+        assert!(body.contains(&heading), "{body}");
+        h.state_mut().save_page_now();
+        settle(&mut h);
+        let persisted = std::fs::read_to_string(page.join(file)).expect("saved page");
+        assert!(persisted.contains(&heading), "{persisted}");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        assert!(h.state().body().unwrap_or_default().contains(&heading));
+    }
+}
+
+#[test]
+fn one_backspace_removes_one_grapheme_in_each_page_caret_without_joining_blocks() {
+    let (_t, app, s) = sample_app("ui-backspace-grapheme");
+    let accent = "e\u{301}";
+    let coder = "\u{1F469}\u{200D}\u{1F4BB}";
+    let rtl = "\u{633}\u{64E}";
+    let fixture = format!("Earlier paragraph.\n\n{coder}follow\n\n{accent}follow\n\nfollow{rtl}\n");
+    notecraft_store::page::save_body(&s.md_page, &fixture).expect("fixture");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    for (block, cluster) in [(1, coder), (2, accent)] {
+        ask(&mut h, "ui.caret", json!({"block": block})).expect("caret");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Home"})).expect("start");
+        pump(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "ArrowRight"})).expect("past the first scalar");
+        pump(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "Backspace"})).expect("remove grapheme");
+        settle(&mut h);
+        let body = h.state().body().unwrap_or_default();
+        assert!(!body.contains(cluster), "{body}");
+        assert_eq!(body.lines().filter(|line| *line == "follow").count(), block, "whole cluster deleted, adjacent text survives: {body}");
+        let status = ask(&mut h, "ui.inspect", json!({})).expect("block count");
+        assert_eq!(status["page"]["blocks"], json!(4), "deleting into position zero is not joining blocks");
+    }
+    // At the logical end of the fourth block, the custom bidi caret handles Backspace.
+    ask(&mut h, "ui.caret", json!({"block": 3})).expect("bidi caret");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "End"})).expect("logical end");
+    pump(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Backspace"})).expect("remove bidi grapheme");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default();
+    assert!(!body.contains('\u{633}') && !body.contains('\u{64E}'), "{body}");
+    assert_eq!(body.lines().filter(|line| *line == "follow").count(), 3, "{body}");
+
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Home"})).expect("start");
+    pump(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Backspace"})).expect("join at the start");
+    settle(&mut h);
+    let status = ask(&mut h, "ui.inspect", json!({})).expect("block count");
+    assert_eq!(status["page"]["blocks"], json!(3), "a second press genuinely at the start still joins the blocks");
+}
+
+/// The picker search, not the underlying note, owns native clipboard shortcuts.
+#[test]
+fn emoji_picker_paste_stays_in_search_then_page_paste_resumes() {
+    let board = MemoryBoard::new();
+    let (_t, app, s) = sample_app("ui-emoji-picker-paste");
+    let html = r#"<div class="nc-box" data-x="0" data-y="0" data-width="220"><h2>Heading before edits</h2></div>"#;
+    notecraft_store::page::save_body(&s.html_page, html).expect("a box with a picker");
+    let mut h = harness(app.with_clipboard(Box::new(board.clone())), LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("page caret");
+    settle(&mut h);
+
+    for path in ["key-only", "queued", "queued-with-event"] {
+        h.get_by_label("Add emoji to block 1").click();
+        settle(&mut h);
+        let before = h.state().body().expect("page body").to_owned();
+        board.put_text("grinning");
+        if path == "key-only" {
+            ask(&mut h, "ui.key", json!({"key": "V", "ctrl": true})).expect("Ctrl+V");
+        } else {
+            h.state_mut().queue_keyboard_paste();
+            if path == "queued-with-event" {
+                h.event(egui::Event::Paste("grinning".into()));
+            }
+        }
+        settle(&mut h);
+        assert_eq!(h.state().body().expect("page body"), before, "{path} changed the page behind the picker");
+        assert_eq!(h.query_all_by_label("Smileys").count(), 0, "{path} should activate search");
+        assert_eq!(h.query_all_by_label("No emoji match.").count(), 0, "{path} should not duplicate the search text");
+        h.key_press(egui::Key::Escape);
+        settle(&mut h);
+    }
+
+    board.put_text("page paste still works");
+    h.state_mut().queue_keyboard_paste();
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("page paste still works"));
+
+    // A real page edit gives the page undo stack something to undo.
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("page caret");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "undo-target-749"})).expect("typing");
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("undo-target-749"));
+    let status = ask(&mut h, "ui.inspect", json!({})).expect("page history");
+    assert_eq!(status["page"]["history"]["canUndo"], true);
+    h.get_by_label("Add emoji to block 1").click();
+    settle(&mut h);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("undo-target-749"));
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    settle(&mut h);
+    assert!(!h.state().body().unwrap_or_default().contains("undo-target-749"));
 }

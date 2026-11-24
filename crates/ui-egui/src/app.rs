@@ -8479,23 +8479,9 @@ impl NoteCraftApp {
     /// buttons use, so there is one path and not two. Nothing is done when egui's text box
     /// is holding the keyboard, or both would act and the words would be pasted twice.
     fn clipboard_keys(&mut self, ctx: &egui::Context) {
-        let (copy, cut, paste, all) = ctx.input(|i| {
-            let hit = |want: egui::Key| {
-                // `key_pressed` is the platform-normalized view.  Some native
-                // backends do not retain the raw key event in `events` after a
-                // focused text widget has considered it, while the normalized
-                // edge remains available for the rest of the frame.  Keep the
-                // raw-event check as a fallback for the headless harness and
-                // older egui backends.
-                (i.key_pressed(want) && (i.modifiers.command || i.modifiers.ctrl))
-                    || i.events.iter().any(|e| {
-                        matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl))
-                    })
-                    || i.raw.events.iter().any(|e| {
-                        matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl))
-                    })
-            };
-            (hit(egui::Key::C), hit(egui::Key::X), hit(egui::Key::V), hit(egui::Key::A))
+        let (copy, cut, paste, all) = ctx.input(|input| {
+            let hit = |key| Self::clipboard_key_hit(input, key);
+            (hit(Key::C), hit(Key::X), hit(Key::V), hit(Key::A))
         });
         if !(copy || cut || paste || all) {
             return;
@@ -8525,6 +8511,30 @@ impl NoteCraftApp {
         }
         if all && ours {
             self.select_all_in_block();
+        }
+    }
+
+    fn clipboard_key_hit(input: &egui::InputState, want: Key) -> bool {
+        // Keep the raw-event fallback for headless and older native backends.
+        let event_hit = |event: &egui::Event| matches!(event, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl));
+        (input.key_pressed(want) && (input.modifiers.command || input.modifiers.ctrl))
+            || input.events.iter().any(event_hit)
+            || input.raw.events.iter().any(event_hit)
+    }
+
+    fn paste_into_emoji_search(&mut self, ctx: &egui::Context, queued: bool) {
+        // The desktop shell catches native paste before egui for images/rich page
+        // content. The picker only needs plain text. A native Paste event, where
+        // present, already provides that text, so do not insert a second copy.
+        if !crate::block_emoji::search_has_focus(ctx) {
+            ctx.input_mut(|input| input.events.retain(|event| !matches!(event, egui::Event::Paste(_) | egui::Event::PasteImage(_))));
+            return;
+        }
+        let needs_text = ctx.input(|input| {
+            (queued || Self::clipboard_key_hit(input, Key::V)) && !input.events.iter().any(|event| matches!(event, egui::Event::Paste(_)))
+        });
+        if needs_text && let Some(text) = self.clipboard.text() {
+            ctx.input_mut(|input| input.events.push(egui::Event::Paste(text)));
         }
     }
 
@@ -9382,8 +9392,12 @@ impl NoteCraftApp {
         let mut acts = Vec::new();
         // A phone-width window has room for one column, so it always shows the one tree.
         let compact = self.compact;
+        let width = ui.available_width();
+        // Use different panel IDs so a constrained frame never overwrites the
+        // user's desktop splitter widths in egui's persisted memory.
+        let narrow = (!compact && width < 960.0).then_some(width);
         if self.split_panes && !compact {
-            self.organiser_panes(ui, &mut acts);
+            self.organiser_panes(ui, &mut acts, narrow);
             for a in acts {
                 self.apply(a);
             }
@@ -9393,7 +9407,9 @@ impl NoteCraftApp {
         // Compact: the list fills the window (a panel of its own, so the desktop width the
         // tree was dragged to is kept for a wider window).
         let panel = if compact {
-            egui::Panel::left("tree-compact").resizable(false).exact_size(ui.available_width())
+            egui::Panel::left("tree-compact").resizable(false).exact_size(width)
+        } else if let Some(width) = narrow {
+            egui::Panel::left("tree-narrow").resizable(false).show_separator_line(true).exact_size((width * 0.34).min(280.0))
         } else {
             egui::Panel::left("tree").resizable(true).show_separator_line(true).default_size(300.0).size_range(200.0..=700.0)
         };
@@ -9654,14 +9670,19 @@ impl NoteCraftApp {
     /// The side panel as two columns: the organisers (notebooks, section groups and
     /// sections) and then the pages of whichever section is chosen, the way OneNote splits
     /// them. The three-bar button in the top bar hides the first column.
-    fn organiser_panes(&mut self, ui: &mut Ui, acts: &mut Vec<Act>) {
+    fn organiser_panes(&mut self, ui: &mut Ui, acts: &mut Vec<Act>, narrow: Option<f32>) {
         let scroll = || egui::containers::scroll_area::ScrollSource {
             drag: egui::containers::scroll_area::DragScroll::OnTouch,
             ..egui::containers::scroll_area::ScrollSource::default()
         };
         let mut toggle = false;
         if self.organisers {
-            egui::Panel::left("organisers").resizable(true).show_separator_line(true).default_size(240.0).size_range(160.0..=520.0).show(ui, |ui| {
+            let panel = if let Some(width) = narrow {
+                egui::Panel::left("organisers-narrow").resizable(false).show_separator_line(true).exact_size((width * 0.205).floor())
+            } else {
+                egui::Panel::left("organisers").resizable(true).show_separator_line(true).default_size(240.0).size_range(160.0..=520.0)
+            };
+            panel.show(ui, |ui| {
                 ui.add_space(4.0);
                 // The three-bar button sits at the top left of the notebooks, where
                 // OneNote keeps it, and hides this column.
@@ -9698,7 +9719,12 @@ impl NoteCraftApp {
             });
         }
         let section = self.current_section(self.session.tree()).map(|n| (n.path.clone(), n.info.title.clone(), n.children.clone(), n.info.color));
-        egui::Panel::left("pages").resizable(true).show_separator_line(true).default_size(230.0).size_range(150.0..=520.0).show(ui, |ui| {
+        let panel = if let Some(width) = narrow {
+            egui::Panel::left("pages-narrow").resizable(false).show_separator_line(true).exact_size((width * 0.205).floor())
+        } else {
+            egui::Panel::left("pages").resizable(true).show_separator_line(true).default_size(230.0).size_range(150.0..=520.0)
+        };
+        panel.show(ui, |ui| {
             ui.add_space(4.0);
             match &section {
                 Some((path, title, pages, colour)) => {
@@ -13155,6 +13181,12 @@ impl NoteCraftApp {
         crate::i18n::set_current(&self.ui_language);
         let ctx = ui.ctx().clone();
         let ctx = &ctx;
+        // Snapshot before Escape: another event in that frame still belongs to
+        // the closing picker, never to the note underneath it.
+        let emoji_picker_open = self.editor.as_ref().is_some_and(|ed| crate::block_emoji::is_open_for_page(ctx, &ed.dir));
+        if self.dialog.is_none() {
+            crate::block_emoji::handle_escape(ctx);
+        }
         // Search owns Escape before text widgets and the page can consume it.
         let search_id = Id::new(("page-search", ctx.viewport_id()));
         if self.dialog.is_none()
@@ -13214,8 +13246,10 @@ impl NoteCraftApp {
                 ctx.copy_text(text);
             }
         }
-        if self.keyboard_paste_requested {
-            self.keyboard_paste_requested = false;
+        let queued_paste = std::mem::take(&mut self.keyboard_paste_requested);
+        if emoji_picker_open {
+            self.paste_into_emoji_search(ctx, queued_paste);
+        } else if queued_paste {
             log::debug!("queued keyboard paste dispatched to paste_here");
             self.paste_here();
         }
@@ -13224,7 +13258,9 @@ impl NoteCraftApp {
         if let Some(notice) = crate::filepicker::take_notice() {
             self.say(notice);
         }
-        self.clipboard_keys(ctx);
+        if !emoji_picker_open {
+            self.clipboard_keys(ctx);
+        }
         self.poll_control(ctx);
         self.poll_import(ctx);
         #[cfg(feature = "voice")]
@@ -13245,7 +13281,7 @@ impl NoteCraftApp {
         // Not while a dialog is open: it owns the keyboard, and the page behind it must not
         // change unseen (issue #262: Ctrl+Z undid and saved an edit behind Insert symbol). A
         // text box in the dialog keeps its own undo.
-        let page_keys = self.dialog.is_none();
+        let page_keys = self.dialog.is_none() && !emoji_picker_open;
         if page_keys && ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
             // The ink's as well as the page's, whichever Undo took back.
             self.redo();

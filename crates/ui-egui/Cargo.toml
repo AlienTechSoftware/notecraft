@@ -40,6 +40,7 @@ zip = { workspace = true }
 # File > Check for updates: release versions and the SHA-256 of a download (see `update.rs`).
 semver = "1"
 sha2 = "0.10"
+unicode-segmentation = "1"
 # SystemTime::now()/Instant::now() panic on wasm32-unknown-unknown; see the workspace Cargo.toml.
 web-time = { workspace = true }
 
