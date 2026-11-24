@@ -237,7 +237,7 @@ pub fn show(
                     _ => info_page(ui, notebooks, notebooks_folder, show_path, t, &mut acts),
                 }
             };
-            if matches!(page, "Info" | "New" | "Open" | "Options") {
+            if !matches!(page, "Share" | "Export") {
                 egui::ScrollArea::vertical().id_salt(("file-content", page)).auto_shrink([false, false]).show(ui, |ui| {
                     ui.vertical(render_page);
                 });
@@ -326,9 +326,9 @@ fn save_copy_page(ui: &mut Ui, copy: &mut CopyChoice, show_path: &dyn Fn(&std::p
     }
     ui.add_space(8.0);
     ui.label(egui::RichText::new(crate::tl_id!("ui.copy_into_this_folder")).strong().color(t.text));
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         let name = ui.label(crate::tl_id!("ui.folder"));
-        ui.add(egui::TextEdit::singleline(&mut copy.folder).desired_width(420.0)).labelled_by(name.id);
+        ui.add(egui::TextEdit::singleline(&mut copy.folder).desired_width(ui.available_width().clamp(40.0, 420.0))).labelled_by(name.id);
         let choose = egui::Button::new(crate::tl_id!("ui.choose")).stroke(egui::Stroke::new(1.0, t.container_border));
         if ui.add(choose).clicked() {
             acts.push(Act::ChooseCopyFolder);
@@ -564,10 +564,14 @@ fn account_page(ui: &mut Ui, account: &mut AccountChoice, t: &Tokens, acts: &mut
     ui.label(egui::RichText::new(crate::tl_id!("ui.your_name_on_your_changes")).size(14.0).color(t.strong));
     ui.label(egui::RichText::new(crate::tl_id!("ui.your_name_on_your_changes_hint")).size(12.0).color(t.text));
     ui.add_space(6.0);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         let name = ui.label(crate::tl_id!("ui.your_name"));
-        ui.add(egui::TextEdit::singleline(&mut account.typed).desired_width(260.0).char_limit(notecraft_store::authors::MAX_NAME))
-            .labelled_by(name.id);
+        ui.add(
+            egui::TextEdit::singleline(&mut account.typed)
+                .desired_width(ui.available_width().clamp(40.0, 260.0))
+                .char_limit(notecraft_store::authors::MAX_NAME),
+        )
+        .labelled_by(name.id);
         let tidy = notecraft_store::authors::clean(&account.typed);
         let changed = tidy != account.kept;
         if ui.add_enabled(tidy.is_some() && changed, egui::Button::new(crate::tl_id!("ui.keep_this_name"))).clicked() {

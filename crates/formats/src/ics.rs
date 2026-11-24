@@ -11,13 +11,15 @@
 //! database, so it is shown as written with the zone's name beside it, never moved to a clock
 //! it is not on. A time with neither is the same on every clock. A whole-day event has a date.
 
+use std::collections::HashSet;
+
 /// How many events one file gives, and how many steps one repeat rule is followed for: a
 /// daily meeting for a hundred years.
 const MAX_EVENTS: usize = 5_000;
 const MAX_STEPS: i64 = 40_000;
 
 /// When something happens, as the file said it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum When {
     /// A moment, in seconds since 1970 UTC.
     Utc(i64),
@@ -81,6 +83,8 @@ pub struct Event {
     /// Days or times taken out of the repeats (`EXDATE`), as the file's own values.
     excluded: Vec<When>,
     pub cancelled: bool,
+    /// Original start of an exception to a recurrence (RECURRENCE-ID).
+    recurrence_id: Option<When>,
 }
 
 /// Undoes RFC 5545 text escapes: `\n`, `\,`, `\;` and `\\`.
@@ -244,7 +248,7 @@ pub fn parse(text: &str) -> Vec<Event> {
             ("BEGIN", _) if current.is_some() => nested += 1,
             ("END", "VEVENT") if nested == 0 => {
                 if let Some(event) = current.take()
-                    && event.start.is_some()
+                    && (event.start.is_some() || (event.cancelled && event.recurrence_id.is_some()))
                     && out.len() < MAX_EVENTS
                 {
                     out.push(event);
@@ -260,6 +264,7 @@ pub fn parse(text: &str) -> Vec<Event> {
                     "URL" => event.url = value.trim().to_string(),
                     "DESCRIPTION" => event.description = unescape(&value).trim().to_string(),
                     "DTSTART" => event.start = when(&value, &params),
+                    "RECURRENCE-ID" => event.recurrence_id = when(&value, &params),
                     "DTEND" => event.end = when(&value, &params),
                     "ORGANIZER" => event.organizer = Some(person(&value, &params)),
                     "ATTENDEE" if event.attendees.len() < 500 => event.attendees.push(person(&value, &params)),
@@ -290,13 +295,19 @@ struct Rule {
     interval: i64,
     count: Option<usize>,
     until: Option<When>,
-    /// Weekdays for a weekly rule, Monday = 0.
+    /// Start of the week, Monday = 0.
+    week_start: i64,
+    /// Sorted day offsets from the start of the week, for a weekly rule.
     weekdays: Vec<i64>,
+}
+
+fn parse_weekday(text: &str) -> Option<i64> {
+    ["MO", "TU", "WE", "TH", "FR", "SA", "SU"].iter().position(|day| day.eq_ignore_ascii_case(text.trim())).map(|at| at as i64)
 }
 
 fn rule(text: &str) -> Option<Rule> {
     let mut freq = None;
-    let mut r = Rule { freq: 'D', interval: 1, count: None, until: None, weekdays: Vec::new() };
+    let mut r = Rule { freq: 'D', interval: 1, count: None, until: None, week_start: 0, weekdays: Vec::new() };
     for part in text.split(';') {
         let (k, v) = part.split_once('=')?;
         match k.trim().to_ascii_uppercase().as_str() {
@@ -314,13 +325,11 @@ fn rule(text: &str) -> Option<Rule> {
             "UNTIL" => r.until = Some(when(v, &[])?),
             "BYDAY" => {
                 for day in v.split(',') {
-                    let day = day.trim().to_ascii_uppercase();
                     // "1MO" (the first Monday) is not followed.
-                    let at = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"].iter().position(|d| *d == day)?;
-                    r.weekdays.push(at as i64);
+                    r.weekdays.push(parse_weekday(day)?);
                 }
             }
-            "WKST" => {}
+            "WKST" => r.week_start = parse_weekday(v)?,
             _ => return None,
         }
     }
@@ -328,6 +337,11 @@ fn rule(text: &str) -> Option<Rule> {
     if !r.weekdays.is_empty() && r.freq != 'W' {
         return None;
     }
+    for day in &mut r.weekdays {
+        *day = (*day - r.week_start).rem_euclid(7);
+    }
+    r.weekdays.sort_unstable();
+    r.weekdays.dedup();
     Some(r)
 }
 
@@ -362,6 +376,13 @@ fn plus_months(start: &When, months: i64) -> Option<When> {
 /// Every time the events happen that starts in `from..to` (seconds on the person's clock,
 /// `offset` seconds ahead of UTC), earliest first. Cancelled events are left out.
 pub fn between(events: &[Event], from: i64, to: i64, offset: i32) -> Vec<Occurrence> {
+    // Exceptions can precede or follow the series in the file. Match the UID and the
+    // original occurrence time, not a cancelled component's own DTSTART.
+    let cancelled: HashSet<(&str, &When)> = events
+        .iter()
+        .filter(|event| event.cancelled && !event.uid.is_empty())
+        .filter_map(|event| event.recurrence_id.as_ref().map(|at| (event.uid.as_str(), at)))
+        .collect();
     let mut out = Vec::new();
     for (i, event) in events.iter().enumerate() {
         let Some(start) = event.start.clone() else { continue };
@@ -375,7 +396,7 @@ pub fn between(events: &[Event], from: i64, to: i64, offset: i32) -> Vec<Occurre
             let reach = length.unwrap_or(0).max(0);
             let in_range = if matches!(at, When::Day(_)) { s < to && s + reach.max(86_400) > from } else { s >= from && s < to };
             let skipped = event.excluded.iter().any(|x| x.local_secs(offset) == s || matches!(x, When::Day(d) if *d == s.div_euclid(86_400)));
-            if in_range && !skipped {
+            if in_range && !skipped && !cancelled.contains(&(event.uid.as_str(), &at)) {
                 out.push(Occurrence { event: i, end: length.map(|l| at.plus(l)), start: at });
             }
         };
@@ -392,8 +413,10 @@ pub fn between(events: &[Event], from: i64, to: i64, offset: i32) -> Vec<Occurre
                 'D' => vec![start.plus(step * r.interval * 86_400)],
                 'W' if r.weekdays.is_empty() => vec![start.plus(step * r.interval * 7 * 86_400)],
                 'W' => {
-                    let first = start.local_secs(offset).div_euclid(86_400);
-                    let week = first - weekday(first) + step * r.interval * 7;
+                    // Generate on the event's own clock; the viewer's offset is only
+                    // for filtering and display and must not change the weekdays.
+                    let first = start.local_secs(0).div_euclid(86_400);
+                    let week = first - (weekday(first) - r.week_start).rem_euclid(7) + step * r.interval * 7;
                     r.weekdays
                         .iter()
                         .map(|wd| start.plus((week + wd - first) * 86_400))
@@ -480,5 +503,53 @@ mod tests {
         assert!(parse("BEGIN:VEVENT\nSUMMARY:No time\nEND:VEVENT\n").is_empty(), "an event with no start is not one");
         assert!(parse("BEGIN:VEVENT\nDTSTART:2026\nDTSTART:20261340T000000\nEND:VEVENT").is_empty());
         assert!(parse(":\n;;;\nBEGIN\nEND:VEVENT\n\u{0}").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod weekly_and_cancelled_tests {
+    use super::*;
+
+    fn june(day: u32) -> i64 {
+        days(2026, 6, day).expect("June date") * 86_400
+    }
+
+    fn june_days(text: &str, from: u32, to: u32, offset: i32) -> Vec<u32> {
+        between(&parse(text), june(from), june(to), offset).iter().map(|o| civil(o.start.local_secs(offset).div_euclid(86_400)).2).collect()
+    }
+
+    #[test]
+    fn weekly_weekdays_are_a_set_and_count_and_window_follow_chronological_order() {
+        for days in ["MO,FR", "FR,MO", "FR,MO,FR"] {
+            let text = format!("BEGIN:VEVENT\nDTSTART:20260601T090000Z\nRRULE:FREQ=WEEKLY;BYDAY={days};COUNT=4\nEND:VEVENT\n");
+            assert_eq!(june_days(&text, 1, 3, 0), [1], "{days}");
+            assert_eq!(june_days(&text, 1, 29, 0), [1, 5, 8, 12], "{days}");
+        }
+    }
+
+    #[test]
+    fn a_biweekly_rule_starts_each_week_on_wkst_and_defaults_to_monday() {
+        for (week_start, expected) in [("", [2, 7, 16, 21]), (";WKST=SU", [2, 14, 16, 28])] {
+            let text = format!("BEGIN:VEVENT\nDTSTART:20260602T090000\nRRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,SU;COUNT=4{week_start}\nEND:VEVENT\n");
+            assert_eq!(june_days(&text, 1, 30, 0), expected, "{week_start}");
+        }
+    }
+
+    #[test]
+    fn a_utc_weekly_rule_uses_utc_weekdays_even_if_the_viewers_clock_crosses_midnight() {
+        let text = "BEGIN:VEVENT\nDTSTART:20260608T013000Z\nRRULE:FREQ=WEEKLY;BYDAY=MO,FR;COUNT=4\nEND:VEVENT\n";
+        assert_eq!(june_days(text, 1, 30, 0), [8, 12, 15, 19]);
+        assert_eq!(june_days(text, 1, 30, -4 * 3600), [7, 11, 14, 18]);
+    }
+
+    #[test]
+    fn a_cancelled_exception_without_dtstart_removes_only_its_uid_and_recurrence_id() {
+        let text = "BEGIN:VEVENT\nUID:standup\nRECURRENCE-ID;TZID=America/Toronto:20260602T090000\nSTATUS:CANCELLED\nEND:VEVENT\n\
+                    BEGIN:VEVENT\nUID:standup\nDTSTART;TZID=America/Toronto:20260601T090000\nRRULE:FREQ=DAILY;COUNT=3\nEND:VEVENT\n\
+                    BEGIN:VEVENT\nUID:unrelated\nDTSTART;TZID=America/Toronto:20260602T090000\nEND:VEVENT\n";
+        let events = parse(text);
+        let meetings = between(&events, june(1), june(7), 0);
+        assert_eq!(meetings.iter().map(|o| events[o.event].uid.as_str()).collect::<Vec<_>>(), ["standup", "unrelated", "standup"]);
+        assert_eq!(meetings.iter().map(|o| civil(o.start.local_secs(0).div_euclid(86_400)).2).collect::<Vec<_>>(), [1, 2, 3]);
     }
 }

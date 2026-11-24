@@ -1050,6 +1050,7 @@
 @id	ui.an_older_version_read_only_the_page_is_not_changed_unless_you_restore_it	[[RLI]]$$$An older version, read-only. The page is not changed unless you restore it.@@@[[PDI]]
 @id	ui.this_version	[[RLI]]$$$This version@@@[[PDI]]
 @id	ui.compare_with_the_page	[[RLI]]$$$Compare with the page@@@[[PDI]]
+@id	ui.page_version_comparison_truncated	[[RLI]]$$$Only the first 4,000 nonblank lines of each version are compared. There may be changes below.@@@[[PDI]]
 @id	ui.this_version_has_the_same_words_as_the_page	[[RLI]]$$$This version has the same words as the page.@@@[[PDI]]
 @id	ui.lines_marked_are_only_in_this_version_lines_marked_are_only_in_the_page	[[RLI]]$$$Lines marked − are only in this version; lines marked + are only in the page now.@@@[[PDI]]
 @id	ui.restore_this_version	[[RLI]]$$$Restore this version@@@[[PDI]]

@@ -17,6 +17,8 @@ pub struct Preview {
     pub blocks: Vec<Block>,
     /// Its lines against the page's, for the comparison.
     pub changes: Vec<Change>,
+    /// Either version had more lines than the bounded comparison can show.
+    pub truncated: bool,
     /// Showing the comparison rather than the version itself.
     pub comparing: bool,
 }
@@ -37,12 +39,14 @@ const MAX_LINES: usize = 4000;
 
 /// A page body as lines of readable text: HTML is read as the Markdown it stands for, so tags
 /// do not crowd the comparison. Blank lines carry nothing and are left out.
-pub fn lines_of(format: PageFormat, body: &str) -> Vec<String> {
+fn lines_of(format: PageFormat, body: &str) -> (Vec<String>, bool) {
     let text = match format {
         PageFormat::Html => notecraft_formats::html::to_markdown(body),
         PageFormat::Cmgfm => body.to_string(),
     };
-    text.lines().map(str::trim_end).filter(|l| !l.trim().is_empty()).map(str::to_string).take(MAX_LINES).collect()
+    let mut lines = text.lines().map(str::trim_end).filter(|l| !l.trim().is_empty()).map(str::to_string);
+    let shown = lines.by_ref().take(MAX_LINES).collect();
+    (shown, lines.next().is_some())
 }
 
 /// The lines of `then` and `now` in order, each marked as in both or in one only: the
@@ -85,8 +89,17 @@ pub fn when(created: &str) -> String {
 /// Opens version `id` of the page at `page` for reading, against the page's body `now`.
 pub fn open(page: &std::path::Path, id: &str, created: &str, now: &str) -> Result<Preview, String> {
     let (format, body) = notecraft_store::page::version_body(page, id).map_err(|e| e.to_string())?;
-    let changes = compare(&lines_of(format, &body), &lines_of(format, now));
-    Ok(Preview { id: id.to_string(), when: when(created), blocks: crate::preview::blocks_for(format, &body), changes, comparing: false })
+    let (then, then_truncated) = lines_of(format, &body);
+    let (now, now_truncated) = lines_of(format, now);
+    let changes = compare(&then, &now);
+    Ok(Preview {
+        id: id.to_string(),
+        when: when(created),
+        blocks: crate::preview::blocks_for(format, &body),
+        changes,
+        comparing: false,
+        truncated: then_truncated || now_truncated,
+    })
 }
 
 #[cfg(test)]
@@ -119,8 +132,20 @@ mod tests {
     #[test]
     fn html_is_compared_as_the_words_it_holds() {
         let got = lines_of(PageFormat::Html, "<p>alpha</p>\n\n<p><strong>bravo</strong></p>");
-        assert_eq!(got, ["alpha", "**bravo**"]);
-        assert_eq!(lines_of(PageFormat::Cmgfm, "one\n\n\ntwo  \n"), ["one", "two"]);
+        assert_eq!(got, (vec![String::from("alpha"), String::from("**bravo**")], false));
+        assert_eq!(lines_of(PageFormat::Cmgfm, "one\n\n\ntwo  \n"), (vec![String::from("one"), String::from("two")], false));
+    }
+
+    #[test]
+    fn a_comparison_knows_when_nonblank_lines_are_omitted() {
+        let exact = "same line\n\n".repeat(MAX_LINES);
+        let (known, full) = lines_of(PageFormat::Cmgfm, &exact);
+        assert_eq!(known.len(), MAX_LINES);
+        assert!(!full, "blank lines do not count towards the limit");
+        let (first, first_omitted) = lines_of(PageFormat::Cmgfm, &format!("{exact}old last line"));
+        let (second, second_omitted) = lines_of(PageFormat::Cmgfm, &format!("{exact}new last line"));
+        assert_eq!(first, second, "the bounded samples agree");
+        assert!(first_omitted && second_omitted, "the entire page comparison is incomplete");
     }
 
     #[test]

@@ -577,6 +577,15 @@ impl TagScope {
         }
     }
 
+    fn path(self, page: Option<&Path>) -> Option<PathBuf> {
+        match self {
+            Self::Page => page.map(Path::to_path_buf),
+            Self::Section => page.and_then(section_for),
+            Self::Notebook => page.and_then(notebook_for),
+            Self::All => None,
+        }
+    }
+
     fn id(self) -> &'static str {
         match self {
             TagScope::Page => "page",
@@ -700,6 +709,7 @@ struct PendingFormat {
 struct Editor {
     generation: u64,
     dir: PathBuf,
+    page_id: Option<String>,
     format: PageFormat,
     title: String,
     title_buf: String,
@@ -1047,6 +1057,7 @@ enum Dialog {
     NewNotebook {
         name: String,
         format: Option<PageFormat>,
+        first: bool,
     },
     Add {
         parent: PathBuf,
@@ -1511,9 +1522,6 @@ pub struct NoteCraftApp {
     /// File > Account as it is being filled in (issue #304).
     account_choice: backstage::AccountChoice,
     portable: crate::portable::Choice,
-    /// Which pages the user has read, kept beside their settings (issue #291). Loaded the
-    /// first time it is needed.
-    read_state: Option<notecraft_store::read_state::ReadState>,
     /// The pages that are unread now, and when that was last worked out.
     unread: std::collections::HashSet<PathBuf>,
     unread_checked: Option<Instant>,
@@ -1733,7 +1741,6 @@ impl NoteCraftApp {
             copy_choice: backstage::CopyChoice::default(),
             account_choice: backstage::AccountChoice::default(),
             portable: crate::portable::Choice::default(),
-            read_state: None,
             unread: std::collections::HashSet::new(),
             unread_checked: None,
             full_page: false,
@@ -2842,10 +2849,12 @@ impl NoteCraftApp {
         }
     }
 
-    /// The user's read state, loaded from beside their settings the first time (issue #291).
-    fn read_state(&mut self) -> &mut notecraft_store::read_state::ReadState {
+    /// All native note windows share this file and their read/write operations run on the
+    /// same event-loop thread. Read it afresh so a later window does not write over marks
+    /// kept by a previous window since this one was opened.
+    fn read_state(&self) -> notecraft_store::read_state::ReadState {
         let file = self.session.settings.path().parent().unwrap_or(Path::new(".")).join("read-state.tsv");
-        self.read_state.get_or_insert_with(|| notecraft_store::read_state::ReadState::load(&file))
+        notecraft_store::read_state::ReadState::load(&file)
     }
 
     /// Records the page at `dir` as read as it stands. `opened` is true when the user opened
@@ -2854,7 +2863,7 @@ impl NoteCraftApp {
     fn note_read(&mut self, dir: &Path, opened: bool) {
         let Some(id) = notecraft_store::tree::read_node(dir).filter(|n| n.kind == NodeKind::Page).map(|n| n.id) else { return };
         let stamp = notecraft_store::read_state::page_stamp(dir);
-        let state = self.read_state();
+        let mut state = self.read_state();
         if !opened && state.is_marked_unread(&id) {
             return;
         }
@@ -2933,11 +2942,11 @@ impl NoteCraftApp {
             return;
         };
         let Some(id) = notecraft_store::tree::read_node(&dir).map(|n| n.id) else { return };
-        if self.read_state().is_marked_unread(&id) {
+        let mut state = self.read_state();
+        if state.is_marked_unread(&id) {
             self.note_read(&dir, true);
             self.say(crate::tl_id!("ui.marked_as_read"));
         } else {
-            let state = self.read_state();
             state.mark_unread(&id);
             if let Err(e) = state.save() {
                 log::warn!("could not keep the read state: {e}");
@@ -3302,6 +3311,11 @@ impl NoteCraftApp {
         }
         self.code = crate::codeview::State::default();
         let another_page = self.editor.as_ref().is_none_or(|e| e.dir != dir);
+        let refresh_tags = another_page
+            && self
+                .tags_pane
+                .as_ref()
+                .is_some_and(|pane| pane.scope != TagScope::All && pane.scope.path(self.current_page()) != pane.scope.path(Some(dir)));
         if let Some(Output::Page(page)) = self.run("page.load", &params(&[("path", &path_str(dir))])) {
             // A view belongs to the page it was made on: a pan kept showed every other page as far
             // off the screen, blank until the window was started again. Another page opens at its
@@ -3367,6 +3381,7 @@ impl NoteCraftApp {
                 generation: 0,
                 authors: notecraft_store::authors::of(dir),
                 dir: dir.to_path_buf(),
+                page_id: notecraft_store::tree::read_node(dir).map(|n| n.id).filter(|id| !id.is_empty()),
                 format: page.format,
                 title_buf,
                 titled: page.has_title,
@@ -3423,6 +3438,9 @@ impl NoteCraftApp {
             self.remember_last_page(dir, another_page);
             // Opened, so read (issue #291).
             self.note_read(dir, true);
+            if refresh_tags {
+                self.refresh_tags();
+            }
             self.say(crate::tl_id!("ui.opened"));
             self.page_revision = crate::windows::Revision::read(dir).ok();
         }
@@ -3958,7 +3976,7 @@ impl NoteCraftApp {
                 let kind = if parent_kind == NodeKind::Notebook || parent_kind == NodeKind::SectionGroup { NodeKind::Section } else { kind };
                 self.dialog = Some(Dialog::Add { parent, parent_kind, title: String::new(), kind, format: None });
             }
-            Act::NewNotebook => self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None }),
+            Act::NewNotebook => self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None, first: true }),
             Act::CloseNotebook(path) => {
                 self.save_now();
                 let was_showing = self.editor.as_ref().is_some_and(|ed| ed.dir.starts_with(&path));
@@ -4927,7 +4945,7 @@ impl NoteCraftApp {
                 }
                 backstage::Act::NewNotebook => {
                     self.backstage = None;
-                    self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None });
+                    self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None, first: true });
                 }
                 backstage::Act::OpenFolder(p) => self.reveal(&p),
                 backstage::Act::ChooseFolder => self.choose_notebooks_folder(),
@@ -5501,6 +5519,7 @@ impl NoteCraftApp {
             sensitivity: self.sensitivity,
             pressure_available: self.stylus.sample().pen,
             has_page: self.editor.is_some(),
+            has_recycle_notebook: self.recycle_notebook().is_some(),
             page_marked_unread: self.editor.as_ref().is_some_and(|e| self.unread.contains(&e.dir)),
             hide_authors: self.hide_authors,
             painting: self.painter.is_some(),
@@ -5825,7 +5844,7 @@ impl NoteCraftApp {
                 }
             }
             ribbon::Act::RecycleBin => {
-                if let Some(notebook) = self.editor.as_ref().and_then(|e| notebook_for(&e.dir)) {
+                if let Some(notebook) = self.recycle_notebook().map(Path::to_path_buf) {
                     self.open_recycle_bin(notebook, None);
                 }
             }
@@ -6079,9 +6098,17 @@ impl NoteCraftApp {
                     self.say(crate::tl_id!("ui.open_a_page_first"));
                     return;
                 };
-                ed.rule_colour = c;
+                if ed.locked {
+                    self.say(crate::tl_id!("ui.page_is_read_only"));
+                    return;
+                }
                 let path = path_str(&ed.dir);
-                self.run("page.paper", &params(&[("path", &path), ("rules", c.map(notecraft_model::NodeColor::id).unwrap_or("none"))]));
+                if self.run("page.paper", &params(&[("path", &path), ("rules", c.map(notecraft_model::NodeColor::id).unwrap_or("none"))])).is_none() {
+                    return;
+                }
+                if let Some(ed) = self.editor.as_mut() {
+                    ed.rule_colour = c;
+                }
                 self.say(match c {
                     Some(c) => crate::i18n::format_message_id("ui.the_lines_are_colour", &[("colour", &crate::tl!(c.label()).to_lowercase())]),
                     None => crate::tl_id!("ui.the_lines_are_the_theme_s_own_colour").to_string(),
@@ -6794,19 +6821,22 @@ impl NoteCraftApp {
             self.say("Open a page first");
             return;
         };
-        if let Some(p) = paper {
-            ed.paper = Some(p);
+        if ed.locked {
+            self.say(crate::tl_id!("ui.page_is_read_only"));
+            return;
         }
-        if let Some(c) = colour {
-            ed.colour = c;
-        }
-        let (path, paper, colour) = (path_str(&ed.dir), ed.paper, ed.colour);
+        let (path, paper, colour) = (path_str(&ed.dir), paper.or(ed.paper), colour.unwrap_or(ed.colour));
         let pairs: Vec<(&str, &str)> = vec![
             ("path", path.as_str()),
             ("paper", paper.map(ribbon::RuleLines::id).unwrap_or("none")),
             ("color", colour.map(notecraft_model::NodeColor::id).unwrap_or("none")),
         ];
-        self.run("page.paper", &params(&pairs));
+        if self.run("page.paper", &params(&pairs)).is_some()
+            && let Some(ed) = self.editor.as_mut()
+        {
+            ed.paper = paper;
+            ed.colour = colour;
+        }
     }
 
     /// Gives the open page its sheet, or takes it back to Auto, and writes it into the page's
@@ -6816,14 +6846,22 @@ impl NoteCraftApp {
             self.say(crate::tl_id!("ui.open_a_page_first"));
             return;
         };
+        if ed.locked {
+            self.say(crate::tl_id!("ui.page_is_read_only"));
+            return;
+        }
         if ed.paper_size == paper {
             return;
         }
         let was_size = ed.paper_size.map(|p| (std::mem::discriminant(&p.size), p.landscape));
-        ed.paper_size = paper;
         let path = path_str(&ed.dir);
         let line = paper.map_or_else(|| "auto".to_string(), notecraft_model::paper::Paper::write);
-        self.run("page.paper_size", &params(&[("path", &path), ("size", &line)]));
+        if self.run("page.paper_size", &params(&[("path", &path), ("size", &line)])).is_none() {
+            return;
+        }
+        if let Some(ed) = self.editor.as_mut() {
+            ed.paper_size = paper;
+        }
         // Said when the sheet or its turn changes, not at every step of a dragged margin.
         let now_size = paper.map(|p| (std::mem::discriminant(&p.size), p.landscape));
         if now_size != was_size || paper.is_none() {
@@ -6947,7 +6985,7 @@ impl NoteCraftApp {
         let shape = ed.history.here().is_some_and(|s| s.blocks.len() == ed.blocks.len());
         let kind = match (moving, shape, here, was) {
             (Some(press), ..) => crate::history::Kind::Moving(press),
-            (None, true, Some(a), Some(b)) if a == b && !edit => crate::history::Kind::Typing(a),
+            (None, true, Some(a), was) if !edit && was.is_none_or(|b| a == b) => crate::history::Kind::Typing(a),
             _ => crate::history::Kind::Edit,
         };
         let mut step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), kind);
@@ -8881,6 +8919,20 @@ impl NoteCraftApp {
         }
     }
 
+    /// A selected notebook (even with no pages) owns its own recovery action. When
+    /// there is no selection, only a single open notebook is unambiguous.
+    fn recycle_notebook(&self) -> Option<&Path> {
+        let tree = self.session.tree();
+        [self.selected.as_deref(), self.current_page()]
+            .into_iter()
+            .flatten()
+            .find_map(|p| tree.iter().find(|n| p.starts_with(&n.path)).map(|n| n.path.as_path()))
+            .or(match tree {
+                [n] => Some(n.path.as_path()),
+                _ => None,
+            })
+    }
+
     /// Opens (or refreshes in place) the notebook's recycle bin with `selected` chosen, or the
     /// newest item when that one is gone.
     fn open_recycle_bin(&mut self, notebook: PathBuf, selected: Option<String>) {
@@ -8935,6 +8987,9 @@ impl NoteCraftApp {
             Some(crate::preview::PictureHighlight { page_dir: path.to_path_buf(), src: format!("assets/{name}"), pixels, boxes: hit.boxes.clone() })
         });
         crate::preview::set_picture_highlight(ctx, highlight);
+        if self.backstage.is_some() {
+            self.close_backstage();
+        }
         self.expand_to(path);
         self.open_page_soon(path);
     }
@@ -9080,13 +9135,7 @@ impl NoteCraftApp {
     /// Looks again for the tagged notes in the Tags Summary's scope.
     fn refresh_tags(&mut self) {
         let Some(pane) = self.tags_pane.as_ref() else { return };
-        let page = self.editor.as_ref().map(|ed| ed.dir.clone());
-        let scope = match pane.scope {
-            TagScope::Page => page.clone(),
-            TagScope::Section => page.as_deref().and_then(section_for),
-            TagScope::Notebook => page.as_deref().and_then(notebook_for),
-            TagScope::All => None,
-        };
+        let scope = pane.scope.path(self.current_page());
         let mut p: Vec<(&str, String)> = Vec::new();
         if let Some(scope) = scope {
             p.push(("scope", path_str(&scope)));
@@ -9426,7 +9475,7 @@ impl NoteCraftApp {
             });
             ui.horizontal_wrapped(|ui| {
                 if ui.small_button(crate::tl_id!("ui.new_notebook")).clicked() {
-                    self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None });
+                    self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None, first: true });
                 }
                 if ui.small_button(crate::tl_id!("ui.expand_all")).on_hover_text(crate::tl_id!("ui.open_every_level")).clicked() {
                     self.open = self.collect_branches().into_iter().collect();
@@ -10144,15 +10193,26 @@ impl NoteCraftApp {
                     // sheet is drawn behind it; an Auto page is the usual column (issue #269).
                     let sheet = ed.paper_size.filter(|_| wide).map(|p| crate::paper::Sheet::of(p, zoom_scale));
                     let page_column = sheet.map_or(780.0 * zoom_scale, crate::paper::Sheet::column);
-                    let margin = if wide { ((available_width - page_column) / 2.0).max(8.0) } else { 0.0 };
-                    let top_pad = sheet.map_or(4, |s| s.margins[0].round().clamp(4.0, 127.0) as i8);
+                    let margin = if let Some(sheet) = sheet.filter(|s| s.size.x <= available_width) {
+                        (available_width - sheet.size.x) / 2.0 + sheet.margins[3]
+                    } else if wide {
+                        ((available_width - page_column) / 2.0).max(8.0)
+                    } else {
+                        0.0
+                    };
+                    let top_pad = sheet.map_or(4.0, |s| s.margins[0].max(4.0));
+                    let content = ui.max_rect();
+                    // egui's Frame margins are i8. Use a float layout rect so a small
+                    // sheet stays centered in a wide window and shares its text origin.
+                    let body_min = content.min + vec2(margin, top_pad);
+                    let column = if available_width >= page_column { page_column } else { (available_width - 16.0).max(1.0) };
+                    let body_rect = egui::Rect::from_min_max(body_min, egui::pos2(body_min.x + column, (content.max.y - 8.0).max(body_min.y)));
                     if let Some(sheet) = sheet {
-                        let left = ui.max_rect().min.x + f32::from(margin as i8) - sheet.margins[3];
-                        let top = ui.max_rect().min.y + f32::from(top_pad) - sheet.margins[0];
+                        let left = body_rect.min.x - sheet.margins[3];
+                        let top = body_rect.min.y - sheet.margins[0];
                         crate::paper::paint(&ui.painter().with_clip_rect(viewport), viewport, egui::pos2(left, top), sheet, &tokens);
                     }
-                    egui::Frame::NONE.inner_margin(egui::Margin { left: margin as i8, right: margin as i8, top: top_pad, bottom: 8 }).show(ui, |ui| {
-                        let column = if available_width >= page_column { page_column } else { (available_width - 16.0).max(1.0) };
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(body_rect), |ui| {
                         ui.set_min_width(column);
                         ui.set_width(column);
                         // The page's own name, at the top of the sheet. Before the sheet's
@@ -10416,7 +10476,7 @@ impl NoteCraftApp {
                             if moved.changed.link.is_some() {
                                 *follow = moved.changed.link;
                             }
-                        } else if wide {
+                        } else if wide || ed.locked {
                             // A page with markup the block model cannot hold: writing it back
                             // would drop that markup, so it is read here and changed in its
                             // source. See docs/gaps.md.
@@ -10427,7 +10487,11 @@ impl NoteCraftApp {
                             crate::pagemenu::show(ui, ui.clip_rect(), &mut page_acts, &tokens, ed.locked);
                             ui.add_space(14.0);
                             ui.label(
-                                egui::RichText::new(crate::tl_id!("ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92"))
+                                egui::RichText::new(if ed.locked {
+                                    crate::tl_id!("ui.page_is_read_only")
+                                } else {
+                                    crate::tl_id!("ui.this_page_holds_markup_notecraft_does_not_edit_yet_s_bc3b3b6a92")
+                                })
                                     .small()
                                     .color(tokens.muted),
                             );
@@ -11334,7 +11398,7 @@ impl NoteCraftApp {
                     }
                 }
             }
-            Dialog::NewNotebook { name, format } => {
+            Dialog::NewNotebook { name, format, first } => {
                 let mut go = false;
                 egui::Window::new(crate::tl_id!("ui.new_notebook"))
                     .title_bar(false)
@@ -11348,9 +11412,14 @@ impl NoteCraftApp {
                         ui.set_min_width(420.0);
                         ui.label(crate::tl_id!("ui.name_2"));
                         let r = ui.text_edit_singleline(name);
-                        // Read Enter before asking for focus again: a new focus request hides the lost focus.
                         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                        r.request_focus();
+                        if *first {
+                            r.request_focus();
+                            *first = false;
+                        }
+                        if ui.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+                            keep = false;
+                        }
                         format_picker(ui, format);
                         ui.add_space(12.0);
                         ui.horizontal(|ui| {
@@ -11947,8 +12016,14 @@ impl NoteCraftApp {
                                 log::info!("node deleted successfully: {:?}", path);
                                 if was_open {
                                     self.editor = None;
+                                    self.pad = None;
+                                    self.page_revision = None;
                                 }
-                                self.selected = None;
+                                // Retain the notebook and the nearest surviving organiser,
+                                // so History can recover even its last page or section.
+                                if was_open || self.selected.as_ref().is_some_and(|p| p.starts_with(&*path)) {
+                                    self.selected = path.parent().map(Path::to_path_buf);
+                                }
                                 self.say(crate::tl_id!("ui.moved_to_the_notebook_recycle_bin"));
                             }
                             None => {
@@ -12219,6 +12294,7 @@ impl NoteCraftApp {
                 }
             }
             Dialog::PageVersions { page, versions, preview } => {
+                let can_restore = notecraft_store::page::read_only(page).is_ok_and(|locked| !locked);
                 let mut restore: Option<String> = None;
                 let mut open: Option<(String, String)> = None;
                 let mut back = false;
@@ -12229,6 +12305,9 @@ impl NoteCraftApp {
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                     .show(ctx, |ui| {
                         ui.set_min_width(420.0);
+                        if !can_restore {
+                            ui.colored_label(t.warn, crate::tl_id!("ui.page_is_read_only"));
+                        }
                         if let Some(p) = preview.as_mut() {
                             // An older version, read-only (issue #278): said in the window
                             // itself, so it is never taken for the page.
@@ -12248,7 +12327,9 @@ impl NoteCraftApp {
                             egui::ScrollArea::vertical().max_height(420.0).auto_shrink([false, true]).show(ui, |ui| {
                                 if p.comparing {
                                     let changed = p.changes.iter().any(|c| !matches!(c, crate::versions::Change::Same(_)));
-                                    if !changed {
+                                    if p.truncated {
+                                        ui.label(crate::tl_id!("ui.page_version_comparison_truncated"));
+                                    } else if !changed {
                                         ui.label(crate::tl_id!("ui.this_version_has_the_same_words_as_the_page"));
                                     }
                                     for change in &p.changes {
@@ -12273,7 +12354,7 @@ impl NoteCraftApp {
                             });
                             ui.add_space(8.0);
                             ui.horizontal(|ui| {
-                                if modal_button(ui, &t, crate::tl_id!("ui.restore_this_version"), true).clicked() {
+                                if modal_button_enabled(ui, &t, crate::tl_id!("ui.restore_this_version"), true, can_restore).clicked() {
                                     restore = Some(p.id.clone());
                                 }
                                 if modal_button(ui, &t, crate::tl_id!("ui.back_to_the_list"), false).clicked() {
@@ -12302,7 +12383,7 @@ impl NoteCraftApp {
                                         if modal_button(ui, &t, crate::tl_id!("ui.preview"), true).clicked() {
                                             open = Some((version.id.clone(), version.created.clone()));
                                         }
-                                        if modal_button(ui, &t, crate::tl_id!("ui.restore"), false).clicked() {
+                                        if modal_button_enabled(ui, &t, crate::tl_id!("ui.restore"), false, can_restore).clicked() {
                                             restore = Some(version.id.clone());
                                         }
                                     });
@@ -12326,11 +12407,11 @@ impl NoteCraftApp {
                         Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_open_that_version_error", &[("error", &e)])),
                     }
                 }
-                if let Some(id) = restore {
-                    if self.run("page.version.restore", &params(&[("path", &path_str(page)), ("id", &id)])).is_some() {
-                        self.open_page(page);
-                        self.say(crate::tl_id!("ui.restored_the_saved_page_version"));
-                    }
+                if let Some(id) = restore
+                    && self.run("page.version.restore", &params(&[("path", &path_str(page)), ("id", &id)])).is_some()
+                {
+                    self.open_page(page);
+                    self.say(crate::tl_id!("ui.restored_the_saved_page_version"));
                     keep = false;
                 }
             }
@@ -13281,7 +13362,7 @@ impl NoteCraftApp {
         // Not while a dialog is open: it owns the keyboard, and the page behind it must not
         // change unseen (issue #262: Ctrl+Z undid and saved an edit behind Insert symbol). A
         // text box in the dialog keeps its own undo.
-        let page_keys = self.dialog.is_none() && !emoji_picker_open;
+        let page_keys = self.dialog.is_none() && !emoji_picker_open && !ctx.memory(|memory| memory.has_focus(search_id));
         if page_keys && ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
             // The ink's as well as the page's, whichever Undo took back.
             self.redo();
@@ -13295,7 +13376,7 @@ impl NoteCraftApp {
         // something were written into the note (issue #134). The code view has a Find of its
         // own for the file it shows, so it keeps Ctrl+F while it is open.
         // OneNote's Ctrl+K: the Link dialog for the words picked or the link the caret is in.
-        if !self.show_source && self.dialog.is_none() && self.editor.is_some() && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::K)) {
+        if !self.show_source && page_keys && self.editor.is_some() && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::K)) {
             self.open_link_dialog();
         }
         if !self.show_source && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::F) || i.consume_key(Modifiers::COMMAND, Key::E)) {
@@ -13325,6 +13406,7 @@ impl NoteCraftApp {
             self.title_band(ui, false);
             self.storage_notice(ui);
             self.backstage_screen(ui);
+            self.search_popup(ctx);
             self.dialogs(ctx);
             self.import_progress(ctx);
             self.frame_edges(ctx);
@@ -15770,7 +15852,7 @@ mod page_open_tests {
         let pipe = sample.md_page.join("still-coming.bin");
         assert!(std::process::Command::new("mkfifo").arg(&pipe).status().expect("mkfifo").success());
         h.state_mut().open_page_soon(&sample.md_page);
-        h.state_mut().dialog = Some(Dialog::NewNotebook { name: String::new(), format: None });
+        h.state_mut().dialog = Some(Dialog::NewNotebook { name: String::new(), format: None, first: true });
         assert!(write_when_read(&pipe, b"in"), "the page's files were being read");
         for _ in 0..20 {
             h.step();

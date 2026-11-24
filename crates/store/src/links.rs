@@ -102,7 +102,12 @@ pub fn resolve_in(roots: &[PathBuf], page_dir: &Path, href: &str) -> Link {
         {
             return by_path;
         }
-        return roots.iter().find_map(|root| node_with_id(root, &id, 0)).map(Link::Node).unwrap_or(by_path);
+        return roots.iter().find_map(|root| node_with_id(root, &id, 0)).map(Link::Node).unwrap_or_else(|| match by_path {
+            // The path was only a location hint. A different page or a file at that
+            // location cannot stand in for the missing identity.
+            Link::Node(path) | Link::File(path) => Link::Missing(path),
+            other => other,
+        });
     }
     if href.get(..5).is_some_and(|s| s.eq_ignore_ascii_case("file:")) {
         // A `file:` address is a path in disguise and could name anything on the disk.
@@ -445,7 +450,11 @@ mod tests {
         assert_eq!(other, b, "the new page took the old folder name");
         assert_eq!(node(resolve_in(&roots, &a, &uri)), moved_at, "the link still finds the page it was copied for");
 
-        // An id that is nowhere is no way out of the notebooks: the path decides as before.
+        crate::ops::delete_node(&root, &moved).expect("recycle the original page");
+        assert_eq!(resolve_in(&roots, &a, &uri), Link::Missing(b.clone()), "a recycled page does not open a different page");
+        assert_eq!(resolve_in(&roots, &a, &bare), Link::Node(b), "legacy links still resolve by path");
+
+        // A missing id is no way out of the notebooks.
         assert_eq!(resolve_in(&roots, &a, "notecraft:/../secret?id=nothing"), Link::Outside);
     }
 

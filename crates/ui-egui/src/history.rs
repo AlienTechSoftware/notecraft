@@ -95,7 +95,9 @@ impl History {
         let branched = self.at + 1 < self.steps.len();
         self.steps.truncate(self.at + 1);
         if !branched && self.folds_into_last(&step) {
-            let when = self.steps[self.at].when;
+            // A typing pause is measured from the most recent keystroke, not the
+            // beginning of the burst. A drag remains one step from its original press.
+            let when = if matches!(step.kind, Kind::Typing(_)) { step.when } else { self.steps[self.at].when };
             self.steps[self.at] = Step { when, ..step };
             return;
         }
@@ -190,6 +192,21 @@ mod tests {
 
     fn step(text: &str, kind: Kind) -> Step {
         Step::new(text.to_string(), parse(text), Vec::new(), None, kind)
+    }
+
+    #[test]
+    fn typing_is_coalesced_until_a_pause_between_keystrokes() {
+        let first = step("start", Kind::Edit);
+        let start = first.when;
+        let mut history = History::new(first);
+        for (millis, words) in [(100, "starta"), (525, "startab"), (950, "startabc"), (1700, "startabcd")] {
+            let mut next = step(words, Kind::Typing(0));
+            next.when = start + Duration::from_millis(millis);
+            history.record(next);
+        }
+        assert_eq!(history.undo().map(|s| s.body.as_str()), Some("startabc"));
+        assert_eq!(history.undo().map(|s| s.body.as_str()), Some("start"));
+        assert_eq!(history.redo().map(|s| s.body.as_str()), Some("startabc"));
     }
 
     #[test]

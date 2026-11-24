@@ -113,25 +113,27 @@ pub fn version_body(dir: &Path, id: &str) -> Result<(PageFormat, String)> {
     Ok((format, body_of(format, &text)))
 }
 
-/// Restores an earlier version, first preserving the current file as another version.
+/// Restores an earlier body without rolling back the page’s current metadata.
+/// The current file is first preserved as another version.
 pub fn restore_version(dir: &Path, id: &str) -> Result<()> {
     if !valid_version_id(id) {
         return Err(StoreError::invalid("that page version id is not valid"));
     }
+    let writer = crate::coordination::page_writer(dir)?;
+    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
+    let (format, body) = version_body(dir, id)?;
     let (_, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
-    let snapshot = version_dir(dir).join(id).join(file.file_name().unwrap_or_default());
-    if !snapshot.is_file() {
-        return Err(StoreError::NotFound(format!("page version {id}")));
-    }
-    let contents = fs::read_to_string(&snapshot).map_err(|e| StoreError::io("read", &snapshot, e))?;
+    let current = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
     // A locked page keeps its words, so an older version does not replace them (issue #441).
-    let (format, _) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
-    let now = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
-    if read_only_in(format, &now) {
+    if read_only_in(format, &current) {
         return Err(StoreError::invalid("this page is locked read only"));
     }
+    let out = update_body(format, &current, &body, &iso_now(), true);
+    if out.len() > MAX_PAGE_BYTES {
+        return Err(StoreError::invalid("this page is too large to save"));
+    }
     snapshot_current(dir, &file, true)?;
-    write_atomic_file(&file, &contents)
+    write_atomic_file(&file, &out)
 }
 
 fn version_dir(dir: &Path) -> PathBuf {
@@ -400,8 +402,13 @@ pub fn appearance(dir: &Path) -> Result<(Option<String>, Option<String>)> {
 
 /// Writes them into the page's own file. `None` takes the line out again.
 pub fn set_appearance(dir: &Path, paper: Option<&str>, colour: Option<&str>) -> Result<()> {
+    let writer = crate::coordination::page_writer(dir)?;
+    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    if read_only_in(format, &text) {
+        return Err(StoreError::invalid("this page is locked read only"));
+    }
     let out = match format {
         PageFormat::Html => {
             let text = html::set_meta(&text, PAPER_META, paper.unwrap_or_default());
@@ -441,8 +448,13 @@ pub fn rule_colour(dir: &Path) -> Result<Option<String>> {
 
 /// Writes it into the page's own file, beside the paper. `None` takes the line out again.
 pub fn set_rule_colour(dir: &Path, colour: Option<&str>) -> Result<()> {
+    let writer = crate::coordination::page_writer(dir)?;
+    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    if read_only_in(format, &text) {
+        return Err(StoreError::invalid("this page is locked read only"));
+    }
     let out = match format {
         PageFormat::Html => html::set_meta(&text, RULES_META, colour.unwrap_or_default()),
         PageFormat::Cmgfm => {
@@ -474,8 +486,13 @@ pub fn paper_size(dir: &Path) -> Result<Option<notecraft_model::paper::Paper>> {
 
 /// Writes it into the page's own file. `None` takes the line out, which is Auto.
 pub fn set_paper_size(dir: &Path, paper: Option<notecraft_model::paper::Paper>) -> Result<()> {
+    let writer = crate::coordination::page_writer(dir)?;
+    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
+    if read_only_in(format, &text) {
+        return Err(StoreError::invalid("this page is locked read only"));
+    }
     let line = paper.map(notecraft_model::paper::Paper::write);
     let out = match format {
         PageFormat::Html => html::set_meta(&text, PAPER_SIZE_META, line.as_deref().unwrap_or_default()),
@@ -653,22 +670,33 @@ fn save_body_inner(dir: &Path, body: &str, author: Option<&str>) -> Result<Strin
         return Err(StoreError::invalid("this page is locked read only"));
     }
     let now = iso_now();
-    let out = match format {
-        PageFormat::Html => html::set_meta(&html::replace_inner(&text, body), "notecraft:updated", &now),
-        PageFormat::Cmgfm => {
-            let (front, _) = frontmatter::split_front(&text);
-            let front = if front.is_empty() { front } else { kv::replace_line(&front, "updated:", &format!("updated: {now}")) };
-            format!("{front}\n{}", body.trim_start_matches('\n'))
-        }
-    };
-    // A body with its boxes in the text says everything the older line said, so the line goes.
-    let out = if boxes::read(format, body).1.is_some() { without_old_boxes(format, &out) } else { out };
+    let out = update_body(format, &text, body, &now, false);
     let out = match author {
         Some(name) => crate::authors::note(format, &out, name),
         None => out,
     };
     write_atomic(&file, &out)?;
     Ok(now)
+}
+
+/// Replaces the editable body while keeping the live page header and marking the write today.
+fn update_body(format: PageFormat, text: &str, body: &str, now: &str, restore: bool) -> String {
+    let out = match format {
+        PageFormat::Html => html::set_meta(&html::replace_inner(text, body), "notecraft:updated", now),
+        PageFormat::Cmgfm => {
+            let (front, _) = frontmatter::split_front(text);
+            let front = if restore {
+                frontmatter::set_value(&front, "updated", now)
+            } else if front.is_empty() {
+                front
+            } else {
+                kv::replace_line(&front, "updated:", &format!("updated: {now}"))
+            };
+            format!("{front}\n{}", body.trim_start_matches('\n'))
+        }
+    };
+    // A body with its boxes in the text says everything the older line said, so the line goes.
+    if boxes::read(format, body).1.is_some() { without_old_boxes(format, &out) } else { out }
 }
 
 /// Writes a file by writing a temporary file next to it and renaming it over the
@@ -752,6 +780,27 @@ mod tests {
     }
 
     #[test]
+    fn read_only_blocks_all_paper_appearance_changes_in_both_formats() {
+        let t = crate::testing::TempDir::new("locked-paper");
+        let settings = crate::settings::Settings::at(t.path().join("settings.toml"));
+        let notebook = crate::ops::create_notebook(t.path(), "Notebook", None, &settings).expect("notebook");
+        let paper = notecraft_model::paper::Paper::parse("a6 portrait").expect("paper");
+        for format in [PageFormat::Html, PageFormat::Cmgfm] {
+            let page = crate::ops::create_node(&notebook, format.id(), notecraft_model::NodeKind::Page, Some(format), &settings).expect("page");
+            set_read_only(&page, true).expect("lock");
+            let (_, file) = page_file(&page).expect("file");
+            let before = fs::read(&file).expect("read");
+            assert!(set_appearance(&page, Some("grid-small"), Some("yellow")).is_err());
+            assert!(set_rule_colour(&page, Some("red")).is_err());
+            assert!(set_paper_size(&page, Some(paper)).is_err());
+            assert_eq!(fs::read(&file).expect("read"), before);
+            set_read_only(&page, false).expect("unlock");
+            set_paper_size(&page, Some(paper)).expect("unlocked changes still work");
+            assert_eq!(paper_size(&page).expect("paper size"), Some(paper));
+        }
+    }
+
+    #[test]
     fn page_versions_restore_the_saved_page_file() {
         let t = crate::testing::TempDir::new("page-versions");
         let settings = crate::settings::Settings::at(t.path().join("settings.toml"));
@@ -766,6 +815,49 @@ mod tests {
         restore_version(&page, &saved_versions[0].id).expect("restore");
         assert_eq!(load_page(&page).expect("page").body, initial);
         assert_eq!(versions(&page).expect("versions after restore").len(), 2);
+    }
+
+    #[test]
+    fn restoring_a_page_version_keeps_live_metadata_and_records_a_recent_edit() {
+        let t = crate::testing::TempDir::new("restore-body-only");
+        let settings = crate::settings::Settings::at(t.path().join("settings.toml"));
+        let notebook = crate::ops::create_notebook(t.path(), "Notebook", None, &settings).expect("notebook");
+        for format in [PageFormat::Html, PageFormat::Cmgfm] {
+            let section = crate::ops::create_node(&notebook, "Section", notecraft_model::NodeKind::Section, None, &settings).expect("section");
+            let page = crate::ops::create_node(&section, "Original title", notecraft_model::NodeKind::Page, Some(format), &settings).expect("page");
+            let (_, file) = page_file(&page).expect("file");
+            let before = fs::read_to_string(&file).expect("header");
+            let old = match format {
+                PageFormat::Html => "<p>historical content</p>",
+                PageFormat::Cmgfm => "historical content\n",
+            };
+            fs::write(&file, update_body(format, &before, old, "2025-01-03T08:00:00Z", true)).expect("age fixture");
+            save_body(&page, "current body").expect("save");
+            let version = versions(&page).expect("versions").remove(0);
+            let sibling = crate::ops::create_node(&section, "Sibling", notecraft_model::NodeKind::Page, Some(format), &settings).expect("sibling");
+            crate::ops::move_page(&page, false).expect("move page down");
+            crate::ops::set_title(&page, "Current title").expect("rename page");
+            set_direction(&page, Some(Dir::Rtl)).expect("change direction");
+            let live = read_node(&page).expect("live metadata");
+            assert!(live.order > read_node(&sibling).expect("sibling metadata").order);
+
+            restore_version(&page, &version.id).expect("restore");
+            let restored = load_page(&page).expect("page");
+            assert_eq!(restored.body.trim(), old.trim(), "{format:?}");
+            let after = read_node(&page).expect("metadata after restore");
+            assert_eq!((after.title, after.id, after.order), (live.title, live.id, live.order), "{format:?}");
+            assert_eq!(restored.dir, Some(Dir::Rtl), "{format:?}");
+            let today = iso_now();
+            assert!(
+                crate::read_state::page_stamp(&page).is_some_and(|stamp| stamp.starts_with(&today[..10])),
+                "{format:?}: today, not the old snapshot date"
+            );
+            let current = versions(&page).expect("versions");
+            assert!(
+                current.iter().any(|v| version_body(&page, &v.id).is_ok_and(|(_, b)| b.trim() == "current body")),
+                "{format:?}: pre-restore copy"
+            );
+        }
     }
 
     /// Issue #278: a saved version can be read without restoring it.
