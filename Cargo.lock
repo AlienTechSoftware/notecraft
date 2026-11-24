@@ -3438,6 +3438,9 @@ name = "notecraft-search"
 version = "0.0.19"
 dependencies = [
  "unicode-normalization",
+ "unicode-properties",
+ "unicode-script",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -3501,6 +3504,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "ttf-parser",
+ "unicode-segmentation",
  "ureq",
  "web-time",
  "zip 4.6.1",
