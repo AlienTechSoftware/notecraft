@@ -35,6 +35,9 @@ craft-i18n = { git = "https://github.com/storytold/craft-libs", rev = "92d392cff
 # Versions match the sibling Craft apps (storytold/wordcraft).
 eframe = "0.37"
 egui = { version = "0.37", features = ["default_fonts"] }
+# Colour emoji (COLR fonts) are drawn only when epaint has its colour-font rendering on; without it the
+# emoji face is blank on every platform, the web included.
+epaint = { version = "0.37", features = ["color_fonts"] }
 egui_extras = { version = "0.37", default-features = false, features = ["image", "file", "svg_text"] }
 egui_kittest = { version = "0.37", features = ["wgpu", "snapshot"] }
 serde_json = "1"

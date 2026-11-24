@@ -3480,6 +3480,7 @@ dependencies = [
  "egui-wgpu",
  "egui_extras",
  "egui_kittest",
+ "epaint",
  "fontdb",
  "hayro",
  "image",

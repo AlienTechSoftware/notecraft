@@ -18,6 +18,7 @@ voice = ["dep:craft-voice-core", "dep:craft-voice-runtime"]
 craft-voice-core = { workspace = true, optional = true }
 craft-voice-runtime = { workspace = true, optional = true, features = ["microphone"] }
 craft-i18n = { workspace = true }
+epaint = { workspace = true }
 notecraft-input-language = { path = "../input-language" }
 notecraft-model = { workspace = true }
 notecraft-ink = { workspace = true }
