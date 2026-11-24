@@ -755,7 +755,7 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
         // is wider than the window, which looks like a stray black artifact.  Keep
         // the scroll area (overflow tabs still scroll) but do not paint that bar.
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-        .scroll_source(egui::scroll_area::ScrollSource { drag: egui::scroll_area::DragScroll::OnTouch, ..egui::scroll_area::ScrollSource::default() })
+        .scroll_source(egui::scroll_area::ScrollSource { drag: finger_drag(ui.ctx()), ..egui::scroll_area::ScrollSource::default() })
         .show(ui, |ui| {
             ui.horizontal_top(|ui| {
                 ui.add_space(4.0);
@@ -4140,4 +4140,25 @@ mod tests {
     fn the_font_size_list_is_onenotes_whole_sizes() {
         assert_eq!(FONT_SIZES.as_slice(), [8u8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72].as_slice());
     }
+}
+
+/// Whether a drag on the ribbon scrolls it: only under a finger. egui's `OnTouch` asks whether a
+/// touch screen was ever seen, and a pen on a tablet arrives as a touch too (with a force): after
+/// the first stroke every drag scrolled the ribbon, and a pen's tap, which moves a pixel or two,
+/// became a scroll instead of a click. A finger is a touch that reports no force; it is held to
+/// from its start to its end.
+fn finger_drag(ctx: &egui::Context) -> egui::scroll_area::DragScroll {
+    let id = egui::Id::new("ribbon-finger-down");
+    let was = ctx.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    let now = ctx.input(|i| {
+        i.events.iter().fold(was, |down, e| match e {
+            egui::Event::Touch { phase: egui::TouchPhase::Start, force: None, .. } => true,
+            egui::Event::Touch { phase: egui::TouchPhase::End | egui::TouchPhase::Cancel, force: None, .. } => false,
+            _ => down,
+        })
+    });
+    if now != was {
+        ctx.data_mut(|d| d.insert_temp(id, now));
+    }
+    if now { egui::scroll_area::DragScroll::Always } else { egui::scroll_area::DragScroll::Never }
 }
