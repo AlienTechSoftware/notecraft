@@ -67,6 +67,13 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens) {
                     acts.push(Act::SavePictureAs(src.clone()));
                     picked = true;
                 }
+                // A picture or printout that shares a box with other blocks can be taken out of it
+                // where it stands, as dragging it out does, without the drag (issue #481).
+                if crate::containers::can_unbox(ui.ctx(), &src) && floating::menu_row(ui, None, crate::tl_id!("ui.take_out_of_box"), t).clicked() {
+                    ui.data_mut(|d| d.insert_temp(crate::containers::unbox_request_id(), src.clone()));
+                    ui.ctx().request_repaint();
+                    picked = true;
+                }
                 ui.separator();
                 for (glyph, label, how) in [
                     (Some(Glyph::Icon(Icon::Redo)), crate::tl_id!("ui.rotate_right_90"), crate::turn::Turn::Right),

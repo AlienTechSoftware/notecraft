@@ -7897,8 +7897,9 @@ fn a_picture_in_a_shared_box_is_moved_by_dragging_it() {
             assert_eq!(one, 1, "one box holds all three blocks to begin with in {what}: {state}");
             let width = state.pointer("/page/containers/0/width").and_then(Value::as_f64).expect("width");
             let rect = rendered_picture_rect(&h, 1);
-            // The picture's box would sit a pad in from its left and a handle's height down.
-            let (from_x, from_y) = (rect.min.x - ox - 6.0, rect.min.y - oy - 14.0);
+            // The picture's box would sit a pad in from its left, and a header row and a handle's
+            // height down.
+            let (from_x, from_y) = (rect.min.x - ox - 6.0, rect.min.y - oy - 24.0 - 14.0);
 
             // A plain click picks the picture and leaves the arrangement alone.
             ask(&mut h, "ui.click", json!({"x": rect.center().x, "y": rect.center().y})).expect("click the picture");
@@ -7949,6 +7950,77 @@ fn a_picture_in_a_shared_box_is_moved_by_dragging_it() {
             let (reopened, _) = notecraft_formats::boxes::read(format, h.state().body().expect("reopened page"));
             assert_eq!(reopened, original, "the same blocks after reopening in {what}");
         }
+    }
+}
+
+/// Issue #481: a picture that shares its box with other blocks has Take out of box in its
+/// right-click menu. It does what dragging it out does, without the drag: the box becomes three,
+/// the picture's box where the picture stands, and nothing on the page moves. One Ctrl+Z puts the
+/// one box back. A picture alone in its box is not offered it.
+#[test]
+fn a_picture_is_taken_out_of_its_box_from_its_menu() {
+    use notecraft_model::PageFormat;
+
+    for format in [PageFormat::Html, PageFormat::Cmgfm] {
+        let what = format!("{format:?}");
+        let t = TempDir::new("ui-picture-take-out");
+        let mut s = session(&t);
+        let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+        let page = if format == PageFormat::Html { sample.html_page.clone() } else { sample.md_page.clone() };
+        let path = page.to_string_lossy().into_owned();
+        s.attach_bytes(&path, "picture.png", LOGO_PNG).expect("picture");
+        let body = match format {
+            PageFormat::Html => "<p>Before</p><img src=\"assets/picture.png\" alt=\"picture\" width=\"200\" height=\"100\"><p>After</p>",
+            PageFormat::Cmgfm => "Before\n\n<img src=\"assets/picture.png\" alt=\"picture\" width=\"200\" height=\"100\">\n\nAfter\n",
+        };
+        s.run("page.save", &params(&[("path", &path), ("body", body)])).expect("page");
+        s.run("page.containers", &params(&[("path", &path), ("boxes", "0,0,400,3")])).expect("one shared box");
+        let mut app = NoteCraftApp::new(s);
+        app.open_path(&path);
+        let mut h = harness(app, LIGHT);
+        settle(&mut h);
+        let (original, _) = notecraft_formats::boxes::read(format, body);
+
+        let state = look_at(&mut h);
+        let origin = state.pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+        let (ox, oy) = (origin.first().and_then(Value::as_f64).unwrap_or(0.0) as f32, origin.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32);
+        let rect = rendered_picture_rect(&h, 1);
+        // The picture's box sits a pad in from its left, and a header row and a handle's height
+        // down.
+        let (at_x, at_y) = (rect.min.x - ox - 6.0, rect.min.y - oy - 24.0 - 14.0);
+
+        ask(&mut h, "ui.click", json!({"x": rect.center().x, "y": rect.center().y, "button": "right"})).expect("right click the picture");
+        settle(&mut h);
+        h.get_by_label("Take out of box").click();
+        settle(&mut h);
+        let state = look_at(&mut h);
+        let boxes = state.pointer("/page/containers").and_then(Value::as_array).cloned().unwrap_or_default();
+        let counts: Vec<u64> = boxes.iter().filter_map(|b| b.get("blocks").and_then(Value::as_u64)).collect();
+        assert_eq!(counts, vec![1, 1, 1], "words, picture, words in three boxes in {what}: {state}");
+        let field = |i: usize, key: &str| boxes[i].get(key).and_then(Value::as_f64).expect("box field") as f32;
+        assert_eq!((field(0, "x"), field(0, "y")), (0.0, 0.0), "the words before did not move in {what}");
+        assert!((field(1, "x") - at_x).abs() < 2.0 && (field(1, "y") - at_y).abs() < 2.0, "the picture stayed where it was in {what}: {state}");
+        let after = rendered_picture_rect(&h, 1);
+        assert!((after.min - rect.min).length() < 2.0, "the picture is drawn where it was in {what}: {rect:?} then {after:?}");
+        let (now, _) = notecraft_formats::boxes::read(format, h.state().body().expect("open page"));
+        assert_eq!(now, original, "the words and the picture are untouched in {what}");
+
+        // Alone in its box now, it has nothing to come out of.
+        ask(&mut h, "ui.click", json!({"x": after.center().x, "y": after.center().y, "button": "right"})).expect("right click it again");
+        settle(&mut h);
+        assert!(h.query_by_label("Save picture as...").is_some(), "its menu is open in {what}");
+        assert!(h.query_by_label("Take out of box").is_none(), "a picture alone in its box is not offered it in {what}");
+        h.key_press(egui::Key::Escape);
+        settle(&mut h);
+
+        ask(&mut h, "ui.undo", json!({})).expect("undo");
+        settle(&mut h);
+        let state = look_at(&mut h);
+        assert_eq!(
+            state.pointer("/page/containers").and_then(Value::as_array).map(Vec::len),
+            Some(1),
+            "one undo puts the one box back in {what}: {state}"
+        );
     }
 }
 
