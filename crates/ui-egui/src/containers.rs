@@ -2081,10 +2081,13 @@ fn at_open_paper(ui: &Ui, frames: &[Rect]) -> bool {
 /// Where a box started by a click at `at` on open paper goes, in the page's own points: its words
 /// begin under the pointer. The page is drawn at `zoom` from `area`'s corner, so the distance on
 /// the screen is divided by it; taken as it was, a click at any zoom but 100 % put the box (and the
-/// caret) further from the corner than the pointer, the more so the further out it was.
+/// caret) further from the corner than the pointer, the more so the further out it was. A box's
+/// first block has its header row above the box's bar, so the box begins that row higher too:
+/// without it the caret stood a row below the pointer.
 fn paper_spot(at: Pos2, area: Rect, zoom: f32) -> Pos2 {
     let zoom = zoom.max(0.01);
-    pos2(((at.x - area.min.x) / zoom - PAD).max(0.0), ((at.y - area.min.y) / zoom - HANDLE).max(0.0))
+    let above_words = HANDLE + crate::block_emoji::HEADER_ROW;
+    pos2(((at.x - area.min.x) / zoom - PAD).max(0.0), ((at.y - area.min.y) / zoom - above_words).max(0.0))
 }
 
 /// How wide the page is for a box started on it, in page points.
@@ -2151,7 +2154,7 @@ mod tests {
             let click = pos2(100.0 + 400.0, 50.0 + 300.0);
             let at = super::paper_spot(click, area, zoom);
             // Where the box's words begin, drawn back on the screen.
-            let words = pos2(area.min.x + (at.x + PAD) * zoom, area.min.y + (at.y + HANDLE) * zoom);
+            let words = pos2(area.min.x + (at.x + PAD) * zoom, area.min.y + (at.y + crate::block_emoji::HEADER_ROW + HANDLE) * zoom);
             assert!((words - click).length() < 0.01, "at {zoom}: clicked {click:?}, words at {words:?}");
         }
         assert_eq!(super::paper_room(area, 2.0), 400.0 - 2.0 * PAD, "the page is half as many points wide at twice the zoom");
