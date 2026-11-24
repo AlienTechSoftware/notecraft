@@ -309,6 +309,17 @@ pub fn smooth_open_curve(pts: &[(f32, f32)]) -> Vec<(f32, f32)> {
             src.push(p);
         }
     }
+    if let Some(&end) = pts.last()
+        && src.last().is_some_and(|&prev| prev != end)
+    {
+        if src.len() >= 2 {
+            if let Some(last) = src.last_mut() {
+                *last = end;
+            }
+        } else {
+            src.push(end);
+        }
+    }
     if src.len() < 3 {
         return pts.to_vec();
     }
@@ -567,5 +578,19 @@ mod tests {
         assert!(is_scribble(&stroke));
         assert_eq!(recognise(&stroke), None);
         assert_eq!(recognise_or_curve(&stroke), None);
+    }
+
+    #[test]
+    fn smooth_open_curve_preserves_short_final_endpoint() {
+        let pts = [(0.0, 0.0), (10.0, 10.0), (20.0, 20.0), (30.0, 10.0), (40.0, 0.0), (40.5, 0.0)];
+        let smoothed = smooth_open_curve(&pts);
+        assert_eq!(smoothed.first().copied(), Some((0.0, 0.0)));
+        assert_eq!(smoothed.last().copied(), Some((40.5, 0.0)));
+
+        let Some(Fit::Curve(curve)) = recognise_or_curve(&hand(&pts)) else {
+            panic!("expected Fit::Curve");
+        };
+        assert_eq!(curve.first().copied(), Some((0.0, 0.0)));
+        assert_eq!(curve.last().copied(), Some((40.5, 0.0)));
     }
 }

@@ -421,6 +421,31 @@ Flat white 4.50
     }
 
     #[test]
+    fn ranked_search_matches_exact_emoji_and_unaccented_words_in_either_format() {
+        let t = TempDir::new("search-ranked-unicode");
+        let s = Settings::at(t.path().join("s.toml"));
+        let root = t.path().join("nb");
+        let nb = ops::create_notebook(&root, "NB", None, &s).expect("nb");
+        let html = ops::create_node(&nb, "HTML", NodeKind::Page, Some(PageFormat::Html), &s).expect("html");
+        let md = ops::create_node(&nb, "Markdown 🇨🇦", NodeKind::Page, Some(PageFormat::Cmgfm), &s).expect("md");
+        let filler = "intro ".repeat(40);
+        save_body(&html, &format!("<p>{filler}café السَّلَامُ 👩🏽‍💻</p>")).expect("save html");
+        save_body(&md, "café السَّلَامُ 👩‍💻\n").expect("save markdown");
+        let hits = ranked(&root, &[], "cafe السلام", 10);
+        assert_eq!(hits.len(), 2, "{hits:?}");
+        assert!(hits.iter().any(|hit| hit.path == md));
+        let hits = ranked(&root, &[], "cafe السلام 👩🏽‍💻", 10);
+        assert_eq!(hits.len(), 1, "{hits:?}");
+        assert_eq!(hits[0].path, html);
+        assert!(hits[0].snippet.contains("café السَّلَامُ 👩🏽‍💻"), "{hits:?}");
+        let snippet = &hits[0].snippet;
+        let matches: Vec<&str> = snippet_matches(snippet, "cafe السلام 👩🏽‍💻").into_iter().map(|range| &snippet[range]).collect();
+        assert_eq!(matches, ["café", "السَّلَامُ", "👩🏽‍💻"]);
+        assert_eq!(ranked(&root, &[], "🇨🇦", 10)[0].path, md);
+        assert!(ranked(&root, &[], "cafe 🇨🇲", 10).is_empty());
+    }
+
+    #[test]
     fn a_chinese_or_japanese_run_is_found_only_as_a_whole_run() {
         // Documented limit: there is no word segmentation for CJK, so the whole run is the word.
         let t = TempDir::new("search-cjk");
