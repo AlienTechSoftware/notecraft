@@ -1386,6 +1386,8 @@ pub struct NoteCraftApp {
     picture_text: Option<crate::picture_text::Dialog>,
     /// File > Print while its dialog is open (issue #168).
     print: Option<crate::print::Dialog>,
+    /// A paste meant for the text box of such a dialog, held while the page is drawn.
+    modal_paste: Option<String>,
     templates_pane: Option<TemplatesPane>,
     cursor: usize,
     tokens: Tokens,
@@ -1679,6 +1681,7 @@ impl NoteCraftApp {
             custom_tags: None,
             picture_text: None,
             print: None,
+            modal_paste: None,
             templates_pane: None,
             cursor: 0,
             tokens: Theme::DEFAULT.tokens(),
@@ -7546,6 +7549,7 @@ impl NoteCraftApp {
     /// Shows the Print dialog while it is open, and saves the PDF it asks for.
     fn print_dialog(&mut self, ctx: &Context) {
         let Some(mut dialog) = self.print.take() else { return };
+        self.give_modal_paste(ctx);
         let out = dialog.show(ctx, &self.tokens);
         if let Some(said) = out.said {
             self.say(said);
@@ -7585,6 +7589,7 @@ impl NoteCraftApp {
     /// Shows Copy Text from Picture while it is open, and does what it asks.
     fn picture_text_dialog(&mut self, ctx: &Context) {
         let Some(mut dialog) = self.picture_text.take() else { return };
+        self.give_modal_paste(ctx);
         let out = dialog.show(ctx, &self.tokens);
         if let Some(text) = out.copy {
             match self.clipboard.set_text(&text) {
@@ -8707,6 +8712,46 @@ impl NoteCraftApp {
         (input.key_pressed(want) && (input.modifiers.command || input.modifiers.ctrl))
             || input.events.iter().any(event_hit)
             || input.raw.events.iter().any(event_hit)
+    }
+
+    /// Whether one of the dialogs drawn outside `self.dialog` is open: Copy Text from Picture or
+    /// Print. It owns the keyboard as `self.dialog` does, so the page's shortcuts and paste wait.
+    fn own_modal_open(&self) -> bool {
+        self.picture_text.is_some() || self.print.is_some()
+    }
+
+    /// Ctrl+V while such a dialog is open: the clipboard's text goes to the dialog's text box when
+    /// it has the keyboard, and nowhere otherwise.
+    ///
+    /// The page is drawn before the dialog and takes a paste for itself, so the paste is held here,
+    /// out of the frame's events, and handed to the dialog just before it is drawn
+    /// ([`Self::give_modal_paste`]).
+    fn paste_into_modal(&mut self, ctx: &egui::Context, queued: bool) {
+        let mut pasted: Option<String> = None;
+        ctx.input_mut(|input| {
+            input.events.retain(|event| match event {
+                egui::Event::Paste(text) => {
+                    pasted.get_or_insert_with(|| text.clone());
+                    false
+                }
+                egui::Event::PasteImage(_) => false,
+                _ => true,
+            });
+        });
+        if ctx.memory(|memory| memory.focused().is_none()) {
+            return;
+        }
+        if pasted.is_none() && (queued || ctx.input(|input| Self::clipboard_key_hit(input, Key::V))) {
+            pasted = self.clipboard.text();
+        }
+        self.modal_paste = pasted;
+    }
+
+    /// Hands a paste held by [`Self::paste_into_modal`] to the dialog about to be drawn.
+    fn give_modal_paste(&mut self, ctx: &egui::Context) {
+        if let Some(text) = self.modal_paste.take() {
+            ctx.input_mut(|input| input.events.push(egui::Event::Paste(text)));
+        }
     }
 
     fn paste_into_emoji_search(&mut self, ctx: &egui::Context, queued: bool) {
@@ -13490,8 +13535,13 @@ impl NoteCraftApp {
             }
         }
         let queued_paste = std::mem::take(&mut self.keyboard_paste_requested);
+        // A dialog of the window's own (Copy Text from Picture) owns the keyboard: a paste goes into
+        // its text box, never into the page behind it.
+        let modal = self.own_modal_open();
         if emoji_picker_open {
             self.paste_into_emoji_search(ctx, queued_paste);
+        } else if modal {
+            self.paste_into_modal(ctx, queued_paste);
         } else if queued_paste {
             log::debug!("queued keyboard paste dispatched to paste_here");
             self.paste_here();
@@ -13501,7 +13551,7 @@ impl NoteCraftApp {
         if let Some(notice) = crate::filepicker::take_notice() {
             self.say(notice);
         }
-        if !emoji_picker_open {
+        if !emoji_picker_open && !modal {
             self.clipboard_keys(ctx);
         }
         self.poll_control(ctx);
@@ -13512,7 +13562,7 @@ impl NoteCraftApp {
             ctx.request_repaint();
         }
         // Ctrl+P prints the open page, as it does everywhere (issue #168).
-        if self.dialog.is_none() && self.print.is_none() && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::P)) {
+        if self.dialog.is_none() && !self.own_modal_open() && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::P)) {
             self.open_print();
         }
         if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::S)) {
@@ -13528,7 +13578,7 @@ impl NoteCraftApp {
         // Not while a dialog is open: it owns the keyboard, and the page behind it must not
         // change unseen (issue #262: Ctrl+Z undid and saved an edit behind Insert symbol). A
         // text box in the dialog keeps its own undo.
-        let page_keys = self.dialog.is_none() && !emoji_picker_open && !ctx.memory(|memory| memory.has_focus(search_id));
+        let page_keys = self.dialog.is_none() && !self.own_modal_open() && !emoji_picker_open && !ctx.memory(|memory| memory.has_focus(search_id));
         if page_keys && ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
             // The ink's as well as the page's, whichever Undo took back.
             self.redo();

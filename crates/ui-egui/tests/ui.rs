@@ -8188,6 +8188,30 @@ fn copy_text_from_picture_shows_the_text_for_review_and_copies_it() {
     assert!(h.query_by_label("Copy text").is_none(), "Close closes it");
 }
 
+/// While the review is open it owns the keyboard: Ctrl+V pastes into its text box, not into the page
+/// behind it, and Ctrl+Z does not undo the page.
+#[test]
+fn copy_text_from_picture_keeps_paste_and_undo_away_from_the_page() {
+    let board = MemoryBoard::new();
+    let (_t, _page, mut h) = picture_text_page("ui-picture-text-keys", &[("receipt.png", Some(vec!["Sourdough 6.00"]))], &board);
+    copy_text_from(&mut h, 1, "Copy Text from Picture");
+    let body = h.state().body().unwrap_or_default().to_string();
+    let label = "Check the text, and change it if you want, then copy it.";
+    h.get_by_role_and_label(egui::accesskit::Role::MultilineTextInput, label).focus();
+    settle(&mut h);
+    // Undo belongs to the dialog's text box: the page keeps what it holds.
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    settle(&mut h);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    board.put_text("Pasted 1.00");
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::V);
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default().to_string(), body, "the page behind the dialog is unchanged");
+    h.get_by_label("Copy text").click();
+    settle(&mut h);
+    assert!(board.read_text().contains("Pasted 1.00"), "the paste went into the review: {:?}", board.read_text());
+}
+
 #[test]
 fn copy_text_from_picture_says_when_recognition_is_not_set_up() {
     let board = MemoryBoard::new();
