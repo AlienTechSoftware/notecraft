@@ -1665,14 +1665,14 @@ pub fn show_ink_view(
             }
             let Some(block) = blocks.get(index) else { continue };
             crate::preview::make_room(&mut child, justified, index, first, zoom);
+            // The block header belongs to the box's frame: only the box's first block draws one, above
+            // the frame, whatever the block is (a table included). Block content draws none (see `pageedit`).
+            if box_first == Some(index) {
+                let _ = crate::block_emoji::header(&mut child, page_dir, index, block.emoji(), false, zoom);
+            }
             if matches!(block, Block::Table { .. }) {
                 pageedit::show_table_read(&mut child, block, index, t, page, columns, zoom);
                 continue;
-            }
-            // The block header belongs to the box's frame: only the box's first block draws one, above
-            // the frame. Block content draws none (see `pageedit`).
-            if box_first == Some(index) {
-                let _ = crate::block_emoji::header(&mut child, page_dir, index, block.emoji(), false, zoom);
             }
             // In a scope of its own, as the ordinary view draws a finished block: egui spaces a
             // scope from the next block as it spaces the block itself, and drawn straight into

@@ -15258,3 +15258,22 @@ fn a_heading_below_the_top_block_draws_no_plus() {
     assert_eq!(h.query_all_by_label("Add emoji to block 1").count(), 1, "the top block keeps its +");
     assert_eq!(h.query_all_by_label("Add emoji to block 2").count(), 0, "a heading below the top block draws no +");
 }
+
+/// A box whose top block is a table still draws that block's header above the frame.
+#[test]
+fn a_box_whose_top_block_is_a_table_keeps_its_plus() {
+    let (_t, app, s) = sample_app("ui-table-top-plus");
+    let body = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"400\"><table><tr><td>Cell</td></tr></table><p>After the table</p></div>";
+    notecraft_store::page::save_body(&s.html_page, body).expect("a box whose first block is a table");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Add emoji to block 1").count(), 1, "the table as the box's top block keeps its +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 2").count(), 0, "a paragraph after it draws no +");
+    // The pen view draws the same box: its top block keeps its + there too.
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    h.get_by_label("Pen red").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Add emoji to block 1").count(), 1, "with the pen in hand the table keeps its +");
+}
