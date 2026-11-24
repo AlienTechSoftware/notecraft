@@ -11,6 +11,19 @@ SDK/NDK, and ADB with [`setup.android.sh`](SKILLS/nc-devx/scripts/setup.android.
 can launch it through [`setup.android.ps1`](SKILLS/nc-devx/scripts/setup.android.ps1). See the
 [`nc-devx Android guide`](SKILLS/nc-devx/references/android.md) for APK and device checks.
 
+## Fork and clone
+
+```bash
+# Fork AlienTechSoftware/notecraft on GitHub first, then clone your fork:
+git clone https://github.com/<your-username>/notecraft.git
+cd notecraft
+git remote add upstream https://github.com/AlienTechSoftware/notecraft.git
+git fetch upstream
+```
+
+Contributors open pull requests from their fork against `main` in this repository.
+Work on a branch, not `main` (see "First day" below).
+
 ## First day
 
 1. Install the pinned Rust toolchain and platform dependencies with the setup script
@@ -28,6 +41,24 @@ can launch it through [`setup.android.ps1`](SKILLS/nc-devx/scripts/setup.android
    ```bash
    cargo xtask ci
    ```
+
+## Start a coding agent session
+
+Claude Code loads `CLAUDE.md` automatically, and Codex reads `AGENTS.md`
+automatically, when started in the repository folder. Both files point at the
+rules in `AGENTS.md`. Start the agent in the repo folder (`claude` or `codex`),
+then use this as the first prompt, with the task filled in:
+
+```text
+Read AGENTS.md, README_DEV.md, and CONTRIBUTING.md first, and follow them.
+Then work on this task: [describe the task and the issue number, if any].
+
+Plan before implementing: share scope, acceptance criteria, likely files,
+risks, and verification steps, and wait for my CHECKPOINT nod before writing code.
+Work on branch [type/name]. Never use --no-verify, never push, merge, or
+publish without my explicit go. Before claiming completion, run cargo xtask ci
+and the focused tests for the change, and report the exact commands and results.
+```
 
 ## OCR (optional)
 
