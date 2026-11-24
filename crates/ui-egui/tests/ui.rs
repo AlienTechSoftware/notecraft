@@ -15458,6 +15458,8 @@ fn a_pen_tap_on_the_ribbon_clicks_and_does_not_scroll_it() {
     settle(&mut h);
     let after = h.get_by_label("Add").rect().center();
     assert!((after.x - from.x).abs() < 1.0, "a mouse drag did not scroll the ribbon: {from:?} -> {after:?}");
+}
+
 #[test]
 fn emoji_picker_escape_clear_and_outside_click_are_local_to_one_opening() {
     let (_t, app, s) = sample_app("ui-emoji-picker-dismiss");
