@@ -13173,6 +13173,7 @@ impl NoteCraftApp {
         // Pen pressure, where the platform reports it. Nothing draws with it yet; it is
         // read here so `ui.inspect` can say whether a pen reaches this window at all.
         ctx.input(|i| self.stylus.update(&i.events));
+        crate::ribbon::note_touches(ctx);
         // A pen on a tablet mapped to a large screen moves further in a tap than a mouse does
         // in a click: past the six points egui allows, a tap on a button did nothing. Once a pen
         // has been seen, a click may move twice as far.

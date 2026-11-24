@@ -4142,23 +4142,36 @@ mod tests {
     }
 }
 
-/// Whether a drag on the ribbon scrolls it: only under a finger. egui's `OnTouch` asks whether a
-/// touch screen was ever seen, and a pen on a tablet arrives as a touch too (with a force): after
-/// the first stroke every drag scrolled the ribbon, and a pen's tap, which moves a pixel or two,
-/// became a scroll instead of a click. A finger is a touch that reports no force; it is held to
-/// from its start to its end.
-fn finger_drag(ctx: &egui::Context) -> egui::scroll_area::DragScroll {
-    let id = egui::Id::new("ribbon-finger-down");
-    let was = ctx.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+/// Where the last touch is kept: true when it was a finger, false when it was a pen.
+fn finger_id() -> egui::Id {
+    egui::Id::new("ribbon-last-touch-a-finger")
+}
+
+/// Notes, once a frame and whether the ribbon is shown or not, whether the last touch to come
+/// down was a finger (a touch that reports no force) or a pen (one that reports a force).
+pub fn note_touches(ctx: &egui::Context) {
+    let was = ctx.data(|d| d.get_temp::<bool>(finger_id())).unwrap_or(false);
     let now = ctx.input(|i| {
-        i.events.iter().fold(was, |down, e| match e {
-            egui::Event::Touch { phase: egui::TouchPhase::Start, force: None, .. } => true,
-            egui::Event::Touch { phase: egui::TouchPhase::End | egui::TouchPhase::Cancel, force: None, .. } => false,
-            _ => down,
+        i.events.iter().fold(was, |finger, e| match e {
+            egui::Event::Touch { phase: egui::TouchPhase::Start, force, .. } => force.is_none(),
+            _ => finger,
         })
     });
     if now != was {
-        ctx.data_mut(|d| d.insert_temp(id, now));
+        ctx.data_mut(|d| d.insert_temp(finger_id(), now));
     }
-    if now { egui::scroll_area::DragScroll::Always } else { egui::scroll_area::DragScroll::Never }
+}
+
+/// Whether a drag on the ribbon scrolls it. egui's `OnTouch` asks whether a touch screen was
+/// ever seen, and a pen on a tablet arrives as a touch too (with a force): after the first stroke
+/// every drag scrolled the ribbon, and a pen's tap, which moves a pixel or two, became a scroll
+/// instead of a click. The ribbon scrolls under a drag while the last touch was a finger, as
+/// `OnTouch` does once a finger has been seen, and not once a pen has come down. It is decided
+/// before a press, not on it: egui finds what a press is on among the last frame's widgets.
+fn finger_drag(ctx: &egui::Context) -> egui::scroll_area::DragScroll {
+    if ctx.data(|d| d.get_temp::<bool>(finger_id())).unwrap_or(false) {
+        egui::scroll_area::DragScroll::Always
+    } else {
+        egui::scroll_area::DragScroll::Never
+    }
 }
