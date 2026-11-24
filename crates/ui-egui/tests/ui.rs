@@ -15277,3 +15277,25 @@ fn a_box_whose_top_block_is_a_table_keeps_its_plus() {
     settle(&mut h);
     assert_eq!(h.query_all_by_label("Add emoji to block 1").count(), 1, "with the pen in hand the table keeps its +");
 }
+
+/// Colour emoji are drawn in colour: a heading that holds a red apple paints more strongly coloured
+/// pixels than the same heading without it. Without colour-font support the emoji is blank.
+#[test]
+fn a_colour_emoji_is_drawn_in_colour() {
+    let _pixel_test = support::gui::pixel_test();
+    let coloured = |body: &str, name: &str| -> usize {
+        let (_t, app, s) = sample_app(name);
+        notecraft_store::page::save_body(&s.html_page, body).expect("a box with a heading");
+        let mut h = harness(app, LIGHT);
+        h.state_mut().open_path(&s.html_page.to_string_lossy());
+        settle(&mut h);
+        let img = support::gui::render(&mut h).expect("render");
+        img.pixels().filter(|p| p[0].max(p[1]).max(p[2]) as i32 - p[0].min(p[1]).min(p[2]) as i32 > 90).count()
+    };
+    let plain = coloured("<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"400\"><h2>Heading</h2></div>", "ui-colour-plain");
+    let with_apple = coloured(
+        "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"400\"><h2 data-nc-emoji=\"\u{1F34E}\">Heading</h2></div>",
+        "ui-colour-apple",
+    );
+    assert!(with_apple > plain + 40, "the apple is drawn in colour: {with_apple} coloured pixels with it, {plain} without");
+}
