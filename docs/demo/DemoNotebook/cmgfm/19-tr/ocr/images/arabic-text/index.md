@@ -15,4 +15,4 @@ Sağdan sola yazılan metin, yazıldığı sırayla korunur. Burada Arapça bir 
 
 ![Bir restorandan alınmış basılı bir Arapça fişin fotoğrafı; altında mavi mürekkeple el yazısı bir toplam tutar var](assets/ocr-receipt-ar-photo.jpg)
 
-Basılı Arapça satırlar aramayla bulunabilir. El yazısı not henüz okunmaz.
+Fişteki fiyatlar doğru okunur ve aramayla bulunabilir. Arapça kelimeler ve el yazısı not henüz okunmaz, bu yüzden aramayla bulunamazlar.
