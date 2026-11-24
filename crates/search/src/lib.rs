@@ -1,11 +1,14 @@
 //! Keyword search: a tokenizer and an in-memory BM25 index over text units.
 //!
-//! Pure Rust with no dependencies. The index is a cache built from the text it is given, so it
+//! The index is a cache built from the text it is given, so it
 //! can always be rebuilt. Semantic search is not here; it sits beside this index and is merged
 //! with reciprocal rank fusion (see the nc-info-search skill).
-use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
+use unicode_properties::UnicodeEmoji;
+use unicode_script::{Script, UnicodeScript};
+use unicode_segmentation::UnicodeSegmentation;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range};
 
 /// BM25 parameters: the usual defaults.
 const K1: f64 = 1.2;
@@ -25,29 +28,86 @@ pub struct Ranked {
     pub score: f64,
 }
 
-/// Splits text into lowercase words. A word is a run of letters or digits, so Arabic, Hebrew,
-/// Persian and Urdu words are kept whole. Anything else separates words.
+/// Produces normalized word tokens and exact emoji tokens. Matching folds Latin accents and
+/// optional Arabic vowel marks, not the marks of unrelated scripts or the parts of an emoji.
 pub fn tokenize(text: &str) -> Vec<String> {
-    // Composed form first, so 'e' + combining accent (macOS text) matches the composed 'é' a query types.
-    let text: String = text.nfc().collect();
-    text.split(|c: char| !c.is_alphanumeric())
-        .filter(|word| !word.is_empty())
-        .map(|word| word.chars().flat_map(char::to_lowercase).collect())
-        .collect()
+    token_ranges(text).map(|(_, token)| token).collect()
 }
 
-/// Byte ranges of complete words in the original text that match any normalized token.
-pub fn match_ranges<'a>(text: &'a str, tokens: &'a [String]) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
-    use unicode_normalization::char::is_combining_mark;
+/// Byte ranges of complete tokens in the original text that match any normalized query token.
+pub fn match_ranges<'a>(text: &'a str, tokens: &'a [String]) -> impl Iterator<Item = Range<usize>> + 'a {
+    token_ranges(text).filter_map(move |(range, token)| tokens.contains(&token).then_some(range))
+}
 
-    let is_word = |c: char| c.is_alphanumeric() || is_combining_mark(c);
-    let mut offset = 0;
-    text.split_inclusive(move |c| !is_word(c)).filter_map(move |segment| {
-        let start = offset;
-        offset += segment.len();
-        let word = segment.trim_end_matches(|c| !is_word(c));
-        tokenize(word).iter().any(|token| tokens.contains(token)).then_some(start..start + word.len())
+fn token_ranges(text: &str) -> impl Iterator<Item = (Range<usize>, String)> + '_ {
+    // Keep the cheap word splitter for ASCII notes and only segment graphemes
+    // when a note actually needs Unicode handling. Both paths stream: the first snippet match
+    // need not allocate or inspect tokens after it.
+    let word_char = |c: char| c.is_ascii_alphanumeric();
+    let mut ascii = text.is_ascii().then(|| text.split_inclusive(move |c| !word_char(c)));
+    let mut ascii_offset = 0;
+    let mut graphemes = text.grapheme_indices(true).peekable();
+    std::iter::from_fn(move || {
+        if let Some(segments) = ascii.as_mut() {
+            for segment in segments {
+                let start = ascii_offset;
+                ascii_offset += segment.len();
+                let word = segment.trim_end_matches(|c| !word_char(c));
+                if !word.is_empty() {
+                    return Some((start..start + word.len(), word.to_ascii_lowercase()));
+                }
+            }
+            return None;
+        }
+        let mut word = String::new();
+        let mut start = 0;
+        while let Some(&(offset, grapheme)) = graphemes.peek() {
+            let first = grapheme.chars().next().expect("graphemes are never empty");
+            if is_emoji(first, grapheme) {
+                if !word.is_empty() {
+                    return Some((start..offset, word));
+                }
+                graphemes.next();
+                // A variation selector, modifier, joiner, or flag component is part of the token.
+                return Some((offset..offset + grapheme.len(), grapheme.to_string()));
+            }
+            graphemes.next();
+            if first.is_alphanumeric() {
+                if word.is_empty() {
+                    start = offset;
+                }
+                append_word_grapheme(&mut word, first, grapheme);
+            } else if !word.is_empty() {
+                return Some((start..offset, word));
+            }
+        }
+        (!word.is_empty()).then_some((start..text.len(), word))
     })
+}
+
+fn append_word_grapheme(word: &mut String, first: char, grapheme: &str) {
+    if grapheme.is_ascii() {
+        word.push(first.to_ascii_lowercase());
+        return;
+    }
+    let script = first.script();
+    match script {
+        Script::Latin | Script::Arabic => {
+            // Maddah and both forms of combining hamza can form distinct Arabic letters.
+            let lexical_mark = |c| script == Script::Arabic && matches!(c, '\u{0653}'..='\u{0655}');
+            word.extend(grapheme.nfd().filter(|&c| !is_combining_mark(c) || lexical_mark(c)).nfc().flat_map(char::to_lowercase));
+        }
+        _ => word.extend(grapheme.nfc().flat_map(char::to_lowercase)),
+    }
+}
+
+fn is_emoji(first: char, grapheme: &str) -> bool {
+    if first.is_ascii() {
+        // ASCII digits, # and * are emoji bases only in a keycap sequence.
+        matches!(first, '0'..='9' | '#' | '*') && grapheme.ends_with('\u{20e3}')
+    } else {
+        first.is_emoji_char()
+    }
 }
 
 /// An in-memory BM25 index over a fixed set of units.
@@ -132,11 +192,35 @@ mod tests {
     }
 
     #[test]
-    fn words_are_lowercase_letters_and_digits_and_non_latin_words_stay_whole() {
+    fn words_are_lowercase_and_latin_accents_are_folded() {
         assert_eq!(tokenize("Sourdough, 6.00!"), vec!["sourdough", "6", "00"]);
-        assert_eq!(tokenize("Café"), vec!["café"]);
+        assert_eq!(tokenize("Café"), vec!["cafe"]);
         assert_eq!(tokenize("مرحبا بالعالم"), vec!["مرحبا", "بالعالم"]);
         assert!(tokenize(" -- ").is_empty());
+    }
+
+    #[test]
+    fn emoji_tokens_preserve_exact_grapheme_sequences() {
+        let s = "x😊👩🏽‍💻 🇨🇦 ✈️ ✈︎ 1️⃣ #️⃣ 1";
+        let expected = ["x", "😊", "👩🏽‍💻", "🇨🇦", "✈️", "✈︎", "1️⃣", "#️⃣", "1"];
+        assert_eq!(tokenize(s), expected);
+        for (range, token) in token_ranges(s).skip(1) {
+            assert_eq!(&s[range], token, "invalid byte range for {token}");
+        }
+        let index = Index::build(&[unit("exact", "👩🏽‍💻 🇨🇦 1️⃣ ✈️"), unit("different", "👩‍💻 🇨🇲 1 ✈︎")]);
+        for query in ["👩🏽‍💻", "🇨🇦", "1️⃣", "✈️"] {
+            let hits = index.search(query, 10);
+            assert_eq!(hits.iter().map(|hit| hit.id.as_str()).collect::<Vec<_>>(), ["exact"], "{query}");
+        }
+    }
+
+    #[test]
+    fn accent_and_arabic_vowel_matching_does_not_remove_lexical_marks() {
+        assert_eq!(tokenize("RéSuMé RÉSUMÉ Re\u{301}sume\u{301}"), ["resume"; 3]);
+        assert_eq!(tokenize("السَّلَامُ عَلَيْكُمْ"), tokenize("السلام عليكم"));
+        assert_eq!(tokenize("أُسْرَة"), tokenize("أسرة"));
+        assert_ne!(tokenize("أُسْرَة"), tokenize("اسرة"));
+        assert_ne!(tokenize("कि"), tokenize("क"));
     }
 
     #[test]

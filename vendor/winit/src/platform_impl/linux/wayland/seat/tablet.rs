@@ -5,7 +5,9 @@
 //! pen: hovering moves the cursor (`CursorEntered`, `CursorMoved`, `CursorLeft`), and the tip on
 //! the tablet is a touch (`Touch` with `Started`, `Moved`, `Ended`) carrying the pen's pressure as
 //! a normalized force. Toolkits that turn the first touch into pointer presses (egui-winit does)
-//! therefore draw with it as with a mouse, and see its pressure besides.
+//! therefore draw with it as with a mouse, and see its pressure besides. The buttons on the
+//! pen's barrel are mouse buttons (`MouseInput`): the upper one the right button and the lower one
+//! the middle, as a compositor makes them for a client without the tablet protocol.
 //!
 //! Modelled on winit 0.31's `wp_tablet_input_v2`, written against the 0.30 event types.
 
@@ -29,18 +31,35 @@ use sctk::reexports::protocols::wp::tablet::zv2::client::zwp_tablet_pad_v2::{sel
 use sctk::reexports::protocols::wp::tablet::zv2::client::zwp_tablet_seat_v2::{
     self, ZwpTabletSeatV2,
 };
+use sctk::reexports::client::WEnum;
 use sctk::reexports::protocols::wp::tablet::zv2::client::zwp_tablet_tool_v2::{
-    Event as ToolEvent, ZwpTabletToolV2,
+    ButtonState, Event as ToolEvent, ZwpTabletToolV2,
 };
 use sctk::reexports::protocols::wp::tablet::zv2::client::zwp_tablet_v2::ZwpTabletV2;
 
 use crate::dpi::LogicalPosition;
-use crate::event::{Force, Touch, TouchPhase, WindowEvent};
+use crate::event::{ElementState, Force, MouseButton, Touch, TouchPhase, WindowEvent};
 use crate::platform_impl::wayland::state::WinitState;
 use crate::platform_impl::wayland::{self, DeviceId};
 
 /// Touch ids of tablet tools start here, well clear of a touchscreen's own ids.
 const TOOL_TOUCH_ID_BASE: u64 = 1 << 40;
+
+/// The pen's barrel buttons, as Linux numbers them (`linux/input-event-codes.h`).
+const BTN_STYLUS: u32 = 0x14b;
+const BTN_STYLUS2: u32 = 0x14c;
+const BTN_STYLUS3: u32 = 0x149;
+
+/// The mouse button a barrel button is: the lower one is the middle button, the upper one the
+/// right, as libinput and the X Wacom driver have them; a third is the back button.
+fn tool_button(code: u32) -> MouseButton {
+    match code {
+        BTN_STYLUS => MouseButton::Middle,
+        BTN_STYLUS2 => MouseButton::Right,
+        BTN_STYLUS3 => MouseButton::Back,
+        other => MouseButton::Other(other.min(u32::from(u16::MAX)) as u16),
+    }
+}
 
 /// The `zwp_tablet_manager_v2` global, bound when the compositor has it.
 #[derive(Debug)]
@@ -88,6 +107,8 @@ struct TabletToolDataInner {
     down: bool,
     /// True when the frame in progress changed the pressure.
     pressure_changed: bool,
+    /// Barrel buttons held down, to be let go if the pen leaves before they are.
+    held: Vec<MouseButton>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -97,6 +118,8 @@ enum ToolStep {
     Down,
     Up,
     Left,
+    /// A barrel button pressed (true) or let go.
+    Button(MouseButton, bool),
 }
 
 impl TabletToolDataInner {
@@ -169,6 +192,10 @@ impl Dispatch<ZwpTabletToolV2, TabletToolData, WinitState> for TabletState {
             ToolEvent::ProximityOut => inner.pending.push(ToolStep::Left),
             ToolEvent::Down { .. } => inner.pending.push(ToolStep::Down),
             ToolEvent::Up => inner.pending.push(ToolStep::Up),
+            ToolEvent::Button { button, state, .. } => {
+                let pressed = matches!(state, WEnum::Value(ButtonState::Pressed));
+                inner.pending.push(ToolStep::Button(tool_button(button), pressed));
+            },
             ToolEvent::Motion { x, y } => {
                 inner.position = (x, y);
                 inner.pending.push(ToolStep::Moved);
@@ -209,6 +236,22 @@ fn frame_steps(mut pending: Vec<ToolStep>, pressure_changed: bool, down: bool) -
     pending
 }
 
+/// Notes a barrel button going down or up in `held`, and says whether to report it: a release
+/// of a button that is not held (let go already, as the pen left) is not reported twice.
+fn track_button(held: &mut Vec<MouseButton>, button: MouseButton, pressed: bool) -> bool {
+    if pressed {
+        if !held.contains(&button) {
+            held.push(button);
+        }
+        true
+    } else if let Some(at) = held.iter().position(|b| *b == button) {
+        held.remove(at);
+        true
+    } else {
+        false
+    }
+}
+
 /// Report one step of a tool over one of our windows.
 fn deliver(
     state: &mut WinitState,
@@ -240,6 +283,7 @@ fn deliver(
             }
             if leaving {
                 inner.pressure = None;
+                inner.held.clear();
             }
             return;
         },
@@ -283,8 +327,24 @@ fn deliver(
                 inner.down = false;
                 sink.push_window_event(touch(TouchPhase::Cancelled, inner.force()), window_id);
             }
+            // A button still held as the pen leaves is let go here: its release goes to whatever
+            // the pen is over next, or nowhere, and the window would keep it pressed.
+            for button in std::mem::take(&mut inner.held) {
+                let state = ElementState::Released;
+                sink.push_window_event(WindowEvent::MouseInput { device_id, state, button }, window_id);
+            }
             inner.pressure = None;
             sink.push_window_event(WindowEvent::CursorLeft { device_id }, window_id);
+        },
+        ToolStep::Button(button, pressed) => {
+            if !track_button(&mut inner.held, button, pressed) {
+                return;
+            }
+            // A toolkit places a button where the cursor last was, and egui-winit forgets that
+            // once a touch ends: with the pen held still after a stroke, the button went nowhere.
+            sink.push_window_event(WindowEvent::CursorMoved { device_id, position: location }, window_id);
+            let state = if pressed { ElementState::Pressed } else { ElementState::Released };
+            sink.push_window_event(WindowEvent::MouseInput { device_id, state, button }, window_id);
         },
     }
 }
@@ -362,6 +422,33 @@ delegate_dispatch!(WinitState: [ZwpTabletPadStripV2: ()] => TabletState);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_barrel_buttons_are_the_middle_and_right_mouse_buttons() {
+        assert_eq!(tool_button(0x14b), MouseButton::Middle);
+        assert_eq!(tool_button(0x14c), MouseButton::Right);
+        assert_eq!(tool_button(0x149), MouseButton::Back);
+        assert_eq!(tool_button(0x150), MouseButton::Other(0x150));
+    }
+
+    #[test]
+    fn a_held_button_is_let_go_once() {
+        let mut held = Vec::new();
+        assert!(track_button(&mut held, MouseButton::Right, true));
+        assert_eq!(held, vec![MouseButton::Right], "held while down");
+        assert!(track_button(&mut held, MouseButton::Right, false), "its release is reported");
+        assert!(held.is_empty());
+        // Let go as the pen left (the held list emptied), the compositor's release comes after.
+        assert!(track_button(&mut held, MouseButton::Middle, true));
+        held.clear();
+        assert!(!track_button(&mut held, MouseButton::Middle, false), "not reported twice");
+    }
+
+    #[test]
+    fn a_frame_with_a_button_reports_it() {
+        let press = ToolStep::Button(MouseButton::Right, true);
+        assert_eq!(frame_steps(vec![press.clone()], false, false), vec![press]);
+    }
 
     #[test]
     fn pressing_harder_without_moving_moves_the_touch_where_it_is() {

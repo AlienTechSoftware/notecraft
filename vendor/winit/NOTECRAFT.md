@@ -14,7 +14,10 @@ Two changes, both in the Wayland backend only:
   zooms the page (NoteCraft #64). It follows #4778.
 - `src/platform_impl/linux/wayland/seat/tablet.rs` reports pen tablets
   (`zwp_tablet_manager_v2`) as touches with pressure, so a pen draws with
-  pressure (NoteCraft #8).
+  pressure (NoteCraft #8). The pen's barrel buttons are mouse buttons, the
+  lower one the middle and the upper one the right: a client that binds the
+  tablet protocol gets them as tool buttons, and without this they did
+  nothing, where every other program had a right click.
 
 `src/event.rs` and `src/changelog/unreleased.md` document the events on Wayland.
 Windows, macOS, X11 and the web build behave as the released crate does.
