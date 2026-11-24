@@ -15455,3 +15455,62 @@ fn one_backspace_removes_one_grapheme_in_each_page_caret_without_joining_blocks(
     let status = ask(&mut h, "ui.inspect", json!({})).expect("block count");
     assert_eq!(status["page"]["blocks"], json!(3), "a second press genuinely at the start still joins the blocks");
 }
+
+/// The picker search, not the underlying note, owns native clipboard shortcuts.
+#[test]
+fn emoji_picker_paste_stays_in_search_then_page_paste_resumes() {
+    let board = MemoryBoard::new();
+    let (_t, app, s) = sample_app("ui-emoji-picker-paste");
+    let html = r#"<div class="nc-box" data-x="0" data-y="0" data-width="220"><h2>Heading before edits</h2></div>"#;
+    notecraft_store::page::save_body(&s.html_page, html).expect("a box with a picker");
+    let mut h = harness(app.with_clipboard(Box::new(board.clone())), LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("page caret");
+    settle(&mut h);
+
+    for path in ["key-only", "queued", "queued-with-event"] {
+        h.get_by_label("Add emoji to block 1").click();
+        settle(&mut h);
+        let before = h.state().body().expect("page body").to_owned();
+        board.put_text("grinning");
+        if path == "key-only" {
+            ask(&mut h, "ui.key", json!({"key": "V", "ctrl": true})).expect("Ctrl+V");
+        } else {
+            h.state_mut().queue_keyboard_paste();
+            if path == "queued-with-event" {
+                h.event(egui::Event::Paste("grinning".into()));
+            }
+        }
+        settle(&mut h);
+        assert_eq!(h.state().body().expect("page body"), before, "{path} changed the page behind the picker");
+        assert_eq!(h.query_all_by_label("Smileys").count(), 0, "{path} should activate search");
+        assert_eq!(h.query_all_by_label("No emoji match.").count(), 0, "{path} should not duplicate the search text");
+        h.key_press(egui::Key::Escape);
+        settle(&mut h);
+    }
+
+    board.put_text("page paste still works");
+    h.state_mut().queue_keyboard_paste();
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("page paste still works"));
+
+    // A real page edit gives the page undo stack something to undo.
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("page caret");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "undo-target-749"})).expect("typing");
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("undo-target-749"));
+    let status = ask(&mut h, "ui.inspect", json!({})).expect("page history");
+    assert_eq!(status["page"]["history"]["canUndo"], true);
+    h.get_by_label("Add emoji to block 1").click();
+    settle(&mut h);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("undo-target-749"));
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    settle(&mut h);
+    assert!(!h.state().body().unwrap_or_default().contains("undo-target-749"));
+}

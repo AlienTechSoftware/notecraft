@@ -8477,23 +8477,9 @@ impl NoteCraftApp {
     /// buttons use, so there is one path and not two. Nothing is done when egui's text box
     /// is holding the keyboard, or both would act and the words would be pasted twice.
     fn clipboard_keys(&mut self, ctx: &egui::Context) {
-        let (copy, cut, paste, all) = ctx.input(|i| {
-            let hit = |want: egui::Key| {
-                // `key_pressed` is the platform-normalized view.  Some native
-                // backends do not retain the raw key event in `events` after a
-                // focused text widget has considered it, while the normalized
-                // edge remains available for the rest of the frame.  Keep the
-                // raw-event check as a fallback for the headless harness and
-                // older egui backends.
-                (i.key_pressed(want) && (i.modifiers.command || i.modifiers.ctrl))
-                    || i.events.iter().any(|e| {
-                        matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl))
-                    })
-                    || i.raw.events.iter().any(|e| {
-                        matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl))
-                    })
-            };
-            (hit(egui::Key::C), hit(egui::Key::X), hit(egui::Key::V), hit(egui::Key::A))
+        let (copy, cut, paste, all) = ctx.input(|input| {
+            let hit = |key| Self::clipboard_key_hit(input, key);
+            (hit(Key::C), hit(Key::X), hit(Key::V), hit(Key::A))
         });
         if !(copy || cut || paste || all) {
             return;
@@ -8523,6 +8509,30 @@ impl NoteCraftApp {
         }
         if all && ours {
             self.select_all_in_block();
+        }
+    }
+
+    fn clipboard_key_hit(input: &egui::InputState, want: Key) -> bool {
+        // Keep the raw-event fallback for headless and older native backends.
+        let event_hit = |event: &egui::Event| matches!(event, egui::Event::Key { key, pressed: true, modifiers, .. } if *key == want && (modifiers.command || modifiers.ctrl));
+        (input.key_pressed(want) && (input.modifiers.command || input.modifiers.ctrl))
+            || input.events.iter().any(event_hit)
+            || input.raw.events.iter().any(event_hit)
+    }
+
+    fn paste_into_emoji_search(&mut self, ctx: &egui::Context, queued: bool) {
+        // The desktop shell catches native paste before egui for images/rich page
+        // content. The picker only needs plain text. A native Paste event, where
+        // present, already provides that text, so do not insert a second copy.
+        if !crate::block_emoji::search_has_focus(ctx) {
+            ctx.input_mut(|input| input.events.retain(|event| !matches!(event, egui::Event::Paste(_) | egui::Event::PasteImage(_))));
+            return;
+        }
+        let needs_text = ctx.input(|input| {
+            (queued || Self::clipboard_key_hit(input, Key::V)) && !input.events.iter().any(|event| matches!(event, egui::Event::Paste(_)))
+        });
+        if needs_text && let Some(text) = self.clipboard.text() {
+            ctx.input_mut(|input| input.events.push(egui::Event::Paste(text)));
         }
     }
 
@@ -13169,6 +13179,9 @@ impl NoteCraftApp {
         crate::i18n::set_current(&self.ui_language);
         let ctx = ui.ctx().clone();
         let ctx = &ctx;
+        // Snapshot before Escape: another event in that frame still belongs to
+        // the closing picker, never to the note underneath it.
+        let emoji_picker_open = self.editor.as_ref().is_some_and(|ed| crate::block_emoji::is_open_for_page(ctx, &ed.dir));
         if self.dialog.is_none() {
             crate::block_emoji::handle_escape(ctx);
         }
@@ -13223,8 +13236,10 @@ impl NoteCraftApp {
                 ctx.copy_text(text);
             }
         }
-        if self.keyboard_paste_requested {
-            self.keyboard_paste_requested = false;
+        let queued_paste = std::mem::take(&mut self.keyboard_paste_requested);
+        if emoji_picker_open {
+            self.paste_into_emoji_search(ctx, queued_paste);
+        } else if queued_paste {
             log::debug!("queued keyboard paste dispatched to paste_here");
             self.paste_here();
         }
@@ -13233,7 +13248,9 @@ impl NoteCraftApp {
         if let Some(notice) = crate::filepicker::take_notice() {
             self.say(notice);
         }
-        self.clipboard_keys(ctx);
+        if !emoji_picker_open {
+            self.clipboard_keys(ctx);
+        }
         self.poll_control(ctx);
         self.poll_import(ctx);
         #[cfg(feature = "voice")]
@@ -13254,7 +13271,7 @@ impl NoteCraftApp {
         // Not while a dialog is open: it owns the keyboard, and the page behind it must not
         // change unseen (issue #262: Ctrl+Z undid and saved an edit behind Insert symbol). A
         // text box in the dialog keeps its own undo.
-        let page_keys = self.dialog.is_none();
+        let page_keys = self.dialog.is_none() && !emoji_picker_open;
         if page_keys && ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
             // The ink's as well as the page's, whichever Undo took back.
             self.redo();

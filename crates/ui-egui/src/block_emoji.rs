@@ -196,6 +196,15 @@ fn close(ctx: &egui::Context) {
     ctx.memory_mut(|memory| memory.surrender_focus(focus));
 }
 
+/// Picker state is scoped to this viewport, just like its modal and input focus.
+pub(crate) fn is_open_for_page(ctx: &egui::Context, page: &std::path::Path) -> bool {
+    ctx.data(|data| data.get_temp::<Picker>(open_id(ctx)).is_some_and(|picker| picker.block.0 == page))
+}
+
+pub(crate) fn search_has_focus(ctx: &egui::Context) -> bool {
+    ctx.memory(|memory| memory.has_focus(popup_id(ctx).with("search")))
+}
+
 /// The active picker owns Escape before page widgets or global search can consume it.
 pub(crate) fn handle_escape(ctx: &egui::Context) {
     let id = open_id(ctx);
