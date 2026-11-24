@@ -2379,19 +2379,9 @@ pub fn show_blocks(
         // And the painter's own hit tests and caret measure against the same lines, for as
         // long as this block is the one being worked on.
         let _floor = preview::hold_floor(justified, i, zoom);
-        // The header strip with the emoji `+` sits above the block. The page's date stamp
-        // has none.
-        let drawn_above_box = ui.data(|d| d.get_temp::<Option<usize>>(crate::block_emoji::box_first_header_id()).flatten()) == Some(i);
-        // A paragraph's header goes under its words instead (see `paragraph_header_below`).
-        // Paragraphs and list items draw no emoji `+` and show no emoji for now. Their emoji data stays in the page.
-        let paragraph = crate::block_emoji::is_text_block(&blocks[i]);
-        if !drawn_above_box
-            && !paragraph
-            && let Some(next) = crate::block_emoji::header(ui, page_dir, i, blocks[i].emoji(), true, zoom)
-        {
-            blocks[i].set_emoji(next);
-            changed.blocks = true;
-        }
+        // The block `+` and its emoji belong to the box's frame controls, not the page content: the
+        // box's top block draws its header above the frame (see `containers`), and no block in the
+        // body draws one here. Their emoji data stays in the page.
         // Where this block starts, so a frame can be drawn around it afterwards: the block
         // the caret is in gets one, the way a container is outlined in OneNote.
         let top = ui.cursor().min.y;

@@ -1669,9 +1669,9 @@ pub fn show_ink_view(
                 pageedit::show_table_read(&mut child, block, index, t, page, columns, zoom);
                 continue;
             }
-            // The same emoji header as a block on the page, above the block in its box. Paragraphs
-            // show none for now (see `pageedit`), except the box's first block.
-            if !crate::block_emoji::is_text_block(block) || box_first == Some(index) {
+            // The block header belongs to the box's frame: only the box's first block draws one, above
+            // the frame. Block content draws none (see `pageedit`).
+            if box_first == Some(index) {
                 let _ = crate::block_emoji::header(&mut child, page_dir, index, block.emoji(), false, zoom);
             }
             // In a scope of its own, as the ordinary view draws a finished block: egui spaces a

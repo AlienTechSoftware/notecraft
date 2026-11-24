@@ -155,13 +155,6 @@ pub const CHOICE_NAMES: &[&str] = &[
 
 /// The height of the header row at 100 percent zoom, in points.
 pub const HEADER_ROW: f32 = 24.0;
-
-/// Whether a block draws no `+` and shows no emoji: paragraphs and list items. Their emoji data
-/// stays in the page. Headings, the other blocks and a box's top block keep theirs.
-pub fn is_text_block(block: &notecraft_formats::markdown::Block) -> bool {
-    matches!(block, notecraft_formats::markdown::Block::Paragraph(..) | notecraft_formats::markdown::Block::Item { .. })
-}
-
 /// The id under which a box says which of its blocks has its header drawn above the box's bar.
 pub fn box_first_header_id() -> egui::Id {
     egui::Id::new("box-first-header")

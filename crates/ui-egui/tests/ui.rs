@@ -12426,9 +12426,9 @@ fn a_pen_on_the_page_picks_up_the_last_pen_and_typing_puts_it_down() {
     settle(&mut h);
     assert_eq!(ink(&mut h).0, "write");
 
-    // The pen lands on the header row above the first paragraph, which is blank apart from
-    // its `+`: a stroke on the words would put the caret there, which is not what this test is about.
-    let header_row = h.query_all_by_label_contains("Add emoji to block").nth(1).expect("the header of block 1").rect();
+    // The pen lands on the header row above the box, which is blank apart from its `+`: a stroke on
+    // the words would put the caret there, which is not what this test is about.
+    let header_row = h.query_all_by_label_contains("Add emoji to block").next().expect("the header of the box's top block").rect();
     let at = egui::pos2(header_row.center().x + 60.0, header_row.top() + 2.0);
     let stroke = |h: &mut Harness<'_, NoteCraftApp>, force: Option<f32>| {
         let contact = |phase, pos| egui::Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(0), phase, pos, force };
@@ -15223,7 +15223,7 @@ fn paragraphs_draw_no_plus_and_keep_the_box_top_header() {
     settle(&mut h);
     assert_eq!(h.query_all_by_label("Add emoji to block 1").count(), 1, "the top block keeps its +");
     assert_eq!(h.query_all_by_label("Add emoji to block 2").count(), 0, "a paragraph draws no +");
-    assert_eq!(h.query_all_by_label("Add emoji to block 3").count(), 1, "a heading in a box keeps its +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 3").count(), 1, "the box's top block keeps its + above the frame");
     assert_eq!(h.query_all_by_label("Add emoji to block 4").count(), 0, "a paragraph in a box draws no +");
     assert_eq!(h.query_all_by_label("Add emoji to block 5").count(), 0, "a list item draws no +");
 }
