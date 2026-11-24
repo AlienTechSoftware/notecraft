@@ -134,6 +134,9 @@ jobs:
               --enable-reference-types --enable-sign-ext --enable-simd \
               "$f" -o "$f"
           done
+          # wasm-opt rewrote the .wasm after Trunk hashed it, so refresh the SRI hash in index.html.
+          python3 .github/web-build/test_rehash_wasm_integrity.py
+          python3 .github/web-build/rehash_wasm_integrity.py website/demo/index.html website/demo
 
       - name: Build and test both User Assistance notebook formats
         env:
