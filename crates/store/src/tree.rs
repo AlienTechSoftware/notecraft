@@ -147,20 +147,31 @@ pub fn child_dirs(dir: &Path) -> Vec<PathBuf> {
 /// hands back a listing with one entry in it twice and another missing, about one listing in seven
 /// hundred while a notebook is open. Taken as it came, a page or section showed twice in the pane
 /// and its neighbour was gone until the next refresh. A listing that names something twice is
-/// therefore read again, a few times; should every read be torn, the last is used with each entry
-/// once.
+/// therefore read again, a few times; should every read be torn, or a read again fail, the last torn
+/// one is used with each entry once.
 fn whole_listing(mut read: impl FnMut() -> std::io::Result<Vec<PathBuf>>) -> std::io::Result<Vec<PathBuf>> {
     const TRIES: usize = 5;
     let mut last = Vec::new();
-    for _ in 0..TRIES {
-        let got = read()?;
+    for tried in 0..TRIES {
+        // Once a read has come back torn, a read that then fails keeps what that one had rather
+        // than losing the folder's every entry.
+        let got = match read() {
+            Ok(got) => got,
+            Err(e) if tried == 0 => return Err(e),
+            Err(e) => {
+                log::warn!("a folder listing named an entry twice and could not be read again: {e}");
+                break;
+            }
+        };
         let mut seen = std::collections::HashSet::with_capacity(got.len());
         if got.iter().all(|p| seen.insert(p)) {
             return Ok(got);
         }
         last = got;
+        if tried + 1 == TRIES {
+            log::warn!("a folder listing named an entry twice {TRIES} times running; each is used once");
+        }
     }
-    log::warn!("a folder listing named an entry twice {TRIES} times running; each is used once");
     last.sort();
     last.dedup();
     Ok(last)
@@ -204,6 +215,14 @@ mod tests {
         })
         .expect("listing");
         assert_eq!((got, asked), (whole, 2));
+    }
+
+    #[test]
+    fn a_reread_that_fails_after_a_torn_listing_keeps_what_the_torn_one_had() {
+        let torn = vec![PathBuf::from("a"), PathBuf::from("a"), PathBuf::from("b")];
+        let mut reads = vec![Ok(torn), Err(std::io::Error::other("gone"))].into_iter();
+        let got = whole_listing(|| reads.next().expect("read once more")).expect("listing");
+        assert_eq!(got, vec![PathBuf::from("a"), PathBuf::from("b")]);
     }
 
     #[test]
