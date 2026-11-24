@@ -45,3 +45,7 @@ changelog entry.
 - On Wayland, implement `WindowEvent::PinchGesture` and
   `WindowEvent::RotationGesture`, delivered through the
   `zwp_pointer_gestures_v1` protocol when the compositor implements it.
+- On Wayland, report pen tablets (`zwp_tablet_manager_v2`): the tip as a
+  `WindowEvent::Touch` with its pressure as the force, hovering as cursor
+  moves, and the barrel buttons as `WindowEvent::MouseInput` (the lower one
+  `Middle`, the upper one `Right`).
