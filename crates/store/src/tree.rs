@@ -128,10 +128,10 @@ pub fn read_node(dir: &Path) -> Option<NodeInfo> {
 /// Child folders in display order: by `order`, then by name. Skips `assets` and
 /// folders whose names start with a dot.
 pub fn child_dirs(dir: &Path) -> Vec<PathBuf> {
-    let mut dirs: Vec<(u32, String, PathBuf)> = match fs::read_dir(dir) {
-        Ok(rd) => rd
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
+    let listing = whole_listing(|| fs::read_dir(dir).map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.path()).collect()));
+    let mut dirs: Vec<(u32, String, PathBuf)> = match listing {
+        Ok(paths) => paths
+            .into_iter()
             .filter(|p| p.is_dir())
             .map(|p| (folder_name(&p), p))
             .filter(|(n, _)| n != "assets" && !n.starts_with('.'))
@@ -141,6 +141,40 @@ pub fn child_dirs(dir: &Path) -> Vec<PathBuf> {
     };
     dirs.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
     dirs.into_iter().map(|(_, _, p)| p).collect()
+}
+
+/// A folder's entries, each once. A synced folder's mount (onedriver, for OneDrive) now and then
+/// hands back a listing with one entry in it twice and another missing, about one listing in seven
+/// hundred while a notebook is open. Taken as it came, a page or section showed twice in the pane
+/// and its neighbour was gone until the next refresh. A listing that names something twice is
+/// therefore read again, a few times; should every read be torn, or a read again fail, the last torn
+/// one is used with each entry once.
+fn whole_listing(mut read: impl FnMut() -> std::io::Result<Vec<PathBuf>>) -> std::io::Result<Vec<PathBuf>> {
+    const TRIES: usize = 5;
+    let mut last = Vec::new();
+    for tried in 0..TRIES {
+        // Once a read has come back torn, a read that then fails keeps what that one had rather
+        // than losing the folder's every entry.
+        let got = match read() {
+            Ok(got) => got,
+            Err(e) if tried == 0 => return Err(e),
+            Err(e) => {
+                log::warn!("a folder listing named an entry twice and could not be read again: {e}");
+                break;
+            }
+        };
+        let mut seen = std::collections::HashSet::with_capacity(got.len());
+        if got.iter().all(|p| seen.insert(p)) {
+            return Ok(got);
+        }
+        last = got;
+        if tried + 1 == TRIES {
+            log::warn!("a folder listing named an entry twice {TRIES} times running; each is used once");
+        }
+    }
+    last.sort();
+    last.dedup();
+    Ok(last)
 }
 
 pub fn load_tree(dir: &Path) -> Option<Node> {
@@ -164,6 +198,53 @@ mod tests {
     use crate::ops;
     use crate::settings::Settings;
     use crate::testing::TempDir;
+
+    /// A synced folder's mount (onedriver) now and then lists a folder with one entry in it
+    /// twice and another not at all: about one listing in seven hundred, measured on a OneDrive
+    /// notebook. Taken as it came, that page or section showed twice in the pane and its
+    /// neighbour was gone until the next refresh.
+    #[test]
+    fn a_listing_that_names_a_folder_twice_is_read_again() {
+        let whole = vec![PathBuf::from("a"), PathBuf::from("b"), PathBuf::from("c")];
+        let torn = vec![PathBuf::from("a"), PathBuf::from("c"), PathBuf::from("c")];
+        let mut reads = vec![torn, whole.clone()].into_iter();
+        let mut asked = 0;
+        let got = whole_listing(|| {
+            asked += 1;
+            Ok(reads.next().expect("asked again after the whole listing"))
+        })
+        .expect("listing");
+        assert_eq!((got, asked), (whole, 2));
+    }
+
+    #[test]
+    fn a_reread_that_fails_after_a_torn_listing_keeps_what_the_torn_one_had() {
+        let torn = vec![PathBuf::from("a"), PathBuf::from("a"), PathBuf::from("b")];
+        let mut reads = vec![Ok(torn), Err(std::io::Error::other("gone"))].into_iter();
+        let got = whole_listing(|| reads.next().expect("read once more")).expect("listing");
+        assert_eq!(got, vec![PathBuf::from("a"), PathBuf::from("b")]);
+    }
+
+    #[test]
+    fn a_listing_torn_every_time_still_names_each_folder_once() {
+        let torn = vec![PathBuf::from("b"), PathBuf::from("a"), PathBuf::from("b")];
+        let got = whole_listing(|| Ok(torn.clone())).expect("listing");
+        assert_eq!(got, vec![PathBuf::from("a"), PathBuf::from("b")]);
+    }
+
+    #[test]
+    fn each_page_is_listed_once() {
+        let t = TempDir::new("tree-once");
+        let s = Settings::at(t.path().join("s.toml"));
+        let nb = ops::create_notebook(t.path(), "Book", None, &s).expect("notebook");
+        for title in ["One", "Two", "Three"] {
+            ops::create_node(&nb, title, NodeKind::Page, Some(PageFormat::Cmgfm), &s).expect("page");
+        }
+        let tree = load_tree(&nb).expect("tree");
+        let mut titles: Vec<&str> = tree.children.iter().map(|c| c.info.title.as_str()).collect();
+        titles.sort();
+        assert_eq!(titles, ["One", "Three", "Two"]);
+    }
 
     #[test]
     fn reads_a_page_and_a_container() {
