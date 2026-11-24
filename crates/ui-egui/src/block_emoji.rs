@@ -155,7 +155,6 @@ pub const CHOICE_NAMES: &[&str] = &[
 
 /// The height of the header row at 100 percent zoom, in points.
 pub const HEADER_ROW: f32 = 24.0;
-
 /// The id under which a box says which of its blocks has its header drawn above the box's bar.
 pub fn box_first_header_id() -> egui::Id {
     egui::Id::new("box-first-header")

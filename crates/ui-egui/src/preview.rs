@@ -871,11 +871,7 @@ pub fn show_zoomed(
     for (i, block) in blocks.iter().enumerate() {
         make_room(ui, justified, i, 0, zoom);
         let _floor = hold_floor(justified, i, zoom);
-        // The same block header as in the editor, so every view of a block shows it. Paragraphs
-        // show none for now; their emoji stay in the page (see `pageedit`).
-        if !matches!(block, Block::Paragraph(..)) {
-            let _ = crate::block_emoji::header(ui, page_dir, i, block.emoji(), false, zoom);
-        }
+        // Block headers belong to the box's frame controls, not the page content (see `pageedit`).
         let out = show_block_zoomed(ui, block, i, page_dir, tokens, false, page, justified.mark_of(i), None, ui.id().with(("block", i)), zoom);
         let resp = out.response;
         if resp.clicked()

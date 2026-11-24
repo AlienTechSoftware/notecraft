@@ -12426,9 +12426,9 @@ fn a_pen_on_the_page_picks_up_the_last_pen_and_typing_puts_it_down() {
     settle(&mut h);
     assert_eq!(ink(&mut h).0, "write");
 
-    // The pen lands on the header row above the first paragraph, which is blank apart from
-    // its `+`: a stroke on the words would put the caret there, which is not what this test is about.
-    let header_row = h.query_all_by_label_contains("Add emoji to block").nth(1).expect("the header of block 1").rect();
+    // The pen lands on the header row above the box, which is blank apart from its `+`: a stroke on
+    // the words would put the caret there, which is not what this test is about.
+    let header_row = h.query_all_by_label_contains("Add emoji to block").next().expect("the header of the box's top block").rect();
     let at = egui::pos2(header_row.center().x + 60.0, header_row.top() + 2.0);
     let stroke = |h: &mut Harness<'_, NoteCraftApp>, force: Option<f32>| {
         let contact = |phase, pos| egui::Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(0), phase, pos, force };
@@ -15216,13 +15216,64 @@ fn a_paragraph_emoji_header_sits_under_the_paragraph() {
 #[test]
 fn paragraphs_draw_no_plus_and_keep_the_box_top_header() {
     let (_t, app, s) = sample_app("ui-paragraph-no-plus");
-    let body = "<h2>Plain heading</h2><p>Plain paragraph</p><div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"400\"><h2>Boxed heading</h2><p>Boxed paragraph</p></div>";
+    let body = "<h2>Plain heading</h2><p>Plain paragraph</p><div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"400\"><h2>Boxed heading</h2><p>Boxed paragraph</p></div><ul><li>Listed item</li></ul>";
     notecraft_store::page::save_body(&s.html_page, body).expect("a heading, a paragraph and a box");
     let mut h = harness(app, LIGHT);
     h.state_mut().open_path(&s.html_page.to_string_lossy());
     settle(&mut h);
     assert_eq!(h.query_all_by_label("Add emoji to block 1").count(), 1, "the top block keeps its +");
     assert_eq!(h.query_all_by_label("Add emoji to block 2").count(), 0, "a paragraph draws no +");
-    assert_eq!(h.query_all_by_label("Add emoji to block 3").count(), 1, "a heading in a box keeps its +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 3").count(), 1, "the box's top block keeps its + above the frame");
     assert_eq!(h.query_all_by_label("Add emoji to block 4").count(), 0, "a paragraph in a box draws no +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 5").count(), 0, "a list item draws no +");
+}
+
+/// A paragraph and a list item hold emoji by accident: they draw no `+` and show no emoji, but the
+/// emoji stay in the page file. The box's top block keeps its header above the frame.
+#[test]
+fn a_paragraph_and_a_list_item_hide_their_emoji_but_keep_the_data() {
+    let (_t, app, s) = sample_app("ui-hidden-emoji-data");
+    let body = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"400\"><h2>Box heading</h2><p data-nc-emoji=\"\u{1F600}\">Hidden paragraph</p><ul><li data-nc-emoji=\"\u{1F3AF}\">Hidden item</li></ul></div>";
+    notecraft_store::page::save_body(&s.html_page, body).expect("a box with a heading, a paragraph and a list item");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Add emoji to block 1").count(), 1, "the box's top block keeps its +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 2").count(), 0, "a paragraph with emoji draws no +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 3").count(), 0, "a list item with emoji draws no +");
+    let on_disk = notecraft_store::page::load_page(&s.html_page).expect("the page").body;
+    assert!(on_disk.contains("\u{1F600}"), "the paragraph's emoji stay in the file: {on_disk}");
+    assert!(on_disk.contains("\u{1F3AF}"), "the list item's emoji stay in the file: {on_disk}");
+}
+
+/// A heading below the page's top block draws no `+`: the `+` belongs to the box frame, and the top
+/// block is the one that keeps its header above it.
+#[test]
+fn a_heading_below_the_top_block_draws_no_plus() {
+    let (_t, app, s) = sample_app("ui-later-heading");
+    notecraft_store::page::save_body(&s.html_page, "<p>Some words</p><h2>Later heading</h2>").expect("a paragraph and a heading");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Add emoji to block 1").count(), 1, "the top block keeps its +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 2").count(), 0, "a heading below the top block draws no +");
+}
+
+/// A box whose top block is a table still draws that block's header above the frame.
+#[test]
+fn a_box_whose_top_block_is_a_table_keeps_its_plus() {
+    let (_t, app, s) = sample_app("ui-table-top-plus");
+    let body = "<div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"400\"><table><tr><td>Cell</td></tr></table><p>After the table</p></div>";
+    notecraft_store::page::save_body(&s.html_page, body).expect("a box whose first block is a table");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Add emoji to block 1").count(), 1, "the table as the box's top block keeps its +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 2").count(), 0, "a paragraph after it draws no +");
+    // The pen view draws the same box: its top block keeps its + there too.
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    h.get_by_label("Pen red").click();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Add emoji to block 1").count(), 1, "with the pen in hand the table keeps its +");
 }
