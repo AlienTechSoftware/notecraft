@@ -191,7 +191,9 @@ pub fn current_text(picture: &Path) -> Result<Option<String>, OcrError> {
     if !companions_match(picture, &picture_hash(&bytes)) {
         return Ok(None);
     }
-    Ok(std::fs::read_to_string(companion_path(picture, "txt")).ok())
+    // A text file that is there but cannot be read is an error, not "no text".
+    let text_path = companion_path(picture, "txt");
+    std::fs::read_to_string(&text_path).map(Some).map_err(|e| OcrError::Io(format!("{}: {e}", text_path.display())))
 }
 
 /// The hash the companions are stamped with: the picture's bytes and the companion format.
@@ -517,5 +519,15 @@ c", quad, None,
         assert_eq!(current_text(&picture).expect("readable"), None, "the text is of the old picture");
         std::fs::remove_file(&picture).expect("remove the picture");
         assert!(matches!(current_text(&picture), Err(OcrError::Io(_))), "a missing picture is an error");
+    }
+
+    #[test]
+    fn an_unreadable_text_file_is_an_error_not_an_empty_text() {
+        let dir = scratch("current-text-unreadable");
+        let picture = dir.join("receipt.png");
+        std::fs::write(&picture, b"the picture").expect("picture");
+        refresh_companion(&CountingReader { calls: Cell::new(0) }, &picture).expect("read");
+        std::fs::write(dir.join("receipt.png.txt"), [0xff, 0xfe, 0x00]).expect("not UTF-8");
+        assert!(matches!(current_text(&picture), Err(OcrError::Io(_))));
     }
 }
