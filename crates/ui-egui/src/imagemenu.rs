@@ -21,13 +21,10 @@ pub fn id() -> egui::Id {
 /// Validates that `src` is a safe path within `page_dir/assets/` and reads the original file bytes
 /// without re-encoding. Returns the resolved file path on disk, default file name, and raw bytes.
 pub fn validate_and_read_image(page_dir: &Path, src: &str) -> Result<(PathBuf, String, Vec<u8>), std::io::Error> {
-    let rel = src.strip_prefix("assets/").ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path must begin with assets/"))?;
-    if rel.is_empty() || rel.contains("..") || rel.contains('\\') || rel.starts_with('/') {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid path"));
-    }
-    let source_path = page_dir.join("assets").join(rel);
+    let source_path =
+        crate::preview::page_asset_path(page_dir, src).ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid asset path"))?;
     let bytes = std::fs::read(&source_path)?;
-    let default_name = Path::new(rel).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "picture.png".to_owned());
+    let default_name = source_path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "picture.png".to_owned());
     Ok((source_path, default_name, bytes))
 }
 

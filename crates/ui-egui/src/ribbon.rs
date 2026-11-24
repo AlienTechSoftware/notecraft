@@ -683,6 +683,7 @@ pub struct View<'a> {
     pub pressure_available: bool,
     /// A page is open for page-specific History commands.
     pub has_page: bool,
+    pub has_recycle_notebook: bool,
     /// The open page was marked unread by hand (issue #291).
     pub page_marked_unread: bool,
     /// History > Hide Authors is on (issue #292).
@@ -3435,7 +3436,7 @@ fn history_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
             acts.push(Act::PageVersions);
         }
         if ui
-            .add_enabled_ui(view.has_page, |ui| {
+            .add_enabled_ui(view.has_recycle_notebook, |ui| {
                 big(
                     ui,
                     Icon::Notebook,

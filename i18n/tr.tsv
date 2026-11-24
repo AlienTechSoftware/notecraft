@@ -1039,6 +1039,7 @@
 @id	ui.an_older_version_read_only_the_page_is_not_changed_unless_you_restore_it	Salt okunur eski bir sürüm. Geri yüklemediğiniz sürece sayfa değişmez.
 @id	ui.this_version	Bu sürüm
 @id	ui.compare_with_the_page	Sayfayla karşılaştır
+@id	ui.page_version_comparison_truncated	Her sürümün yalnızca ilk 4.000 boş olmayan satırı karşılaştırılır. Daha aşağıda değişiklikler olabilir.
 @id	ui.this_version_has_the_same_words_as_the_page	Bu sürüm, sayfayla aynı sözcüklere sahip.
 @id	ui.lines_marked_are_only_in_this_version_lines_marked_are_only_in_the_page	− ile işaretli satırlar yalnızca bu sürümde bulunur; + ile işaretli satırlar yalnızca şimdiki sayfada bulunur.
 @id	ui.restore_this_version	Bu sürümü geri yükle

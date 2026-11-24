@@ -146,61 +146,109 @@ impl NoteCraftApp {
             return;
         };
         let dir = ed.dir.clone();
-        let changed = match crate::windows::Revision::read(&dir) {
-            Ok(now) => {
-                if let Some(old) = &self.page_revision
-                    && old != &now
-                    && old.same_page(&now)
-                    && self.pad.as_ref().is_some_and(crate::inkpad::Pad::matches_disk)
-                {
-                    // This view just saved its ink, including Undo/Redo before a body save.
-                    self.page_revision = Some(now);
-                    return;
-                }
-                self.page_revision.as_ref().is_some_and(|old| old != &now)
-            }
+        let revision = crate::windows::Revision::read(&dir);
+        if let Ok(now) = &revision
+            && self.page_revision.as_ref() == Some(now)
+        {
+            return;
+        }
+        let unavailable = match &revision {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
             Err(_) => {
                 self.page_conflict = true;
                 return;
             }
+            Ok(_) => !Self::editor_matches_location(ed),
         };
-        if !changed {
+        if unavailable {
+            if self.is_dirty() {
+                self.page_conflict = true;
+                return;
+            }
+            if let Some(moved) = self.live_page_location() {
+                self.nav.relocate(&dir, &moved);
+                self.expand_to(&moved);
+                self.reload_clean_view(&moved);
+            } else {
+                // A clean view has no edits to recover. A deleted page must not trap
+                // its window in a dialog that requires a file that no longer exists.
+                self.selected = notebook_for(&dir);
+                self.editor = None;
+                self.pad = None;
+                self.page_revision = None;
+            }
             return;
         }
-        if self.is_dirty() || self.pad.as_ref().is_some_and(|p| p.dirty) {
+        if let Ok(now) = revision
+            && self.page_revision.as_ref().is_some_and(|old| old.same_page(&now))
+            && self.pad.as_ref().is_some_and(crate::inkpad::Pad::matches_disk)
+        {
+            // This view just saved its ink, including Undo/Redo before a body save.
+            self.page_revision = Some(now);
+            return;
+        }
+        if self.is_dirty() {
             self.page_conflict = true;
         } else {
-            let zoom = self.zoom_percent;
-            let pan = self.canvas_pan;
-            let caret = self.editor.as_ref().and_then(|e| e.caret.clone());
-            self.page_revision = None;
-            self.open_page_inner(&dir);
-            self.zoom_percent = zoom;
-            self.canvas_pan = pan;
-            if let Some(ed) = &mut self.editor {
-                ed.caret = caret.and_then(|mut c| {
-                    let block = ed.blocks.get(c.block)?;
-                    if c.cell.is_some() || !pageedit::is_writable(block) {
-                        return None;
-                    }
-                    c.text = pageedit::caret_text(block);
-                    // The refreshed spans own formatting and literal identity too.
-                    c.inline = None;
-                    let count = c.text.chars().count();
-                    c.selection = (c.selection.0.min(count), c.selection.1.min(count));
-                    c.place = c.place.map(|p| p.min(count));
-                    Some(c)
-                });
+            self.reload_clean_view(&dir);
+        }
+    }
+
+    fn editor_matches_location(ed: &Editor) -> bool {
+        notecraft_store::tree::read_node(&ed.dir)
+            .is_some_and(|node| node.kind == NodeKind::Page && ed.page_id.as_ref().is_none_or(|id| id == &node.id))
+    }
+
+    fn live_page_location(&mut self) -> Option<PathBuf> {
+        let editor = self.editor.as_ref()?;
+        if Self::editor_matches_location(editor) {
+            return Some(editor.dir.clone());
+        }
+        let id = editor.page_id.clone()?;
+        self.session.refresh();
+        let mut remaining: Vec<_> = self.session.tree().iter().collect();
+        let mut found = None;
+        while let Some(node) = remaining.pop() {
+            if node.info.kind == NodeKind::Page && node.info.id == id {
+                if found.is_some() {
+                    // Do not pick between two copies with an ambiguous identity.
+                    return None;
+                }
+                found = Some(node.path.clone());
             }
-            if !dir.exists() {
-                self.page_conflict = true;
-            }
+            remaining.extend(&node.children);
+        }
+        found
+    }
+
+    fn reload_clean_view(&mut self, dir: &Path) {
+        let zoom = self.zoom_percent;
+        let pan = self.canvas_pan;
+        let caret = self.editor.as_ref().and_then(|e| e.caret.clone());
+        self.page_revision = None;
+        self.open_page_inner(dir);
+        self.zoom_percent = zoom;
+        self.canvas_pan = pan;
+        if let Some(ed) = &mut self.editor {
+            ed.caret = caret.and_then(|mut c| {
+                let block = ed.blocks.get(c.block)?;
+                if c.cell.is_some() || !pageedit::is_writable(block) {
+                    return None;
+                }
+                c.text = pageedit::caret_text(block);
+                // The refreshed spans own formatting and literal identity too.
+                c.inline = None;
+                let count = c.text.chars().count();
+                c.selection = (c.selection.0.min(count), c.selection.1.min(count));
+                c.place = c.place.map(|p| p.min(count));
+                Some(c)
+            });
         }
     }
 
     /// Explicitly discard local unsaved changes and show the latest disk version.
     pub fn reload_conflicted_page(&mut self) -> bool {
-        let Some(dir) = self.current_page().map(Path::to_path_buf) else {
+        let Some(dir) = self.live_page_location() else {
             return false;
         };
         if notecraft_store::page::load_page(&dir).is_err() {
@@ -212,6 +260,10 @@ impl NoteCraftApp {
         if let Some(pad) = &mut self.pad {
             pad.dirty = false;
         }
+        if let Some(old) = self.current_page().map(Path::to_path_buf) {
+            self.nav.relocate(&old, &dir);
+        }
+        self.expand_to(&dir);
         self.page_conflict = false;
         self.page_revision = None;
         self.open_page_inner(&dir);
@@ -220,7 +272,7 @@ impl NoteCraftApp {
 
     /// Preserve this editor and its ink as an ordinary sibling page without replacing the newer page.
     pub fn keep_conflicted_copy(&mut self) -> Result<PathBuf, String> {
-        let dir = self.current_page().ok_or("no page is open")?.to_path_buf();
+        let dir = self.live_page_location().ok_or("the original page is no longer available")?;
         let parent = dir.parent().ok_or("the page has no section")?;
         let Output::Path(copy) =
             self.session.run("node.copy", &params(&[("path", &path_str(&dir)), ("to", &path_str(parent))])).map_err(|e| e.to_string())?

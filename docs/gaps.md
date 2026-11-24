@@ -197,8 +197,8 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   space yet; Windows' application bar would), the taskbar's room (the screen's whole height is
   used), docking to the left, and the browser build, which has no window to move.
 - **The ribbon is a first pass.** Home, Insert, Draw, History and View with Office-style
-  groups, a Styles gallery, a Tags gallery and a File screen. Page Versions now keeps and
-  restores snapshots of a page's main file; assets beside the page are not versioned. The
+  groups, a Styles gallery, a Tags gallery and a File screen. Page Versions previews saved copies and restores their editable content without rolling back
+  the current page title or order. Assets beside the page are not versioned. The
   notebook recycle bin can restore or permanently remove pages, sections and groups; deleting
   an entire notebook is not supported. History's Authors group works (below). Missing tabs:
   Review and Help. Other controls that are not built say so rather than doing nothing.

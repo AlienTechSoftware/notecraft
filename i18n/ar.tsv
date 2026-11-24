@@ -825,4 +825,5 @@
 @id	ui.choose_the_notebooks_folder	اختر مجلد الدفاتر
 @id	ui.notebooks_folder_changed	مجلد الدفاتر الآن هو {folder}.
 @id	ui.could_not_save_the_notebooks_folder_error	تعذّر حفظ مجلد الدفاتر: {error}
+@id	ui.page_version_comparison_truncated	تُقارَن أول ٤٠٠٠ سطر غير فارغ فقط من كل نسخة. قد توجد تغييرات في الأسطر التالية.
 @id	ui.could_not_open_the_notebooks_folder_error	تعذّر فتح مجلد الدفاتر: {error}

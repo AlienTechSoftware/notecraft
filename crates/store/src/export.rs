@@ -446,6 +446,29 @@ mod tests {
     }
 
     #[test]
+    fn scoped_cmgfm_exports_include_links_after_comparison_text_and_in_nested_lists() {
+        let t = TempDir::new("portable-nested-links");
+        let settings = Settings::at(t.path().join("settings.toml"));
+        let nb = ops::create_notebook(&t.path().join("books"), "Book", Some(PageFormat::Cmgfm), &settings).expect("book");
+        let section = ops::create_node(&nb, "Section", NodeKind::Section, None, &settings).expect("section");
+        let notes = ops::create_node(&section, "Notes", NodeKind::Page, None, &settings).expect("notes");
+        for title in ["Appendix", "Details"] {
+            ops::create_node(&section, title, NodeKind::Page, None, &settings).expect("linked page");
+        }
+        let body = "Budget < actual\n\n[Appendix](../appendix/)\n\n- Goal\n  - Step\n    - [Details](../details/)\n";
+        page::save_body(&notes, body).expect("notes body");
+        let prepared = prepare(&notes, None).expect("review");
+        assert_eq!(prepared.dependencies, ["section/appendix", "section/details"]);
+        let exported = prepared.write(t.path()).expect("write export");
+        let copied_page = exported.join("section/notes");
+        assert_eq!(page::load_page(&copied_page).expect("open exported notes").body.trim(), body.trim());
+        for name in ["appendix", "details"] {
+            let linked = exported.join("section").join(name);
+            assert_eq!(links::resolve(&exported, &copied_page, &format!("../{name}/")), links::Link::Node(linked));
+        }
+    }
+
+    #[test]
     fn export_refuses_missing_or_escaping_assets_and_invalid_destinations_without_partial_output() {
         let t = TempDir::new("portable-invalid");
         let settings = Settings::at(t.path().join("settings.toml"));

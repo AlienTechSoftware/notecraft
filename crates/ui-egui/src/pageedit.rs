@@ -1410,7 +1410,11 @@ fn table(
     let here = caret.as_ref().filter(|c| c.block == i).and_then(|c| c.cell);
     // Read before any cell is drawn: a text box takes Tab for itself as it is shown, so
     // asking afterwards never sees it, and Tab did nothing in a table at all.
-    let (tab, shift, escape, rub) = if live {
+    let search_id = egui::Id::new(("page-search", ui.ctx().viewport_id()));
+    // Tab can move egui focus before the table draws. It still belongs to search
+    // if that widget held the keyboard when the frame began.
+    let search_owns_keys = ui.ctx().memory(|memory| memory.has_focus(search_id) || memory.had_focus_last_frame(search_id));
+    let (tab, shift, escape, rub) = if live && !search_owns_keys {
         ui.input(|i| {
             (i.key_pressed(Key::Tab), i.modifiers.shift, i.key_pressed(Key::Escape), i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace))
         })
@@ -2106,9 +2110,10 @@ impl SortKey {
         }
         // A number with what usually comes with one: a sign, a currency sign, thousands commas,
         // a percent sign after it.
-        let bare: String = words.trim_start_matches(['$', '€', '£', '¥']).trim_end_matches('%').chars().filter(|c| *c != ',').collect();
+        let (amount, scale) = words.strip_suffix('%').map_or((words, 1.0), |amount| (amount, 0.01));
+        let bare: String = amount.trim_start_matches(['$', '€', '£', '¥']).chars().filter(|c| *c != ',').collect();
         match bare.parse::<f64>() {
-            Ok(n) if n.is_finite() => SortKey::Number(n),
+            Ok(n) if n.is_finite() => SortKey::Number(n * scale),
             _ => SortKey::Words(words.to_lowercase()),
         }
     }
@@ -3760,6 +3765,36 @@ fn apply(action: Action, blocks: &mut Vec<Block>, caret: &mut Option<Caret>, cha
         // before the caret stays, what is after it moves down with the caret. At the very
         // start of a line that means an empty line above and the words drop.
         Action::Paste(at, pasted) => {
+            // A copied inline selection arrives from the HTML clipboard as one
+            // paragraph. Splice its semantic spans, not a new block or plain text.
+            if let [Block::Paragraph(spans, emoji)] = pasted.as_slice()
+                && emoji.is_empty()
+                && !spans.is_empty()
+                && !spans.iter().any(|span| span.text.contains(['\r', '\n']))
+                && let Some(c) = caret.as_mut().filter(|c| c.block == at && c.cell.is_none())
+                && let Some(block) = blocks.get_mut(at).filter(|block| spans_of(block).is_some())
+            {
+                let mut current = c.inline.take().unwrap_or_else(|| InlineEdit::new(block, true));
+                let _ = current.parse(&c.text);
+                let len = current.text().chars().count();
+                let from = c.selection.0.min(c.selection.1).min(len);
+                let to = c.selection.0.max(c.selection.1).min(len);
+                let inserted = InlineEdit::from_spans(spans);
+                let end = from + inserted.text().chars().count();
+                let mut result = current.slice(0..from);
+                result.join(inserted);
+                result.join(current.slice(to..len));
+                let text = result.text().to_owned();
+                result.write(block, &text);
+                c.text = text;
+                c.selection = (end, end);
+                c.place = Some(end);
+                c.focus = true;
+                c.inline = Some(result);
+                changed.blocks = true;
+                changed.caret = true;
+                return;
+            }
             // What was pasted goes in after the line the caret is in, unless that line is
             // empty, in which case it takes its place. The caret lands after the last of it.
             let empty = blocks.get(at).map(|b| block_text(b).trim().is_empty()).unwrap_or(false);
@@ -4293,6 +4328,34 @@ mod tests {
         assert_eq!(sort_table_rows(&mut b, 0, None, false), Some(vec![0, 2, 3, 1]), "a, b, c: rows 2, 3 and 1 before");
         assert_eq!(sort_table_rows(&mut b, 0, None, false), None, "already in order");
         assert_eq!(sort_table_rows(&mut b, 0, Some((2, 3)), true), Some(vec![0, 1, 3, 2]), "only the picked rows");
+    }
+
+    #[test]
+    fn mixed_decimal_and_percentage_values_sort_by_magnitude() {
+        let mut b = blocks("| Value | Label |\n|---|---|\n| 50% | percent |\n| 2 | two |\n| 1 | one |\n| -10% | negative |\n").remove(0);
+        assert!(sort_table(&mut b, 0, None, false));
+        let Block::Table { rows, .. } = b else { panic!("a table") };
+        let labels: Vec<_> = rows.iter().map(|row| row[1][0].text.as_str()).collect();
+        assert_eq!(labels, ["negative", "percent", "one", "two"]);
+    }
+
+    #[test]
+    fn single_rich_paragraph_replaces_the_caret_selection_inline() {
+        let mut doc = blocks("left **old** right");
+        let mut caret = Some(Caret {
+            block: 0,
+            text: "left old right".into(),
+            focus: false,
+            selection: (8, 5),
+            place: None,
+            cell: None,
+            span: None,
+            inline: None,
+        });
+        paste_at(&mut doc, &mut caret, 0, blocks("*new*"));
+        assert_eq!(doc.len(), 1);
+        assert_eq!(notecraft_formats::render::blocks_to_html(&doc).trim(), "<p>left <i>new</i> right</p>");
+        assert_eq!(caret.unwrap().selection, (8, 8));
     }
 
     #[test]

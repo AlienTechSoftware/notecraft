@@ -3368,6 +3368,29 @@ fn next_unread_and_mark_as_read_follow_what_changed_since_it_was_read() {
     assert_eq!(title(&mut h), json!(html_title), "nothing unread to go to");
     assert!(unread(&mut h).is_empty());
 }
+#[test]
+fn opening_a_page_in_a_second_window_preserves_unread_marks_from_the_first() {
+    let (t, mut app, sample) = sample_app("ui-unread-note-windows");
+    let first = sample.html_page;
+    let other = sample.md_page;
+    app.open_path(&first.to_string_lossy());
+    let mut child = app.child_window(&notecraft_ui_egui::windows::Request { path: other.clone(), quick: false }).expect("second window");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+    settle(&mut h);
+    h.get_by_label("History").click();
+    settle(&mut h);
+    h.get_by_label("Mark as Unread").click();
+    settle(&mut h);
+    let id = notecraft_store::tree::read_node(&first).expect("node").id;
+    let file = t.path().join("read-state.tsv");
+    let marked = || notecraft_store::read_state::ReadState::load(&file).is_marked_unread(&id);
+    assert!(marked());
+    child.open_path(&other.to_string_lossy());
+    assert!(marked(), "the second window did not forget the first window's newer mark");
+    child.open_path(&first.to_string_lossy());
+    assert!(!marked(), "explicitly reopening the marked page in either window clears it");
+}
+
 /// Issue #279: History > Recent Edits was "not built". It lists the pages changed in a range,
 /// newest first, by the time each page keeps of its own, with where each one is; a filter
 /// narrows the list and a title opens that page.
@@ -12354,6 +12377,31 @@ fn find_tags_lists_tagged_notes_and_goes_to_them() {
     settle(&mut h);
     assert_eq!(h.query_all_by_label("Tags Summary").count(), 0, "the summary closes");
 }
+#[test]
+fn the_open_tags_summary_tracks_the_current_section_without_resetting_its_filter() {
+    let (_t, mut app, sample) = sample_app("ui-find-tags-navigation");
+    notecraft_store::page::save_body(&sample.html_page, "<p>Sample section</p>").expect("save");
+    notecraft_store::page::save_body(&sample.md_page, "- [ ] New section task\n\n- [x] Done in new section\n").expect("save");
+    assert_ne!(sample.html_page.parent(), sample.md_page.parent());
+    app.open_path(&sample.html_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+    settle(&mut h);
+    h.get_by_label("Find Tags").click();
+    settle(&mut h);
+    h.get_by_label("Only unchecked To Do items").click();
+    settle(&mut h);
+    let summary = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspector")["tagsSummary"].clone();
+    assert!(summary(&mut h)["lines"].as_array().expect("tags lines").is_empty());
+    h.state_mut().open_path(&sample.md_page.to_string_lossy());
+    settle(&mut h);
+    let state = summary(&mut h);
+    let lines = state["lines"].as_array().expect("tags lines");
+    assert_eq!(state["scope"], "section");
+    assert_eq!(state["unchecked"], true);
+    assert!(lines.iter().any(|line| line["text"] == "New section task"), "the scoped pane now lists the section on screen");
+    assert!(lines.iter().all(|line| line["text"] != "Done in new section"), "the unchecked filter is still in effect");
+}
+
 /// The page's sideways scroll bar as `ui.inspect` reports it: the track and the thumb, or `None`.
 fn horizontal_bar(h: &mut Harness<'_, NoteCraftApp>) -> Option<(egui::Rect, egui::Rect)> {
     let v = ask(h, "ui.inspect", json!({})).expect("inspect");
@@ -15513,4 +15561,232 @@ fn emoji_picker_paste_stays_in_search_then_page_paste_resumes() {
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     settle(&mut h);
     assert!(!h.state().body().unwrap_or_default().contains("undo-target-749"));
+}
+
+#[test]
+fn global_search_keyboard_does_not_undo_or_add_rows_behind_it() {
+    let (_t, mut app, s) = sample_app("ui-search-page-key-ownership");
+    notecraft_store::page::save_body(&s.html_page, "<table><tr><th>Fruit</th><th>Count</th></tr><tr><td>apple</td><td>Two</td></tr></table>")
+        .expect("fixture");
+    app.open_path(&s.html_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let cell = h.get_by_label("Two").rect().center();
+    ask(&mut h, "ui.click", json!({"x": cell.x, "y": cell.y})).expect("last cell");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "new"})).expect("edit the last cell");
+    settle(&mut h);
+    let before = h.state().body().unwrap_or_default().to_string();
+    assert!(before.contains("new"), "{before}");
+    ask(&mut h, "ui.key", json!({"key": "F", "ctrl": true})).expect("search");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "search phrase"})).expect("query");
+    settle(&mut h);
+    for (key, ctrl) in [("Z", true), ("Tab", false)] {
+        ask(&mut h, "ui.key", json!({"key": key, "ctrl": ctrl})).expect("global search key");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), before, "search must not give {key} to the page");
+    }
+}
+
+#[test]
+fn window_capture_follows_a_moved_page_and_can_recover_unsaved_edits() {
+    use notecraft_engine::Output;
+    for (mode, replace_old) in [("clean", false), ("clean", true), ("copy", false), ("reload", true)] {
+        let (_t, mut first, sample) = sample_app("window-moved");
+        let page = sample.md_page;
+        let destination = sample.html_page.parent().expect("destination section").to_path_buf();
+        first.open_path(&page.to_string_lossy());
+        let mut second = first.child_window(&notecraft_ui_egui::windows::Request { path: page.clone(), quick: false }).expect("second view");
+        if mode != "clean" {
+            second.set_body("Unsaved second window\n");
+        }
+        let old = page.to_string_lossy();
+        let to = destination.to_string_lossy();
+        let Output::Path(moved) = first.session_mut().run("node.move", &params(&[("path", &old), ("to", &to)])).expect("move") else {
+            panic!("move returned no path");
+        };
+        let body = notecraft_store::page::load_page(&moved).expect("original").body;
+        if replace_old {
+            let parent = page.parent().expect("old section").to_string_lossy();
+            let Output::Path(replacement) = first
+                .session_mut()
+                .run("node.create", &params(&[("parent", &parent), ("kind", "page"), ("title", "Format ideas")]))
+                .expect("create replacement at old path")
+            else {
+                panic!("missing replacement");
+            };
+            assert_eq!(replacement, page);
+            notecraft_store::page::save_body(&replacement, "A completely different note\n").expect("save replacement");
+        }
+        second.check_page_changes();
+        if mode == "copy" {
+            assert!(second.has_page_conflict());
+            assert!(second.is_dirty());
+            let copy = second.keep_conflicted_copy().expect("recover local changes after move");
+            assert_ne!(copy, moved);
+            assert!(notecraft_store::page::load_page(&copy).expect("copy").body.contains("Unsaved second window"));
+        } else {
+            if mode == "reload" {
+                assert!(second.has_page_conflict());
+                assert!(second.is_dirty());
+                assert!(second.reload_conflicted_page());
+            }
+            assert!(!second.has_page_conflict(), "moving an unmodified view is not a conflict");
+            assert_eq!(second.current_page(), Some(moved.as_path()));
+            assert_eq!(second.body(), Some(body.as_str()));
+        }
+        assert_eq!(notecraft_store::page::load_page(&moved).expect("original unchanged").body, body);
+        if replace_old {
+            assert_eq!(notecraft_store::page::load_page(&page).expect("replacement untouched").body, "A completely different note\n");
+        }
+    }
+}
+
+#[test]
+fn a_small_fixed_sheet_recenters_when_the_window_grows() {
+    let (_t, mut app, s) = sample_app("ui-paper-recenter");
+    notecraft_store::page::set_paper_size(&s.html_page, notecraft_model::paper::Paper::parse("a6 portrait 19.05,19.05,19.05,19.05")).expect("paper");
+    app.open_path(&s.html_page.to_string_lossy());
+    let origin = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["page"]["origin"][0].as_f64().expect("page x");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1280.0, 900.0));
+    settle(&mut h);
+    let before = origin(&mut h);
+    h.set_size(egui::vec2(1500.0, 900.0));
+    settle(&mut h);
+    let delta = origin(&mut h) - before;
+    assert!((delta - 110.0).abs() < 2.0, "the fixed sheet moves half the width added: {delta}");
+}
+
+#[test]
+fn file_search_reports_empty_results_and_opens_a_matching_page() {
+    let (_t, app, s) = sample_app("ui-file-search");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.state_mut().open_backstage_page("Info");
+    settle(&mut h);
+    search_for(&mut h, "missingfixtureqaz");
+    assert_eq!(h.query_all_by_label("No pages match.").count(), 1);
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("dismiss");
+    settle(&mut h);
+    search_for(&mut h, "Kickoff");
+    h.get_by_label_contains("kickoff notes").click();
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("Kickoff notes"));
+    assert_eq!(h.query_all_by_label("Back to the notebook").count(), 0, "the matching note is visible");
+}
+
+#[test]
+fn new_notebook_name_does_not_recapture_tab_focus() {
+    let t = TempDir::new("ui-new-notebook-tab");
+    let mut h = harness(NoteCraftApp::new(session(&t)), LIGHT);
+    settle(&mut h);
+    h.get_by_label("New notebook").click();
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "Study"})).expect("name");
+    pump(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Tab"})).expect("move focus");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "ShouldNotEnterName"})).expect("text at next control");
+    pump(&mut h);
+    h.get_by_label("Create").click();
+    settle(&mut h);
+    assert!(h.state().session().tree().iter().any(|n| n.info.title == "Study"));
+}
+
+#[test]
+fn locked_pages_explain_the_lock_and_keep_version_preview_available() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-locked-version-preview");
+    notecraft_store::page::save_body(&s.md_page, "Current words.\n").expect("save a version");
+    notecraft_store::page::set_read_only(&s.md_page, true).expect("lock");
+    let file = s.md_page.join("index.md");
+    let before = std::fs::read(&file).expect("locked page");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    assert!(h.query_all_by_label("This page is locked read only").next().is_some());
+    assert!(h.query_by_label_contains("holds markup").is_none());
+    h.get_by_label("History").click();
+    settle(&mut h);
+    h.get_by_label("Page Versions").click();
+    settle(&mut h);
+    assert!(h.get_by_label("Restore").accesskit_node().is_disabled());
+    h.get_by_label("Preview").click();
+    settle(&mut h);
+    assert!(h.get_by_label("Restore this version").accesskit_node().is_disabled());
+    assert!(h.query_by_label("Back to the list").is_some(), "preview stays usable");
+    assert_eq!(std::fs::read(&file).expect("locked page"), before);
+}
+
+#[test]
+fn file_copy_and_account_controls_are_reachable_at_large_interface_sizes() {
+    // At 200% scaling, 820 by 520 native pixels give this much usable layout room.
+    let (_t, app, s) = sample_app("ui-file-large-type");
+    let size = egui::vec2(410.0, 260.0);
+    let mut h = sized_harness(app, LIGHT, size);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    for (page, labels) in [("Save a Copy", ["Choose\u{2026}", "Save the copy"]), ("Account", ["Keep this name", "Keep no name"])] {
+        h.state_mut().open_backstage_page(page);
+        settle(&mut h);
+        ask(&mut h, "ui.move", json!({"x": 292, "y": 174})).expect("pointer over content");
+        pump(&mut h);
+        ask(&mut h, "ui.scroll", json!({"y": -700})).expect("scroll down the File body");
+        settle(&mut h);
+        for label in labels {
+            let at = h.get_by_label(label).rect().center();
+            assert!((116.0..size.x).contains(&at.x) && (30.0..size.y).contains(&at.y), "{page}: {label} at {at:?} is within the File body");
+        }
+    }
+}
+
+#[test]
+fn the_notebook_recycle_bin_is_available_when_its_last_content_is_deleted() {
+    use egui_kittest::kittest::NodeT as _;
+    use notecraft_engine::Output;
+    for kind in ["page", "section", "group"] {
+        let t = TempDir::new("ui-empty-bin");
+        let mut se = session(&t);
+        let make = |s: &mut Session, command: &str, p: &[(&str, &str)]| match s.run(command, &params(p)).expect(command) {
+            Output::Path(x) => x,
+            _ => panic!("missing fixture path"),
+        };
+        let nb = make(&mut se, "notebook.create", &[("name", "Recovery QA"), ("empty", "true")]);
+        let group = make(&mut se, "node.create", &[("parent", &nb.to_string_lossy()), ("kind", "section-group"), ("title", "Test group")]);
+        let section = make(&mut se, "node.create", &[("parent", &group.to_string_lossy()), ("kind", "section"), ("title", "Test section")]);
+        let page = make(&mut se, "node.create", &[("parent", &section.to_string_lossy()), ("kind", "page"), ("title", "Only page")]);
+        se.run("page.save", &params(&[("path", &page.to_string_lossy()), ("body", "<p>Saved content</p>")])).expect("save");
+        let (target, label) = match kind {
+            "page" => (&page, "Only page"),
+            "section" => (&section, "Test section"),
+            _ => (&group, "Test group"),
+        };
+        let mut h = sized_harness(NoteCraftApp::new(se), LIGHT, egui::vec2(1600.0, 900.0));
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        h.get_all_by_label(label).next().expect("tree row").click_secondary();
+        settle(&mut h);
+        h.get_by_label("Delete...").click();
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key":"Enter"})).expect("confirm recycle move");
+        settle(&mut h);
+        assert!(!target.exists());
+        h.get_by_label("History").click();
+        settle(&mut h);
+        assert!(!h.get_by_label("Notebook Recycle Bin").accesskit_node().is_disabled(), "{kind} after deletion");
+        drop(h);
+
+        let mut h = sized_harness(NoteCraftApp::new(session(&t)), LIGHT, egui::vec2(1600.0, 900.0));
+        settle(&mut h);
+        h.get_by_label("History").click();
+        settle(&mut h);
+        assert!(!h.get_by_label("Notebook Recycle Bin").accesskit_node().is_disabled(), "{kind} after restarting");
+        h.get_by_label("Notebook Recycle Bin").click();
+        settle(&mut h);
+        h.get_by_label("Restore").click();
+        settle(&mut h);
+        assert!(notecraft_store::page::load_page(&page).expect("restored original").body.contains("Saved content"));
+    }
 }
