@@ -5,7 +5,9 @@
 //! pen: hovering moves the cursor (`CursorEntered`, `CursorMoved`, `CursorLeft`), and the tip on
 //! the tablet is a touch (`Touch` with `Started`, `Moved`, `Ended`) carrying the pen's pressure as
 //! a normalized force. Toolkits that turn the first touch into pointer presses (egui-winit does)
-//! therefore draw with it as with a mouse, and see its pressure besides.
+//! therefore draw with it as with a mouse, and see its pressure besides. The buttons on the
+//! pen's barrel are mouse buttons (`MouseInput`): the upper one the right button and the lower one
+//! the middle, as a compositor makes them for a client without the tablet protocol.
 //!
 //! Modelled on winit 0.31's `wp_tablet_input_v2`, written against the 0.30 event types.
 
@@ -29,18 +31,35 @@ use sctk::reexports::protocols::wp::tablet::zv2::client::zwp_tablet_pad_v2::{sel
 use sctk::reexports::protocols::wp::tablet::zv2::client::zwp_tablet_seat_v2::{
     self, ZwpTabletSeatV2,
 };
+use sctk::reexports::client::WEnum;
 use sctk::reexports::protocols::wp::tablet::zv2::client::zwp_tablet_tool_v2::{
-    Event as ToolEvent, ZwpTabletToolV2,
+    ButtonState, Event as ToolEvent, ZwpTabletToolV2,
 };
 use sctk::reexports::protocols::wp::tablet::zv2::client::zwp_tablet_v2::ZwpTabletV2;
 
 use crate::dpi::LogicalPosition;
-use crate::event::{Force, Touch, TouchPhase, WindowEvent};
+use crate::event::{ElementState, Force, MouseButton, Touch, TouchPhase, WindowEvent};
 use crate::platform_impl::wayland::state::WinitState;
 use crate::platform_impl::wayland::{self, DeviceId};
 
 /// Touch ids of tablet tools start here, well clear of a touchscreen's own ids.
 const TOOL_TOUCH_ID_BASE: u64 = 1 << 40;
+
+/// The pen's barrel buttons, as Linux numbers them (`linux/input-event-codes.h`).
+const BTN_STYLUS: u32 = 0x14b;
+const BTN_STYLUS2: u32 = 0x14c;
+const BTN_STYLUS3: u32 = 0x149;
+
+/// The mouse button a barrel button is: the lower one is the middle button, the upper one the
+/// right, as libinput and the X Wacom driver have them; a third is the back button.
+fn tool_button(code: u32) -> MouseButton {
+    match code {
+        BTN_STYLUS => MouseButton::Middle,
+        BTN_STYLUS2 => MouseButton::Right,
+        BTN_STYLUS3 => MouseButton::Back,
+        other => MouseButton::Other(other.min(u32::from(u16::MAX)) as u16),
+    }
+}
 
 /// The `zwp_tablet_manager_v2` global, bound when the compositor has it.
 #[derive(Debug)]
@@ -97,6 +116,8 @@ enum ToolStep {
     Down,
     Up,
     Left,
+    /// A barrel button pressed (true) or let go.
+    Button(MouseButton, bool),
 }
 
 impl TabletToolDataInner {
@@ -169,6 +190,10 @@ impl Dispatch<ZwpTabletToolV2, TabletToolData, WinitState> for TabletState {
             ToolEvent::ProximityOut => inner.pending.push(ToolStep::Left),
             ToolEvent::Down { .. } => inner.pending.push(ToolStep::Down),
             ToolEvent::Up => inner.pending.push(ToolStep::Up),
+            ToolEvent::Button { button, state, .. } => {
+                let pressed = matches!(state, WEnum::Value(ButtonState::Pressed));
+                inner.pending.push(ToolStep::Button(tool_button(button), pressed));
+            },
             ToolEvent::Motion { x, y } => {
                 inner.position = (x, y);
                 inner.pending.push(ToolStep::Moved);
@@ -286,6 +311,10 @@ fn deliver(
             inner.pressure = None;
             sink.push_window_event(WindowEvent::CursorLeft { device_id }, window_id);
         },
+        ToolStep::Button(button, pressed) => {
+            let state = if pressed { ElementState::Pressed } else { ElementState::Released };
+            sink.push_window_event(WindowEvent::MouseInput { device_id, state, button }, window_id);
+        },
     }
 }
 
@@ -362,6 +391,20 @@ delegate_dispatch!(WinitState: [ZwpTabletPadStripV2: ()] => TabletState);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_barrel_buttons_are_the_middle_and_right_mouse_buttons() {
+        assert_eq!(tool_button(0x14b), MouseButton::Middle);
+        assert_eq!(tool_button(0x14c), MouseButton::Right);
+        assert_eq!(tool_button(0x149), MouseButton::Back);
+        assert_eq!(tool_button(0x150), MouseButton::Other(0x150));
+    }
+
+    #[test]
+    fn a_frame_with_a_button_reports_it() {
+        let press = ToolStep::Button(MouseButton::Right, true);
+        assert_eq!(frame_steps(vec![press.clone()], false, false), vec![press]);
+    }
 
     #[test]
     fn pressing_harder_without_moving_moves_the_touch_where_it_is() {
