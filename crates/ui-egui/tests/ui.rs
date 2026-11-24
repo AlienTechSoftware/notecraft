@@ -8028,6 +8028,74 @@ fn a_picture_in_a_shared_box_is_moved_by_dragging_it() {
     }
 }
 
+// ---------- File > Print (issue #168) ----------
+
+/// Waits until the Print dialog has laid out its sheets.
+fn wait_for_sheets(h: &mut Harness<'_, NoteCraftApp>) {
+    for _ in 0..200 {
+        settle(h);
+        if h.query_all(egui_kittest::kittest::by().label_contains("Sheet 1 of")).next().is_some() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    panic!("the sheets were never laid out");
+}
+
+#[test]
+fn ctrl_p_previews_the_page_and_saves_it_as_a_pdf_of_its_sheets() {
+    let (_t, mut app, s) = sample_app("ui-print");
+    app.enable_file_downloads();
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::P);
+    wait_for_sheets(&mut h);
+    review(&mut h, "print-dialog");
+    assert!(h.state().printing(), "Ctrl+P opens the Print dialog");
+    assert!(h.query_by_label("Print preview").is_some(), "the first sheet is shown");
+    let sheets = (1..50).find(|n| h.query_by_label(&format!("Sheet 1 of {n}")).is_some()).expect("the sheets are counted");
+    assert!(sheets >= 1);
+
+    h.get_by_label("Save as PDF").click();
+    settle(&mut h);
+    let downloads = h.state_mut().take_file_downloads();
+    assert_eq!(downloads.len(), 1, "one PDF");
+    assert_eq!(downloads[0].mime, "application/pdf");
+    assert!(downloads[0].name.ends_with(".pdf"), "{}", downloads[0].name);
+    let pdf = String::from_utf8_lossy(&downloads[0].bytes);
+    assert!(pdf.starts_with("%PDF-"));
+    assert!(pdf.contains(&format!("/Count {sheets}")), "a PDF page for every sheet");
+    // A4 unless the page has a paper of its own.
+    assert!(pdf.contains("/MediaBox [0 0 595.28 841.89]"), "the sheets are A4");
+
+    // Landscape turns the sheets, and the preview is laid out again.
+    h.get_by_label("Landscape").click();
+    wait_for_sheets(&mut h);
+    h.get_by_label("Save as PDF").click();
+    settle(&mut h);
+    let downloads = h.state_mut().take_file_downloads();
+    assert!(String::from_utf8_lossy(&downloads[0].bytes).contains("/MediaBox [0 0 841.89 595.28]"), "landscape sheets");
+
+    h.get_by_label("Close").click();
+    settle(&mut h);
+    assert!(!h.state().printing(), "Close closes it");
+}
+
+#[test]
+fn file_print_is_built_and_opens_the_print_dialog() {
+    let (_t, app, s) = sample_app("ui-print-file");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("File").click();
+    settle(&mut h);
+    h.get_by_label("Print").click();
+    settle(&mut h);
+    assert!(h.state().printing(), "File > Print opens the Print dialog");
+    assert!(h.query_by_label("This page").is_some() && h.query_by_label("Every page of this section").is_some(), "with a choice of what to print");
+}
+
 // ---------- Copy Text from Picture (issue #274) ----------
 
 /// Gives the lines it holds for any picture: what a picture's text looks like once its page was

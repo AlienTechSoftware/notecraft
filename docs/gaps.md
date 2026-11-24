@@ -357,6 +357,13 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   one is open the page stops being text boxes altogether. The sibling WordCraft owns its whole text pipeline (shaping, line boxes,
   hit testing) and gets this right; matching a mature editor means a text crate of our own
   over parley or the same house stack. Decision pending.
+- **Printing draws pictures of the sheets.** File > Print and Ctrl+P lay the page, or every page of
+  its section, on sheets of the chosen paper, orientation and margins, preview them, save them as a
+  PDF, and send them to a printer. Each sheet is a picture at 200 dots per inch, so the PDF's words
+  cannot be selected or searched. A sheet ends at a blank row where it can, otherwise a line may be
+  cut. Sending to a printer uses CUPS on macOS and Linux; on Windows the PDF opens in the system's
+  PDF viewer and is printed from there; Android and the browser save the PDF only. Pages printed
+  together each start on a new sheet; headers, footers and page numbers are not drawn.
 - **A dropped file can be copied in, linked, or inserted as a printout.** PDF rasterization is
   native Rust. LibreOffice is still needed to convert Office documents; without a renderer, the
   printout action reports an error rather than creating an incomplete page.
@@ -425,8 +432,8 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   elements, or calls `page.containers` afterwards.
 - **The Quick Access Toolbar is part of OneNote's.** It has Back, Forward, Undo and Redo, a menu to
   choose which show, to put it under the ribbon or to hide it, and the choices are kept. OneNote's
-  menu also lists Print, Print Preview, Touch/Mouse Mode and More Commands: none exist here, so they
-  are not listed. Back and Forward are also Alt+Left and Alt+Right and the mouse's side buttons.
+  menu also lists Print, Print Preview, Touch/Mouse Mode and More Commands. Printing is File > Print
+  and Ctrl+P (with its own preview); the toolbar does not list it yet, nor the other two. Back and Forward are also Alt+Left and Alt+Right and the mouse's side buttons.
   Ctrl+Page Up and Ctrl+Page Down open the page above or below in the page list, subpages included
   when their page is expanded, and stop at the first and last page. Undo
   covers the page's words and boxes (a typing burst is one step); ink keeps its own undo and has no

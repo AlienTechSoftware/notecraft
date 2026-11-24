@@ -1500,3 +1500,38 @@
 @id	ui.picture_text_models_folder_incomplete	That folder does not hold text-detection.onnx and text-recognition.onnx.
 @id	ui.choose_the_ocr_models_folder	Choose the folder with the text recognition models
 @id	ui.picture_text_copy_failed	The text could not be put on the clipboard: {error}
+@id	ui.print	Print
+@id	ui.print_what	Print what
+@id	ui.print_this_page	This page
+@id	ui.print_this_section	Every page of this section
+@id	ui.print_paper	Paper
+@id	ui.print_portrait	Portrait
+@id	ui.print_landscape	Landscape
+@id	ui.print_margins_mm	Margins (mm)
+@id	ui.print_top	Top
+@id	ui.print_right	Right
+@id	ui.print_bottom	Bottom
+@id	ui.print_left	Left
+@id	ui.print_fit_width	Fit to the paper's width
+@id	ui.print_printer	Printer
+@id	ui.print_default_printer	The default printer
+@id	ui.print_no_printers	No printers were found. You can still save a PDF.
+@id	ui.print_copies	Copies
+@id	ui.print_drawing	Laying out the page...
+@id	ui.print_drawing_page_of	Laying out page {done} of {total}...
+@id	ui.print_drawing_stopped	laying out stopped before it finished
+@id	ui.print_failed	The page could not be laid out: {error}
+@id	ui.print_preview	Print preview
+@id	ui.print_previous_sheet	Previous sheet
+@id	ui.print_next_sheet	Next sheet
+@id	ui.print_sheet_of	Sheet {sheet} of {total}
+@id	ui.print_cut_off	The note is wider than the paper. What lies past the right margin is not printed. Turn on Fit to the paper's width to print all of it.
+@id	ui.print_send	Print
+@id	ui.print_sending	Sending to the printer...
+@id	ui.print_sent	Sent to the printer.
+@id	ui.print_send_failed	The printer did not take the job: {error}
+@id	ui.print_save_as_pdf	Save as PDF
+@id	ui.print_saved_pdf	Saved the PDF as {path}.
+@id	ui.print_could_not_save_pdf	The PDF could not be saved: {error}
+@id	ui.print_save_first	The page could not be saved, so it was not printed.
+@id	ui.print_opened_in_viewer	The sheets are open in your PDF viewer. Print them from there.

@@ -113,6 +113,8 @@ const DISCORD_URL: &str = "https://discord.gg/artcraft";
 const RACK_KEY: &str = "pen_rack";
 /// The size the whole window is drawn at, in percent: see `backstage::UI_SCALES`.
 const UI_SCALE_KEY: &str = "ui_scale";
+/// The paper File > Print used last, for the next print of a page with no paper of its own.
+const PRINT_PAPER_KEY: &str = "print_paper";
 const NIB_KEY: &str = "pen_in_hand";
 const SENSITIVITY_KEY: &str = "pen_sensitivity";
 const DEFAULT_SENSITIVITY: u8 = 50;
@@ -1382,6 +1384,8 @@ pub struct NoteCraftApp {
     custom_tags: Option<crate::customtags::Dialog>,
     /// Copy Text from Picture while its dialog is open (issue #274).
     picture_text: Option<crate::picture_text::Dialog>,
+    /// File > Print while its dialog is open (issue #168).
+    print: Option<crate::print::Dialog>,
     templates_pane: Option<TemplatesPane>,
     cursor: usize,
     tokens: Tokens,
@@ -1674,6 +1678,7 @@ impl NoteCraftApp {
             tags_pane: None,
             custom_tags: None,
             picture_text: None,
+            print: None,
             templates_pane: None,
             cursor: 0,
             tokens: Theme::DEFAULT.tokens(),
@@ -4948,6 +4953,11 @@ impl NoteCraftApp {
                     let _ = self.session.run("export.cancel", &Params::new());
                     self.backstage = None;
                 }
+                backstage::Act::Print => {
+                    let _ = self.session.run("export.cancel", &Params::new());
+                    self.backstage = None;
+                    self.open_print();
+                }
                 backstage::Act::Page(name) => {
                     let _ = self.session.run("export.cancel", &Params::new());
                     self.backstage = Some(name);
@@ -7510,6 +7520,61 @@ impl NoteCraftApp {
             (false, false) => crate::picture_text::Scope::Picture,
         };
         self.picture_text = Some(crate::picture_text::Dialog::start(scope, pictures, self.ocr_models()));
+    }
+
+    /// File > Print or Ctrl+P (issue #168): the open page's work is saved first, so what is printed is
+    /// what the page holds, and the Print dialog opens for it.
+    pub fn open_print(&mut self) {
+        let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        self.save_now();
+        if self.is_dirty() {
+            self.complain(crate::tl_id!("ui.print_save_first"));
+            return;
+        }
+        let remembered = self.session.settings.get(PRINT_PAPER_KEY).and_then(|p| notecraft_model::paper::Paper::parse(&p));
+        self.print = Some(crate::print::Dialog::new(&dir, remembered));
+    }
+
+    /// Whether the Print dialog is open.
+    pub fn printing(&self) -> bool {
+        self.print.is_some()
+    }
+
+    /// Shows the Print dialog while it is open, and saves the PDF it asks for.
+    fn print_dialog(&mut self, ctx: &Context) {
+        let Some(mut dialog) = self.print.take() else { return };
+        let out = dialog.show(ctx, &self.tokens);
+        if let Some(said) = out.said {
+            self.say(said);
+            let _ = self.session.settings.set(PRINT_PAPER_KEY, &dialog.layout.paper.write());
+        }
+        if let Some((bytes, name)) = out.save_pdf {
+            let _ = self.session.settings.set(PRINT_PAPER_KEY, &dialog.layout.paper.write());
+            self.save_pdf(bytes, &name);
+        }
+        if !out.closed {
+            self.print = Some(dialog);
+        }
+    }
+
+    /// Saves a printed PDF: where the person chooses, or as a download in a browser.
+    fn save_pdf(&mut self, bytes: Vec<u8>, name: &str) {
+        if let Some(downloads) = self.file_downloads.as_mut() {
+            downloads.push(FileDownload { name: name.to_string(), mime: "application/pdf", bytes });
+            self.say(crate::i18n::format_message_id("ui.print_saved_pdf", &[("path", name)]));
+            return;
+        }
+        let Some(destination) = pick_pdf_destination(name) else { return };
+        match std::fs::write(&destination, &bytes) {
+            Ok(()) => {
+                let shown = self.shown(&destination);
+                self.say(crate::i18n::format_message_id("ui.print_saved_pdf", &[("path", &shown)]));
+            }
+            Err(e) => self.complain(&crate::i18n::format_message_id("ui.print_could_not_save_pdf", &[("error", &e.to_string())])),
+        }
     }
 
     /// The folder with the text recognition models, when one is set.
@@ -10981,6 +11046,7 @@ impl NoteCraftApp {
             self.reader = None;
         }
         self.picture_text_dialog(ctx);
+        self.print_dialog(ctx);
         if let Some(mut dialog) = self.custom_tags.take() {
             let out = dialog.show(ctx, &self.tokens);
             if let Some(list) = out.changed {
@@ -13445,6 +13511,10 @@ impl NoteCraftApp {
         if !self.event_frames.is_empty() {
             ctx.request_repaint();
         }
+        // Ctrl+P prints the open page, as it does everywhere (issue #168).
+        if self.dialog.is_none() && self.print.is_none() && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::P)) {
+            self.open_print();
+        }
         if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::S)) {
             if let Some(ed) = self.editor.as_mut() {
                 ed.dirty_since.get_or_insert_with(Instant::now);
@@ -13788,6 +13858,18 @@ fn pick_ocr_models_folder() -> Option<PathBuf> {
 
 #[cfg(target_arch = "wasm32")]
 fn pick_ocr_models_folder() -> Option<PathBuf> {
+    None
+}
+
+/// File > Print asks where to save the PDF (issue #168). Below the other choosers, and gated in
+/// its own right, for the same reason as the ones above. A browser downloads the file instead.
+#[cfg(not(target_arch = "wasm32"))]
+fn pick_pdf_destination(name: &str) -> Option<PathBuf> {
+    rfd::FileDialog::new().set_title(crate::tl_id!("ui.print_save_as_pdf")).set_file_name(name).add_filter("PDF", &["pdf"]).save_file()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn pick_pdf_destination(_name: &str) -> Option<PathBuf> {
     None
 }
 
