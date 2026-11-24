@@ -194,12 +194,12 @@ const INDENT: f32 = 14.0;
 
 /// Shared title treatment for modal dialogs. Keeping this here makes dialogs use the
 /// same opaque, theme-owned title band instead of inheriting egui's platform-gray title bar.
-fn modal_frame(tokens: &Tokens) -> egui::Frame {
+pub(crate) fn modal_frame(tokens: &Tokens) -> egui::Frame {
     egui::Frame::NONE.fill(tokens.panel).stroke(egui::Stroke::new(1.5, tokens.accent)).inner_margin(egui::Margin::same(16))
 }
 
 // i18n-ui-text: title
-fn modal_title(ui: &mut Ui, tokens: &Tokens, title: &str) {
+pub(crate) fn modal_title(ui: &mut Ui, tokens: &Tokens, title: &str) {
     egui::Frame::NONE.fill(tokens.band).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.label(egui::RichText::new(crate::tl!(title)).strong().size(17.0).color(tokens.band_text));
@@ -210,7 +210,7 @@ fn modal_title(ui: &mut Ui, tokens: &Tokens, title: &str) {
 /// Dims the window behind a modal dialog and takes the clicks that miss the dialog, so they do
 /// not reach the page underneath. Returns the backdrop's layer: the dialog's window keeps itself
 /// above it with [`stay_above`].
-fn modal_backdrop(ctx: &egui::Context, id: &str) -> egui::LayerId {
+pub(crate) fn modal_backdrop(ctx: &egui::Context, id: &str) -> egui::LayerId {
     let screen = ctx.viewport_rect();
     egui::Area::new(egui::Id::new(id))
         .order(egui::Order::Foreground)
@@ -226,13 +226,13 @@ fn modal_backdrop(ctx: &egui::Context, id: &str) -> egui::LayerId {
 /// Keeps a modal dialog's window directly above its backdrop. Both are foreground areas, and egui
 /// raises an area that is clicked to the top of its order: a click on the dimmed backdrop used to
 /// lift it over the dialog, whose buttons could then never be reached again (issue #98).
-fn stay_above(ui: &Ui, backdrop: egui::LayerId) {
+pub(crate) fn stay_above(ui: &Ui, backdrop: egui::LayerId) {
     ui.ctx().set_sublayer(backdrop, ui.layer_id());
 }
 
 /// Modal actions use a readable size based on their label instead of egui's compact default.
 // i18n-ui-text: label
-fn modal_button(ui: &mut Ui, tokens: &Tokens, label: &str, primary: bool) -> egui::Response {
+pub(crate) fn modal_button(ui: &mut Ui, tokens: &Tokens, label: &str, primary: bool) -> egui::Response {
     modal_button_enabled(ui, tokens, label, primary, true)
 }
 
@@ -1374,6 +1374,8 @@ pub struct NoteCraftApp {
     tags_pane: Option<TagsPane>,
     /// Home > More tags > Customize Tags, while it is open (issue #259).
     custom_tags: Option<crate::customtags::Dialog>,
+    /// Copy Text from Picture while its dialog is open (issue #274).
+    picture_text: Option<crate::picture_text::Dialog>,
     templates_pane: Option<TemplatesPane>,
     cursor: usize,
     tokens: Tokens,
@@ -1665,6 +1667,7 @@ impl NoteCraftApp {
             search_scope: SearchScope::default(),
             tags_pane: None,
             custom_tags: None,
+            picture_text: None,
             templates_pane: None,
             cursor: 0,
             tokens: Theme::DEFAULT.tokens(),
@@ -6149,6 +6152,7 @@ impl NoteCraftApp {
             ribbon::Act::InkExportPlain => self.ink_export_plain(),
             ribbon::Act::SavePictureAs(src) => self.save_picture_as(&src),
             ribbon::Act::TurnPicture(src, how) => self.turn_picture(&src, how),
+            ribbon::Act::CopyTextFromPicture { src, whole_printout } => self.copy_text_from_picture(&src, whole_printout),
         }
     }
 
@@ -7458,6 +7462,80 @@ impl NoteCraftApp {
             (true, true) => crate::tl_id!("ui.rotated_the_picture_ink_on_the_page_stays_where_it_is"),
             (false, true) => crate::tl_id!("ui.flipped_the_picture_ink_on_the_page_stays_where_it_is"),
         });
+    }
+
+    /// Copy Text from Picture (issue #274): reads the printed text of the picture `src`, or of every
+    /// page of the printout it is a page of, and opens the dialog that shows it for review.
+    fn copy_text_from_picture(&mut self, src: &str, whole_printout: bool) {
+        let Some(ed) = self.editor.as_ref() else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        let printout = crate::picture_text::printout_source(src).filter(|_| whole_printout);
+        let sources: Vec<String> = match printout {
+            // Every page of the printout, in the order the page shows them.
+            Some(source) => {
+                let mut pages: Vec<String> = Vec::new();
+                for block in &ed.blocks {
+                    if let notecraft_formats::Block::Image { src: page, .. } = block
+                        && crate::picture_text::printout_source(page) == Some(source)
+                        && !pages.contains(page)
+                    {
+                        pages.push(page.clone());
+                    }
+                }
+                if pages.is_empty() { vec![src.to_string()] } else { pages }
+            }
+            None => vec![src.to_string()],
+        };
+        let mut pictures = Vec::with_capacity(sources.len());
+        for source in &sources {
+            match crate::preview::page_asset_path(&ed.dir, source) {
+                Some(path) => pictures.push(path),
+                None => {
+                    self.complain(&crate::i18n::format_message_id("ui.cannot_read_the_picture_error", &[("error", source)]));
+                    return;
+                }
+            }
+        }
+        let scope = match (printout.is_some(), crate::picture_text::printout_source(src).is_some()) {
+            (true, _) => crate::picture_text::Scope::Printout,
+            (false, true) => crate::picture_text::Scope::PrintoutPage,
+            (false, false) => crate::picture_text::Scope::Picture,
+        };
+        self.picture_text = Some(crate::picture_text::Dialog::start(scope, pictures, self.ocr_models()));
+    }
+
+    /// The folder with the text recognition models, when one is set.
+    fn ocr_models(&self) -> Option<PathBuf> {
+        self.session.settings.get("ocr_models").filter(|v| !v.trim().is_empty()).map(PathBuf::from)
+    }
+
+    /// Shows Copy Text from Picture while it is open, and does what it asks.
+    fn picture_text_dialog(&mut self, ctx: &Context) {
+        let Some(mut dialog) = self.picture_text.take() else { return };
+        let out = dialog.show(ctx, &self.tokens);
+        if let Some(text) = out.copy {
+            match self.clipboard.set_text(&text) {
+                Ok(()) => dialog.mark_copied(),
+                Err(e) => self.complain(&crate::i18n::format_message_id("ui.picture_text_copy_failed", &[("error", &e)])),
+            }
+        }
+        if out.choose_models
+            && let Some(folder) = pick_ocr_models_folder()
+        {
+            if crate::picture_text::models_folder_is_complete(&folder) {
+                if let Err(e) = self.session.settings.set("ocr_models", &folder.to_string_lossy()) {
+                    self.complain(&e.to_string());
+                }
+                dialog = crate::picture_text::Dialog::start(dialog.scope(), dialog.pictures().to_vec(), Some(folder));
+            } else {
+                self.complain(crate::tl_id!("ui.picture_text_models_folder_incomplete"));
+            }
+        }
+        if !out.closed {
+            self.picture_text = Some(dialog);
+        }
     }
 
     fn save_picture_as(&mut self, src: &str) {
@@ -10896,6 +10974,7 @@ impl NoteCraftApp {
         {
             self.reader = None;
         }
+        self.picture_text_dialog(ctx);
         if let Some(mut dialog) = self.custom_tags.take() {
             let out = dialog.show(ctx, &self.tokens);
             if let Some(list) = out.changed {
@@ -13680,6 +13759,18 @@ fn pick_calendar_file() -> Option<PathBuf> {
 
 #[cfg(target_arch = "wasm32")]
 fn pick_calendar_file() -> Option<PathBuf> {
+    None
+}
+
+/// Copy Text from Picture asks for the folder with the text recognition models (issue #274).
+/// Below the other choosers, and gated in its own right, for the same reason as the ones above.
+#[cfg(not(target_arch = "wasm32"))]
+fn pick_ocr_models_folder() -> Option<PathBuf> {
+    rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_the_ocr_models_folder")).pick_folder()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn pick_ocr_models_folder() -> Option<PathBuf> {
     None
 }
 

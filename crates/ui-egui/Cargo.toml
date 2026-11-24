@@ -61,6 +61,9 @@ ureq = { version = "3", default-features = false, features = ["rustls", "platfor
 
 [dev-dependencies]
 egui_kittest = { workspace = true }
+# Copy Text from Picture's tests write a picture's text as if the page had been read, through
+# the OCR crate's reader boundary, so they need no model files.
+notecraft-ocr = { workspace = true }
 # The icon tests share one offscreen GPU device instead of building one per picture.
 egui-wgpu = "0.37"
 

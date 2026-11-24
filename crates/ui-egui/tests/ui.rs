@@ -7997,6 +7997,137 @@ fn a_picture_in_a_shared_box_is_moved_by_dragging_it() {
     }
 }
 
+// ---------- Copy Text from Picture (issue #274) ----------
+
+/// Gives the lines it holds for any picture: what a picture's text looks like once its page was
+/// read, written through the OCR crate's reader boundary, so these tests need no model files.
+struct PrintedLines(Vec<&'static str>);
+
+impl notecraft_ocr::PictureReader for PrintedLines {
+    fn read_picture(&self, _path: &std::path::Path) -> Result<Vec<notecraft_ocr::Line>, notecraft_ocr::OcrError> {
+        let corner = notecraft_ocr::Point { x: 0.0, y: 0.0 };
+        self.0.iter().map(|text| notecraft_ocr::Line::new(*text, [corner; 4], None)).collect()
+    }
+}
+
+/// A page of `pictures` (file names in its assets, with the lines each was read as, or `None` for a
+/// picture never read), open in a window whose clipboard is `board`.
+fn picture_text_page(
+    label: &str,
+    pictures: &[(&str, Option<Vec<&'static str>>)],
+    board: &MemoryBoard,
+) -> (TempDir, PathBuf, Harness<'static, NoteCraftApp>) {
+    let t = TempDir::new(label);
+    let mut s = session(&t);
+    let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+    let page = sample.html_page.clone();
+    let path = page.to_string_lossy().into_owned();
+    let mut body = String::from("<p>Receipts</p>");
+    for (i, (name, lines)) in pictures.iter().enumerate() {
+        // Each picture its own bytes, so each has its own text.
+        let mut bytes = LOGO_PNG.to_vec();
+        bytes.extend_from_slice(format!("picture {i}").as_bytes());
+        s.attach_bytes(&path, name, &bytes).expect("picture");
+        body.push_str(&format!("<img src=\"assets/{name}\" alt=\"\" width=\"160\" height=\"80\">"));
+        if let Some(lines) = lines {
+            notecraft_ocr::refresh_companion(&PrintedLines(lines.clone()), &page.join("assets").join(name)).expect("the picture's text");
+        }
+    }
+    s.run("page.save", &params(&[("path", &path), ("body", &body)])).expect("page");
+    let mut app = NoteCraftApp::new(s).with_clipboard(Box::new(board.clone()));
+    app.open_path(&path);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    (t, page, h)
+}
+
+/// Right-clicks picture `block` and picks `row` from its menu, then waits for the reading to finish.
+fn copy_text_from(h: &mut Harness<'_, NoteCraftApp>, block: usize, row: &str) {
+    let rect = rendered_picture_rect(h, block);
+    ask(h, "ui.click", json!({"x": rect.center().x, "y": rect.center().y, "button": "right"})).expect("right click the picture");
+    settle(h);
+    h.get_by_label(row).click();
+    for _ in 0..100 {
+        settle(h);
+        let reading = h.query_by_label("Reading the text in the picture...").is_some()
+            || h.query_all(egui_kittest::kittest::by().label_contains("Reading the text of page")).next().is_some();
+        if !reading {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    panic!("the picture's text was never read");
+}
+
+#[test]
+fn copy_text_from_picture_shows_the_text_for_review_and_copies_it() {
+    let board = MemoryBoard::new();
+    let (_t, page, mut h) = picture_text_page("ui-picture-text", &[("receipt.png", Some(vec!["Sourdough 6.00", "Flat white 4.50"]))], &board);
+    let before = std::fs::read(page.join("assets").join("receipt.png")).expect("the picture");
+    copy_text_from(&mut h, 1, "Copy Text from Picture");
+    assert!(h.query_by_label("Check the text, and change it if you want, then copy it.").is_some(), "the text is shown for review");
+    review(&mut h, "copy-text-from-picture");
+    h.get_by_label("Copy text").click();
+    settle(&mut h);
+    assert_eq!(board.read_text(), "Sourdough 6.00\nFlat white 4.50");
+    assert!(h.query_by_label("The text is on the clipboard.").is_some(), "the dialog says it was copied");
+    assert_eq!(std::fs::read(page.join("assets").join("receipt.png")).expect("the picture"), before, "the picture is unchanged");
+
+    // The text can be changed before it is copied.
+    let edit = h.get_by_role_and_label(egui::accesskit::Role::MultilineTextInput, "Check the text, and change it if you want, then copy it.").rect();
+    ask(&mut h, "ui.click", json!({"x": edit.center().x, "y": edit.center().y})).expect("click the text");
+    settle(&mut h);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.get_by_role_and_label(egui::accesskit::Role::MultilineTextInput, "Check the text, and change it if you want, then copy it.")
+        .type_text("Rye 6.00");
+    settle(&mut h);
+    h.get_by_label("Copy text").click();
+    settle(&mut h);
+    assert_eq!(board.read_text(), "Rye 6.00", "what was copied is the reviewed text");
+    h.get_by_label("Close").click();
+    settle(&mut h);
+    assert!(h.query_by_label("Copy text").is_none(), "Close closes it");
+}
+
+#[test]
+fn copy_text_from_picture_says_when_recognition_is_not_set_up() {
+    let board = MemoryBoard::new();
+    let (_t, _page, mut h) = picture_text_page("ui-picture-text-setup", &[("receipt.png", None)], &board);
+    copy_text_from(&mut h, 1, "Copy Text from Picture");
+    assert!(h.query_all(egui_kittest::kittest::by().label_contains("Text recognition is not set up")).next().is_some(), "it says why");
+    assert!(h.query_by_label("Choose the models folder").is_some(), "and offers to set it up");
+    review(&mut h, "copy-text-from-picture-not-set-up");
+    assert!(h.query_by_label("Copy text").is_none(), "there is nothing to copy");
+    assert_eq!(board.read_text(), "", "the clipboard is untouched");
+}
+
+#[test]
+fn copy_text_from_picture_says_when_there_is_no_text() {
+    let board = MemoryBoard::new();
+    let (_t, _page, mut h) = picture_text_page("ui-picture-text-empty", &[("sky.png", Some(Vec::new()))], &board);
+    copy_text_from(&mut h, 1, "Copy Text from Picture");
+    assert!(h.query_by_label("No text was found in this picture.").is_some());
+    assert!(h.query_by_label("Copy text").is_none());
+}
+
+#[test]
+fn copy_text_from_a_printout_reads_one_page_or_every_page_in_order() {
+    let board = MemoryBoard::new();
+    let pages = [("report.pdf.printout-001.png", Some(vec!["Page one"])), ("report.pdf.printout-002.png", Some(vec!["Page two", "The end"]))];
+    let (_t, _page, mut h) = picture_text_page("ui-picture-text-printout", &pages, &board);
+    copy_text_from(&mut h, 2, "Copy Text from This Page of the Printout");
+    h.get_by_label("Copy text").click();
+    settle(&mut h);
+    assert_eq!(board.read_text(), "Page two\nThe end", "this page alone");
+    h.get_by_label("Close").click();
+    settle(&mut h);
+
+    copy_text_from(&mut h, 2, "Copy Text from All Pages of the Printout");
+    h.get_by_label("Copy text").click();
+    settle(&mut h);
+    assert_eq!(board.read_text(), "Page one\n\nPage two\nThe end", "every page, in order, kept apart");
+}
+
 /// Issue #481: a picture that shares its box with other blocks has Take out of box in its
 /// right-click menu. It does what dragging it out does, without the drag: the box becomes three,
 /// the picture's box where the picture stands, and nothing on the page moves. One Ctrl+Z puts the

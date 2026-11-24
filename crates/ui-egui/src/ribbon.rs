@@ -208,6 +208,12 @@ pub enum Act {
     SavePictureAs(String),
     /// Rotate or flip the picture with this source (issue #273).
     TurnPicture(String, crate::turn::Turn),
+    /// Copy Text from Picture (issue #274): the picture's source, and whether every page of the
+    /// printout it belongs to is read rather than this page alone.
+    CopyTextFromPicture {
+        src: String,
+        whole_printout: bool,
+    },
     ToggleSource,
     ToggleFullPage,
     OpenThemes,

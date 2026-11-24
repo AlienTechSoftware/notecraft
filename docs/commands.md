@@ -381,6 +381,16 @@ Parameters:
 - path (required): the page, relative to the notebooks folder
 - Needs the setting ocr_models: a folder with text-detection.onnx and text-recognition.onnx. A picture is read again only when its bytes changed
 
+## `ocr.text`
+
+Give the printed text of a picture in a page.
+
+Parameters:
+
+- path (required): the page, relative to the notebooks folder
+- picture (required): the picture's file name in the page's assets folder
+- The text read when the page was opened is given while the picture is unchanged; otherwise the picture is read now, which needs the setting ocr_models
+
 ## `alt.set`
 
 Write the alt text of a picture in a page.

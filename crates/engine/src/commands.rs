@@ -399,6 +399,55 @@ fn ocr_refresh(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     Ok(Output::Text(format!("{read} read, {unchanged} unchanged")))
 }
 
+/// Why the text of a picture could not be given (issue #274).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PictureTextError {
+    /// The picture has not been read since it last changed, and no models are set up to read it.
+    NotSetUp,
+    /// The picture or the models could not be read, or the engine failed. The words say why.
+    Failed(String),
+}
+
+impl std::fmt::Display for PictureTextError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PictureTextError::NotSetUp => {
+                write!(f, "OCR is not set up: set ocr_models to the folder with text-detection.onnx and text-recognition.onnx")
+            }
+            PictureTextError::Failed(why) => write!(f, "{why}"),
+        }
+    }
+}
+
+/// The printed text of one picture, as Copy Text from Picture gives it (issue #274): the text read
+/// the last time, when the picture has not changed since, or else the picture read now with the
+/// models in `models` (the setting `ocr_models`). The picture is never changed; its companions are
+/// written as when its page is opened. Takes no session, so the window can run it off its own thread.
+pub fn picture_text(models: Option<&std::path::Path>, picture: &std::path::Path) -> Result<String, PictureTextError> {
+    let failed = |e: notecraft_ocr::OcrError| PictureTextError::Failed(e.to_string());
+    if let Some(text) = notecraft_ocr::current_text(picture).map_err(failed)? {
+        return Ok(text.trim_end().to_string());
+    }
+    let models = models.ok_or(PictureTextError::NotSetUp)?;
+    let reader = cached_ocr_reader(models).map_err(|e| PictureTextError::Failed(e.to_string()))?;
+    notecraft_ocr::refresh_companion(reader.as_ref(), picture).map_err(failed)?;
+    let text = notecraft_ocr::current_text(picture).map_err(failed)?.unwrap_or_default();
+    Ok(text.trim_end().to_string())
+}
+
+/// The printed text of one picture in a page (issue #274), read now when it has not been read yet.
+fn ocr_text(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let page = s.resolve(req(p, "path")?)?;
+    let name = req(p, "picture")?;
+    let name = name.strip_prefix("assets/").unwrap_or(name);
+    if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
+        return Err(EngineError::BadParam(format!("not a picture of the page: {name}")));
+    }
+    let picture = page.join("assets").join(name);
+    let models = s.settings.get("ocr_models").filter(|v| !v.trim().is_empty()).map(PathBuf::from);
+    picture_text(models.as_deref(), &picture).map(Output::Text).map_err(|e| EngineError::BadParam(e.to_string()))
+}
+
 /// The OCR reader for a models folder, loaded the first time and kept while the setting names the same
 /// folder. Loading the two models takes long enough to notice, and every page open used to pay it.
 fn cached_ocr_reader(models: &std::path::Path) -> Result<std::sync::Arc<notecraft_ocr::OcrsReader>, EngineError> {
@@ -957,6 +1006,15 @@ Needs the setting ocr_models: a folder with text-detection.onnx and text-recogni
         run: ocr_refresh,
     },
     CommandSpec {
+        id: "ocr.text",
+        label: "Give the printed text of a picture in a page",
+        params: "path (required): the page, relative to the notebooks folder
+picture (required): the picture's file name in the page's assets folder
+The text read when the page was opened is given while the picture is unchanged; otherwise the picture is read now, which needs the setting ocr_models",
+        changes_tree: false,
+        run: ocr_text,
+    },
+    CommandSpec {
         id: "alt.set",
         label: "Write the alt text of a picture in a page",
         params: "path (required): the page, relative to the notebooks folder
@@ -1471,6 +1529,50 @@ mod tests {
         assert!(std::path::Path::new(&page).join("assets").join("receipt.png.lines").is_file(), "the boxes file is written");
         let second = text_of(s.run("ocr.refresh", &p(&[("path", &page)])).expect("second read"));
         assert_eq!(second, "0 read, 1 unchanged");
+    }
+
+    /// Gives the same lines for every picture: test data in place of the models, through the
+    /// reader boundary the OCR crate has for engines to plug into.
+    struct Receipt;
+
+    impl notecraft_ocr::PictureReader for Receipt {
+        fn read_picture(&self, _path: &std::path::Path) -> Result<Vec<notecraft_ocr::Line>, notecraft_ocr::OcrError> {
+            let corner = notecraft_ocr::Point { x: 0.0, y: 0.0 };
+            Ok(vec![notecraft_ocr::Line::new("Sourdough 6.00", [corner; 4], None)?, notecraft_ocr::Line::new("Flat white 4.50", [corner; 4], None)?])
+        }
+    }
+
+    #[test]
+    fn picture_text_gives_what_was_read_while_the_picture_is_unchanged() {
+        let t = TempDir::new("engine-ocr-text");
+        let (mut s, page) = one_page(&t);
+        show_picture(&mut s, &page, "receipt.png");
+        let err = s.run("ocr.text", &p(&[("path", &page), ("picture", "receipt.png")])).expect_err("never read, no models");
+        assert!(format!("{err:?}").contains("ocr_models"), "the message says how to set it up: {err:?}");
+        let picture = std::path::Path::new(&page).join("assets").join("receipt.png");
+        notecraft_ocr::refresh_companion(&Receipt, &picture).expect("read when the page was opened");
+        let text = text_of(s.run("ocr.text", &p(&[("path", &page), ("picture", "assets/receipt.png")])).expect("the text"));
+        assert_eq!(text, "Sourdough 6.00\nFlat white 4.50");
+        assert_eq!(std::fs::read(&picture).expect("the picture"), b"not really a picture", "the picture is not changed");
+        std::fs::write(&picture, b"a new picture").expect("the picture changes");
+        assert_eq!(picture_text(None, &picture), Err(PictureTextError::NotSetUp), "an old reading is not given for a new picture");
+    }
+
+    #[test]
+    fn picture_text_refuses_a_name_outside_the_assets_folder() {
+        let t = TempDir::new("engine-ocr-text-outside");
+        let (mut s, page) = one_page(&t);
+        for name in ["../secret.png", "a/b.png", "..", ""] {
+            assert!(s.run("ocr.text", &p(&[("path", &page), ("picture", name)])).is_err(), "{name:?} is refused");
+        }
+    }
+
+    #[test]
+    fn a_picture_that_cannot_be_read_says_so() {
+        let t = TempDir::new("engine-ocr-text-missing");
+        let (mut s, page) = one_page(&t);
+        let err = s.run("ocr.text", &p(&[("path", &page), ("picture", "missing.png")])).expect_err("no such picture");
+        assert!(format!("{err:?}").contains("missing.png"), "{err:?}");
     }
 
     #[test]

@@ -167,20 +167,44 @@ const COMPANION_FORMAT: &str = "companion-v2 ocrs-0.14";
 
 pub fn refresh_companion(reader: &dyn PictureReader, picture: &Path) -> Result<Refresh, OcrError> {
     let bytes = std::fs::read(picture).map_err(|e| OcrError::Io(format!("{}: {e}", picture.display())))?;
-    let hash = format!("{:016x}", fnv1a(&[bytes.as_slice(), COMPANION_FORMAT.as_bytes()].concat()));
+    let hash = picture_hash(&bytes);
     let text_path = companion_path(picture, "txt");
     let lines_path = companion_path(picture, "lines");
-    let hash_path = companion_path(picture, "ocr-hash");
-    // Unchanged needs all three companions: a missing boxes file is made again, not trusted.
-    if text_path.exists() && lines_path.exists() && std::fs::read_to_string(&hash_path).is_ok_and(|stored| stored.trim() == hash) {
+    if companions_match(picture, &hash) {
         return Ok(Refresh::Unchanged);
     }
     let lines = reader.read_picture(picture)?;
     let text: String = lines.iter().map(|l| format!("{}\n", sanitize(&l.text))).collect();
     write_replacing(&text_path, text.as_bytes())?;
     write_replacing(&lines_path, &lines_file(&lines))?;
-    write_replacing(&hash_path, hash.as_bytes())?;
+    write_replacing(&companion_path(picture, "ocr-hash"), hash.as_bytes())?;
     Ok(Refresh::Rewritten)
+}
+
+/// The text read from `picture` the last time, when it was read from the picture as it is now:
+/// its companions are all there and their hash is the hash of the picture's bytes. `Ok(None)`
+/// when the picture was never read or changed since (issue #274: a picture read when its page
+/// was opened gives its text without the models). An error only when the picture itself cannot
+/// be read.
+pub fn current_text(picture: &Path) -> Result<Option<String>, OcrError> {
+    let bytes = std::fs::read(picture).map_err(|e| OcrError::Io(format!("{}: {e}", picture.display())))?;
+    if !companions_match(picture, &picture_hash(&bytes)) {
+        return Ok(None);
+    }
+    Ok(std::fs::read_to_string(companion_path(picture, "txt")).ok())
+}
+
+/// The hash the companions are stamped with: the picture's bytes and the companion format.
+fn picture_hash(bytes: &[u8]) -> String {
+    format!("{:016x}", fnv1a(&[bytes, COMPANION_FORMAT.as_bytes()].concat()))
+}
+
+/// Whether all three companions of `picture` are there and were made from bytes with `hash`.
+/// A missing boxes file is made again, not trusted.
+fn companions_match(picture: &Path, hash: &str) -> bool {
+    companion_path(picture, "txt").exists()
+        && companion_path(picture, "lines").exists()
+        && std::fs::read_to_string(companion_path(picture, "ocr-hash")).is_ok_and(|stored| stored.trim() == hash)
 }
 
 /// Text on one line: tabs and line breaks become spaces, so a record never spans two lines.
@@ -478,5 +502,20 @@ c", quad, None,
             "0,0,10,0,10,4,0,4	a b c
 "
         );
+    }
+
+    #[test]
+    fn the_current_text_is_given_only_while_the_picture_is_the_one_read() {
+        let dir = scratch("current-text");
+        let picture = dir.join("receipt.png");
+        std::fs::write(&picture, b"the picture").expect("picture");
+        assert_eq!(current_text(&picture).expect("readable"), None, "never read");
+        let reader = CountingReader { calls: Cell::new(0) };
+        refresh_companion(&reader, &picture).expect("read");
+        assert_eq!(current_text(&picture).expect("readable").as_deref(), Some("TOTAL 13.75\n"));
+        std::fs::write(&picture, b"another picture").expect("the picture changes");
+        assert_eq!(current_text(&picture).expect("readable"), None, "the text is of the old picture");
+        std::fs::remove_file(&picture).expect("remove the picture");
+        assert!(matches!(current_text(&picture), Err(OcrError::Io(_))), "a missing picture is an error");
     }
 }

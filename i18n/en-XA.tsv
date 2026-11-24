@@ -1482,3 +1482,21 @@
 @id	ui.collapse_navigation_node	$$$Collapse {title}@@@
 @id	ui.find_on_this_page	$$$Find on this page@@@
 @id	ui.search_prompt	$$$Type to find notes.@@@
+@id	ui.copy_text_from_picture	$$$Copy Text from Picture@@@
+@id	ui.copy_text_from_this_printout_page	$$$Copy Text from This Page of the Printout@@@
+@id	ui.copy_text_from_all_printout_pages	$$$Copy Text from All Pages of the Printout@@@
+@id	ui.copy_text	$$$Copy text@@@
+@id	ui.choose_the_models_folder	$$$Choose the models folder@@@
+@id	ui.picture_text_reading	$$$Reading the text in the picture...@@@
+@id	ui.picture_text_reading_page_of	$$$Reading the text of page {done} of {total}...@@@
+@id	ui.picture_text_review	$$$Check the text, and change it if you want, then copy it.@@@
+@id	ui.picture_text_none_found	$$$No text was found in this picture.@@@
+@id	ui.picture_text_none_in_printout	$$$No text was found in this printout.@@@
+@id	ui.picture_text_not_set_up	$$$Text recognition is not set up. It runs on this computer with two model files, text-detection.onnx and text-recognition.onnx. Choose the folder that holds them. Nothing is uploaded.@@@
+@id	ui.picture_text_failed	$$$The text could not be read: {error}@@@
+@id	ui.picture_text_reading_stopped	$$$reading stopped before it finished@@@
+@id	ui.picture_text_language	$$$Reads printed text in the Latin alphabet, such as English, French or Spanish. Your pictures stay as they are.@@@
+@id	ui.picture_text_copied	$$$The text is on the clipboard.@@@
+@id	ui.picture_text_models_folder_incomplete	$$$That folder does not hold text-detection.onnx and text-recognition.onnx.@@@
+@id	ui.choose_the_ocr_models_folder	$$$Choose the folder with the text recognition models@@@
+@id	ui.picture_text_copy_failed	$$$The text could not be put on the clipboard: {error}@@@
