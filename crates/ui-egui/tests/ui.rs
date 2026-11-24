@@ -3369,6 +3369,29 @@ fn next_unread_and_mark_as_read_follow_what_changed_since_it_was_read() {
     assert_eq!(title(&mut h), json!(html_title), "nothing unread to go to");
     assert!(unread(&mut h).is_empty());
 }
+#[test]
+fn opening_a_page_in_a_second_window_preserves_unread_marks_from_the_first() {
+    let (t, mut app, sample) = sample_app("ui-unread-note-windows");
+    let first = sample.html_page;
+    let other = sample.md_page;
+    app.open_path(&first.to_string_lossy());
+    let mut child = app.child_window(&notecraft_ui_egui::windows::Request { path: other.clone(), quick: false }).expect("second window");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+    settle(&mut h);
+    h.get_by_label("History").click();
+    settle(&mut h);
+    h.get_by_label("Mark as Unread").click();
+    settle(&mut h);
+    let id = notecraft_store::tree::read_node(&first).expect("node").id;
+    let file = t.path().join("read-state.tsv");
+    let marked = || notecraft_store::read_state::ReadState::load(&file).is_marked_unread(&id);
+    assert!(marked());
+    child.open_path(&other.to_string_lossy());
+    assert!(marked(), "the second window did not forget the first window's newer mark");
+    child.open_path(&first.to_string_lossy());
+    assert!(!marked(), "explicitly reopening the marked page in either window clears it");
+}
+
 /// Issue #279: History > Recent Edits was "not built". It lists the pages changed in a range,
 /// newest first, by the time each page keeps of its own, with where each one is; a filter
 /// narrows the list and a title opens that page.
@@ -7918,8 +7941,9 @@ fn a_picture_in_a_shared_box_is_moved_by_dragging_it() {
             assert_eq!(one, 1, "one box holds all three blocks to begin with in {what}: {state}");
             let width = state.pointer("/page/containers/0/width").and_then(Value::as_f64).expect("width");
             let rect = rendered_picture_rect(&h, 1);
-            // The picture's box would sit a pad in from its left and a handle's height down.
-            let (from_x, from_y) = (rect.min.x - ox - 6.0, rect.min.y - oy - 14.0);
+            // The picture's box would sit a pad in from its left, and a header row and a handle's
+            // height down.
+            let (from_x, from_y) = (rect.min.x - ox - 6.0, rect.min.y - oy - 24.0 - 14.0);
 
             // A plain click picks the picture and leaves the arrangement alone.
             ask(&mut h, "ui.click", json!({"x": rect.center().x, "y": rect.center().y})).expect("click the picture");
@@ -7971,6 +7995,148 @@ fn a_picture_in_a_shared_box_is_moved_by_dragging_it() {
             assert_eq!(reopened, original, "the same blocks after reopening in {what}");
         }
     }
+}
+
+/// Issue #481: a picture that shares its box with other blocks has Take out of box in its
+/// right-click menu. It does what dragging it out does, without the drag: the box becomes three,
+/// the picture's box where the picture stands, and nothing on the page moves. One Ctrl+Z puts the
+/// one box back. A picture alone in its box is not offered it.
+#[test]
+fn a_picture_is_taken_out_of_its_box_from_its_menu() {
+    use notecraft_model::PageFormat;
+
+    for format in [PageFormat::Html, PageFormat::Cmgfm] {
+        let what = format!("{format:?}");
+        let t = TempDir::new("ui-picture-take-out");
+        let mut s = session(&t);
+        let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+        let page = if format == PageFormat::Html { sample.html_page.clone() } else { sample.md_page.clone() };
+        let path = page.to_string_lossy().into_owned();
+        s.attach_bytes(&path, "picture.png", LOGO_PNG).expect("picture");
+        let body = match format {
+            PageFormat::Html => "<p>Before</p><img src=\"assets/picture.png\" alt=\"picture\" width=\"200\" height=\"100\"><p>After</p>",
+            PageFormat::Cmgfm => "Before\n\n<img src=\"assets/picture.png\" alt=\"picture\" width=\"200\" height=\"100\">\n\nAfter\n",
+        };
+        s.run("page.save", &params(&[("path", &path), ("body", body)])).expect("page");
+        s.run("page.containers", &params(&[("path", &path), ("boxes", "0,0,400,3")])).expect("one shared box");
+        let mut app = NoteCraftApp::new(s);
+        app.open_path(&path);
+        let mut h = harness(app, LIGHT);
+        settle(&mut h);
+        let (original, _) = notecraft_formats::boxes::read(format, body);
+
+        let state = look_at(&mut h);
+        let origin = state.pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+        let (ox, oy) = (origin.first().and_then(Value::as_f64).unwrap_or(0.0) as f32, origin.get(1).and_then(Value::as_f64).unwrap_or(0.0) as f32);
+        let rect = rendered_picture_rect(&h, 1);
+        // The picture's box sits a pad in from its left, and a header row and a handle's height
+        // down.
+        let (at_x, at_y) = (rect.min.x - ox - 6.0, rect.min.y - oy - 24.0 - 14.0);
+
+        ask(&mut h, "ui.click", json!({"x": rect.center().x, "y": rect.center().y, "button": "right"})).expect("right click the picture");
+        settle(&mut h);
+        h.get_by_label("Take out of box").click();
+        settle(&mut h);
+        let state = look_at(&mut h);
+        let boxes = state.pointer("/page/containers").and_then(Value::as_array).cloned().unwrap_or_default();
+        let counts: Vec<u64> = boxes.iter().filter_map(|b| b.get("blocks").and_then(Value::as_u64)).collect();
+        assert_eq!(counts, vec![1, 1, 1], "words, picture, words in three boxes in {what}: {state}");
+        let field = |i: usize, key: &str| boxes[i].get(key).and_then(Value::as_f64).expect("box field") as f32;
+        assert_eq!((field(0, "x"), field(0, "y")), (0.0, 0.0), "the words before did not move in {what}");
+        assert!((field(1, "x") - at_x).abs() < 2.0 && (field(1, "y") - at_y).abs() < 2.0, "the picture stayed where it was in {what}: {state}");
+        let after = rendered_picture_rect(&h, 1);
+        assert!((after.min - rect.min).length() < 2.0, "the picture is drawn where it was in {what}: {rect:?} then {after:?}");
+        let (now, _) = notecraft_formats::boxes::read(format, h.state().body().expect("open page"));
+        assert_eq!(now, original, "the words and the picture are untouched in {what}");
+
+        // Alone in its box now, it has nothing to come out of.
+        ask(&mut h, "ui.click", json!({"x": after.center().x, "y": after.center().y, "button": "right"})).expect("right click it again");
+        settle(&mut h);
+        assert!(h.query_by_label("Save picture as...").is_some(), "its menu is open in {what}");
+        assert!(h.query_by_label("Take out of box").is_none(), "a picture alone in its box is not offered it in {what}");
+        h.key_press(egui::Key::Escape);
+        settle(&mut h);
+
+        ask(&mut h, "ui.undo", json!({})).expect("undo");
+        settle(&mut h);
+        let state = look_at(&mut h);
+        assert_eq!(
+            state.pointer("/page/containers").and_then(Value::as_array).map(Vec::len),
+            Some(1),
+            "one undo puts the one box back in {what}: {state}"
+        );
+    }
+}
+
+/// Issue #481: Take out of box on a printout page takes the whole printout out, its card and every
+/// page, and none of it moves: the card above the first page is part of what comes out, so the
+/// pages stay where they were drawn rather than dropping by the card's height.
+#[test]
+fn a_printout_is_taken_out_of_its_box_where_it_stands() {
+    let t = TempDir::new("ui-printout-take-out");
+    let mut s = session(&t);
+    let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+    let path = sample.md_page.to_string_lossy().into_owned();
+    s.attach_bytes(&path, "a.pdf", b"%PDF-1.4\n").expect("pdf");
+    s.attach_bytes(&path, "a.pdf.svg", b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"/>").expect("card");
+    s.attach_bytes(&path, "a.pdf.printout-001.png", LOGO_PNG).expect("page 1");
+    s.attach_bytes(&path, "a.pdf.printout-002.png", LOGO_PNG).expect("page 2");
+    let body = "Before\n\n[![a.pdf](assets/a.pdf.svg)](assets/a.pdf)\n\n<img src=\"assets/a.pdf.printout-001.png\" alt=\"Printout page 1\" width=\"200\" height=\"100\">\n\n<img src=\"assets/a.pdf.printout-002.png\" alt=\"Printout page 2\" width=\"200\" height=\"100\">\n\nAfter\n";
+    s.run("page.save", &params(&[("path", &path), ("body", body)])).expect("page");
+    s.run("page.containers", &params(&[("path", &path), ("boxes", "0,0,500,5")])).expect("one box");
+    let mut app = NoteCraftApp::new(s);
+    app.open_path(&path);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let (one, two) = (rendered_picture_rect(&h, 2), rendered_picture_rect(&h, 3));
+
+    ask(&mut h, "ui.click", json!({"x": two.center().x, "y": two.center().y, "button": "right"})).expect("right click page two");
+    settle(&mut h);
+    h.get_by_label("Take out of box").click();
+    settle(&mut h);
+    let state = look_at(&mut h);
+    let counts: Vec<u64> = state
+        .pointer("/page/containers")
+        .and_then(Value::as_array)
+        .map(|b| b.iter().filter_map(|c| c.get("blocks").and_then(Value::as_u64)).collect())
+        .unwrap_or_default();
+    assert_eq!(counts, vec![1, 3, 1], "the words, the card and both pages, the words: {state}");
+    let (one_now, two_now) = (rendered_picture_rect(&h, 2), rendered_picture_rect(&h, 3));
+    assert!((one_now.min - one.min).length() < 2.0, "the first page is drawn where it was: {one:?} then {one_now:?}");
+    assert!((two_now.min - two.min).length() < 2.0, "the second page is drawn where it was: {two:?} then {two_now:?}");
+}
+
+/// Issue #481: two copies of the same picture in one box are two pictures. Take out of box on the
+/// second takes out the second, not the first copy with the same source.
+#[test]
+fn take_out_of_box_takes_out_the_copy_that_was_right_clicked() {
+    let t = TempDir::new("ui-picture-take-out-copy");
+    let mut s = session(&t);
+    let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+    let path = sample.md_page.to_string_lossy().into_owned();
+    s.attach_bytes(&path, "picture.png", LOGO_PNG).expect("picture");
+    let img = "<img src=\"assets/picture.png\" alt=\"picture\" width=\"200\" height=\"100\">";
+    let body = format!("Before\n\n{img}\n\nMiddle\n\n{img}\n\nAfter\n\n{img}\n");
+    s.run("page.save", &params(&[("path", &path), ("body", &body)])).expect("page");
+    // Five blocks share the first box; the last copy is alone in a box of its own far below.
+    s.run("page.containers", &params(&[("path", &path), ("boxes", "0,0,400,5;0,900,400,1")])).expect("boxes");
+    let mut app = NoteCraftApp::new(s);
+    app.open_path(&path);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let second = rendered_picture_rect(&h, 3);
+
+    ask(&mut h, "ui.click", json!({"x": second.center().x, "y": second.center().y, "button": "right"})).expect("right click the second copy");
+    settle(&mut h);
+    h.get_by_label("Take out of box").click();
+    settle(&mut h);
+    let state = look_at(&mut h);
+    let counts: Vec<u64> = state
+        .pointer("/page/containers")
+        .and_then(Value::as_array)
+        .map(|b| b.iter().filter_map(|c| c.get("blocks").and_then(Value::as_u64)).collect())
+        .unwrap_or_default();
+    assert_eq!(counts, vec![3, 1, 1, 1], "the second copy came out, the first is still with the words: {state}");
 }
 
 /// A printout is one thing on the page, as in OneNote. Taking hold of any of its pages moves the
@@ -12340,6 +12506,31 @@ fn find_tags_lists_tagged_notes_and_goes_to_them() {
     settle(&mut h);
     assert_eq!(h.query_all_by_label("Tags Summary").count(), 0, "the summary closes");
 }
+#[test]
+fn the_open_tags_summary_tracks_the_current_section_without_resetting_its_filter() {
+    let (_t, mut app, sample) = sample_app("ui-find-tags-navigation");
+    notecraft_store::page::save_body(&sample.html_page, "<p>Sample section</p>").expect("save");
+    notecraft_store::page::save_body(&sample.md_page, "- [ ] New section task\n\n- [x] Done in new section\n").expect("save");
+    assert_ne!(sample.html_page.parent(), sample.md_page.parent());
+    app.open_path(&sample.html_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+    settle(&mut h);
+    h.get_by_label("Find Tags").click();
+    settle(&mut h);
+    h.get_by_label("Only unchecked To Do items").click();
+    settle(&mut h);
+    let summary = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspector")["tagsSummary"].clone();
+    assert!(summary(&mut h)["lines"].as_array().expect("tags lines").is_empty());
+    h.state_mut().open_path(&sample.md_page.to_string_lossy());
+    settle(&mut h);
+    let state = summary(&mut h);
+    let lines = state["lines"].as_array().expect("tags lines");
+    assert_eq!(state["scope"], "section");
+    assert_eq!(state["unchecked"], true);
+    assert!(lines.iter().any(|line| line["text"] == "New section task"), "the scoped pane now lists the section on screen");
+    assert!(lines.iter().all(|line| line["text"] != "Done in new section"), "the unchecked filter is still in effect");
+}
+
 /// The page's sideways scroll bar as `ui.inspect` reports it: the track and the thumb, or `None`.
 fn horizontal_bar(h: &mut Harness<'_, NoteCraftApp>) -> Option<(egui::Rect, egui::Rect)> {
     let v = ask(h, "ui.inspect", json!({})).expect("inspect");
@@ -15321,6 +15512,131 @@ fn a_colour_emoji_is_drawn_in_colour() {
     assert!(with_apple > plain + 40, "the apple is drawn in colour: {with_apple} coloured pixels with it, {plain} without");
 }
 
+/// A finger on a touch screen scrolls the ribbon sideways by dragging it, after a pause too: the
+/// ribbon has to be ready for the drag before the finger comes down.
+#[test]
+fn a_finger_swipe_scrolls_the_ribbon() {
+    let (_t, mut app, s) = sample_app("ui-finger-swipe-ribbon");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(700.0, 900.0));
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    let finger = |phase, pos| egui::Event::Touch { device_id: egui::TouchDeviceId(1), id: egui::TouchId(3), phase, pos, force: None };
+    let swipe = |h: &mut Harness<'_, NoteCraftApp>, from: egui::Pos2, by: f32| {
+        h.input_mut().events.push(finger(egui::TouchPhase::Start, from));
+        h.input_mut().events.push(egui::Event::PointerMoved(from));
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: from,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+        for n in 1..=6 {
+            let at = from - egui::vec2(by * n as f32 / 6.0, 0.0);
+            h.input_mut().events.push(finger(egui::TouchPhase::Move, at));
+            h.input_mut().events.push(egui::Event::PointerMoved(at));
+            h.step();
+        }
+        let to = from - egui::vec2(by, 0.0);
+        h.input_mut().events.push(finger(egui::TouchPhase::End, to));
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: to,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+    };
+    // A first touch: the window learns it has a touch screen, as egui's own scrolling does.
+    let add = h.get_by_label("Add").rect().center();
+    swipe(&mut h, add, 0.0);
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    for _ in 0..10 {
+        h.step();
+    }
+    let from = h.get_by_label("Add").rect().center();
+    swipe(&mut h, from, 200.0);
+    settle(&mut h);
+    let after = h.get_by_label("Add").rect().center();
+    assert!(after.x < from.x - 100.0, "the finger's swipe scrolled the ribbon: {from:?} -> {after:?}");
+}
+
+/// A pen on a tablet arrives as a touch with a force, and a tap with it moves a pixel or two
+/// before it lifts: on the ribbon that is a click on the control under it. The ribbon scrolls
+/// sideways under a finger, but a pen, and a mouse once a pen has been used, do not scroll it.
+#[test]
+fn a_pen_tap_on_the_ribbon_clicks_and_does_not_scroll_it() {
+    let (_t, mut app, s) = sample_app("ui-pen-tap-ribbon");
+    app.open_path(&s.md_page.to_string_lossy());
+    // Narrow, so the Draw tab is wider than the window and its ribbon scrolls.
+    let mut h = sized_harness(app, LIGHT, egui::vec2(700.0, 900.0));
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    let add = h.get_by_label("Add").rect().center();
+    let contact = |phase, pos| egui::Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(7), phase, pos, force: Some(0.5) };
+    h.input_mut().events.push(egui::Event::PointerMoved(add));
+    h.step();
+    h.input_mut().events.push(contact(egui::TouchPhase::Start, add));
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: add,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    // The pen wobbles on the way, as it does on a tablet mapped to a large screen: more than
+    // the six points egui gives a mouse click. (One frame: the harness steps a quarter of a
+    // second, and a press held past 0.8 s is not a click.)
+    let up = add + egui::vec2(9.0, 3.0);
+    h.input_mut().events.push(contact(egui::TouchPhase::Move, up));
+    h.input_mut().events.push(egui::Event::PointerMoved(up));
+    h.step();
+    h.input_mut().events.push(contact(egui::TouchPhase::End, up));
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: up,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    settle(&mut h);
+    assert!(h.query_by_label("Add Pen").is_some(), "the pen's tap opened Add");
+    let still = h.get_by_label("Add").rect().center();
+    assert!((still.x - add.x).abs() < 1.0, "the ribbon did not scroll under the pen: {add:?} -> {still:?}");
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+
+    // A mouse drag on the ribbon, now that a pen has been seen, does not scroll it either.
+    let from = h.get_by_label("Add").rect().center();
+    h.input_mut().events.push(egui::Event::PointerMoved(from));
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    for n in 1..=10 {
+        h.input_mut().events.push(egui::Event::PointerMoved(from - egui::vec2(20.0 * n as f32, 0.0)));
+        h.step();
+    }
+    let to = from - egui::vec2(200.0, 0.0);
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    settle(&mut h);
+    let after = h.get_by_label("Add").rect().center();
+    assert!((after.x - from.x).abs() < 1.0, "a mouse drag did not scroll the ribbon: {from:?} -> {after:?}");
+}
+
 #[test]
 fn emoji_picker_escape_clear_and_outside_click_are_local_to_one_opening() {
     let (_t, app, s) = sample_app("ui-emoji-picker-dismiss");
@@ -15499,6 +15815,234 @@ fn emoji_picker_paste_stays_in_search_then_page_paste_resumes() {
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     settle(&mut h);
     assert!(!h.state().body().unwrap_or_default().contains("undo-target-749"));
+}
+
+#[test]
+fn global_search_keyboard_does_not_undo_or_add_rows_behind_it() {
+    let (_t, mut app, s) = sample_app("ui-search-page-key-ownership");
+    notecraft_store::page::save_body(&s.html_page, "<table><tr><th>Fruit</th><th>Count</th></tr><tr><td>apple</td><td>Two</td></tr></table>")
+        .expect("fixture");
+    app.open_path(&s.html_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    let cell = h.get_by_label("Two").rect().center();
+    ask(&mut h, "ui.click", json!({"x": cell.x, "y": cell.y})).expect("last cell");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "new"})).expect("edit the last cell");
+    settle(&mut h);
+    let before = h.state().body().unwrap_or_default().to_string();
+    assert!(before.contains("new"), "{before}");
+    ask(&mut h, "ui.key", json!({"key": "F", "ctrl": true})).expect("search");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "search phrase"})).expect("query");
+    settle(&mut h);
+    for (key, ctrl) in [("Z", true), ("Tab", false)] {
+        ask(&mut h, "ui.key", json!({"key": key, "ctrl": ctrl})).expect("global search key");
+        settle(&mut h);
+        assert_eq!(h.state().body().unwrap_or_default(), before, "search must not give {key} to the page");
+    }
+}
+
+#[test]
+fn window_capture_follows_a_moved_page_and_can_recover_unsaved_edits() {
+    use notecraft_engine::Output;
+    for (mode, replace_old) in [("clean", false), ("clean", true), ("copy", false), ("reload", true)] {
+        let (_t, mut first, sample) = sample_app("window-moved");
+        let page = sample.md_page;
+        let destination = sample.html_page.parent().expect("destination section").to_path_buf();
+        first.open_path(&page.to_string_lossy());
+        let mut second = first.child_window(&notecraft_ui_egui::windows::Request { path: page.clone(), quick: false }).expect("second view");
+        if mode != "clean" {
+            second.set_body("Unsaved second window\n");
+        }
+        let old = page.to_string_lossy();
+        let to = destination.to_string_lossy();
+        let Output::Path(moved) = first.session_mut().run("node.move", &params(&[("path", &old), ("to", &to)])).expect("move") else {
+            panic!("move returned no path");
+        };
+        let body = notecraft_store::page::load_page(&moved).expect("original").body;
+        if replace_old {
+            let parent = page.parent().expect("old section").to_string_lossy();
+            let Output::Path(replacement) = first
+                .session_mut()
+                .run("node.create", &params(&[("parent", &parent), ("kind", "page"), ("title", "Format ideas")]))
+                .expect("create replacement at old path")
+            else {
+                panic!("missing replacement");
+            };
+            assert_eq!(replacement, page);
+            notecraft_store::page::save_body(&replacement, "A completely different note\n").expect("save replacement");
+        }
+        second.check_page_changes();
+        if mode == "copy" {
+            assert!(second.has_page_conflict());
+            assert!(second.is_dirty());
+            let copy = second.keep_conflicted_copy().expect("recover local changes after move");
+            assert_ne!(copy, moved);
+            assert!(notecraft_store::page::load_page(&copy).expect("copy").body.contains("Unsaved second window"));
+        } else {
+            if mode == "reload" {
+                assert!(second.has_page_conflict());
+                assert!(second.is_dirty());
+                assert!(second.reload_conflicted_page());
+            }
+            assert!(!second.has_page_conflict(), "moving an unmodified view is not a conflict");
+            assert_eq!(second.current_page(), Some(moved.as_path()));
+            assert_eq!(second.body(), Some(body.as_str()));
+        }
+        assert_eq!(notecraft_store::page::load_page(&moved).expect("original unchanged").body, body);
+        if replace_old {
+            assert_eq!(notecraft_store::page::load_page(&page).expect("replacement untouched").body, "A completely different note\n");
+        }
+    }
+}
+
+#[test]
+fn a_small_fixed_sheet_recenters_when_the_window_grows() {
+    let (_t, mut app, s) = sample_app("ui-paper-recenter");
+    notecraft_store::page::set_paper_size(&s.html_page, notecraft_model::paper::Paper::parse("a6 portrait 19.05,19.05,19.05,19.05")).expect("paper");
+    app.open_path(&s.html_page.to_string_lossy());
+    let origin = |h: &mut Harness<'_, NoteCraftApp>| ask(h, "ui.inspect", json!({})).expect("inspect")["page"]["origin"][0].as_f64().expect("page x");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1280.0, 900.0));
+    settle(&mut h);
+    let before = origin(&mut h);
+    h.set_size(egui::vec2(1500.0, 900.0));
+    settle(&mut h);
+    let delta = origin(&mut h) - before;
+    assert!((delta - 110.0).abs() < 2.0, "the fixed sheet moves half the width added: {delta}");
+}
+
+#[test]
+fn file_search_reports_empty_results_and_opens_a_matching_page() {
+    let (_t, app, s) = sample_app("ui-file-search");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.state_mut().open_backstage_page("Info");
+    settle(&mut h);
+    search_for(&mut h, "missingfixtureqaz");
+    assert_eq!(h.query_all_by_label("No pages match.").count(), 1);
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("dismiss");
+    settle(&mut h);
+    search_for(&mut h, "Kickoff");
+    h.get_by_label_contains("kickoff notes").click();
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("Kickoff notes"));
+    assert_eq!(h.query_all_by_label("Back to the notebook").count(), 0, "the matching note is visible");
+}
+
+#[test]
+fn new_notebook_name_does_not_recapture_tab_focus() {
+    let t = TempDir::new("ui-new-notebook-tab");
+    let mut h = harness(NoteCraftApp::new(session(&t)), LIGHT);
+    settle(&mut h);
+    h.get_by_label("New notebook").click();
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "Study"})).expect("name");
+    pump(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Tab"})).expect("move focus");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "ShouldNotEnterName"})).expect("text at next control");
+    pump(&mut h);
+    h.get_by_label("Create").click();
+    settle(&mut h);
+    assert!(h.state().session().tree().iter().any(|n| n.info.title == "Study"));
+}
+
+#[test]
+fn locked_pages_explain_the_lock_and_keep_version_preview_available() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-locked-version-preview");
+    notecraft_store::page::save_body(&s.md_page, "Current words.\n").expect("save a version");
+    notecraft_store::page::set_read_only(&s.md_page, true).expect("lock");
+    let file = s.md_page.join("index.md");
+    let before = std::fs::read(&file).expect("locked page");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    assert!(h.query_all_by_label("This page is locked read only").next().is_some());
+    assert!(h.query_by_label_contains("holds markup").is_none());
+    h.get_by_label("History").click();
+    settle(&mut h);
+    h.get_by_label("Page Versions").click();
+    settle(&mut h);
+    assert!(h.get_by_label("Restore").accesskit_node().is_disabled());
+    h.get_by_label("Preview").click();
+    settle(&mut h);
+    assert!(h.get_by_label("Restore this version").accesskit_node().is_disabled());
+    assert!(h.query_by_label("Back to the list").is_some(), "preview stays usable");
+    assert_eq!(std::fs::read(&file).expect("locked page"), before);
+}
+
+#[test]
+fn file_copy_and_account_controls_are_reachable_at_large_interface_sizes() {
+    // At 200% scaling, 820 by 520 native pixels give this much usable layout room.
+    let (_t, app, s) = sample_app("ui-file-large-type");
+    let size = egui::vec2(410.0, 260.0);
+    let mut h = sized_harness(app, LIGHT, size);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    for (page, labels) in [("Save a Copy", ["Choose\u{2026}", "Save the copy"]), ("Account", ["Keep this name", "Keep no name"])] {
+        h.state_mut().open_backstage_page(page);
+        settle(&mut h);
+        ask(&mut h, "ui.move", json!({"x": 292, "y": 174})).expect("pointer over content");
+        pump(&mut h);
+        ask(&mut h, "ui.scroll", json!({"y": -700})).expect("scroll down the File body");
+        settle(&mut h);
+        for label in labels {
+            let at = h.get_by_label(label).rect().center();
+            assert!((116.0..size.x).contains(&at.x) && (30.0..size.y).contains(&at.y), "{page}: {label} at {at:?} is within the File body");
+        }
+    }
+}
+
+#[test]
+fn the_notebook_recycle_bin_is_available_when_its_last_content_is_deleted() {
+    use egui_kittest::kittest::NodeT as _;
+    use notecraft_engine::Output;
+    for kind in ["page", "section", "group"] {
+        let t = TempDir::new("ui-empty-bin");
+        let mut se = session(&t);
+        let make = |s: &mut Session, command: &str, p: &[(&str, &str)]| match s.run(command, &params(p)).expect(command) {
+            Output::Path(x) => x,
+            _ => panic!("missing fixture path"),
+        };
+        let nb = make(&mut se, "notebook.create", &[("name", "Recovery QA"), ("empty", "true")]);
+        let group = make(&mut se, "node.create", &[("parent", &nb.to_string_lossy()), ("kind", "section-group"), ("title", "Test group")]);
+        let section = make(&mut se, "node.create", &[("parent", &group.to_string_lossy()), ("kind", "section"), ("title", "Test section")]);
+        let page = make(&mut se, "node.create", &[("parent", &section.to_string_lossy()), ("kind", "page"), ("title", "Only page")]);
+        se.run("page.save", &params(&[("path", &page.to_string_lossy()), ("body", "<p>Saved content</p>")])).expect("save");
+        let (target, label) = match kind {
+            "page" => (&page, "Only page"),
+            "section" => (&section, "Test section"),
+            _ => (&group, "Test group"),
+        };
+        let mut h = sized_harness(NoteCraftApp::new(se), LIGHT, egui::vec2(1600.0, 900.0));
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        h.get_all_by_label(label).next().expect("tree row").click_secondary();
+        settle(&mut h);
+        h.get_by_label("Delete...").click();
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key":"Enter"})).expect("confirm recycle move");
+        settle(&mut h);
+        assert!(!target.exists());
+        h.get_by_label("History").click();
+        settle(&mut h);
+        assert!(!h.get_by_label("Notebook Recycle Bin").accesskit_node().is_disabled(), "{kind} after deletion");
+        drop(h);
+
+        let mut h = sized_harness(NoteCraftApp::new(session(&t)), LIGHT, egui::vec2(1600.0, 900.0));
+        settle(&mut h);
+        h.get_by_label("History").click();
+        settle(&mut h);
+        assert!(!h.get_by_label("Notebook Recycle Bin").accesskit_node().is_disabled(), "{kind} after restarting");
+        h.get_by_label("Notebook Recycle Bin").click();
+        settle(&mut h);
+        h.get_by_label("Restore").click();
+        settle(&mut h);
+        assert!(notecraft_store::page::load_page(&page).expect("restored original").body.contains("Saved content"));
+    }
 }
 
 /// A click on a line of words puts the caret in that line, where the pointer is: not in the

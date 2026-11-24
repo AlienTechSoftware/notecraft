@@ -13,7 +13,8 @@ use notecraft_formats::markdown::{self, Block, Span};
 use notecraft_model::Dir;
 use notecraft_model::PageFormat;
 use notecraft_model::justify::{Align, Justified, Mark};
-use std::path::Path;
+use std::borrow::Cow;
+use std::path::{Path, PathBuf};
 
 /// Blocks to draw for the editable part of a page in `format`.
 pub fn blocks_for(format: PageFormat, body: &str) -> Vec<Block> {
@@ -27,12 +28,46 @@ pub fn blocks_for(format: PageFormat, body: &str) -> Vec<Block> {
 /// `assets/pic.png` relative to the page folder. Only links under `assets/` are
 /// resolved; anything else (a web address, a path that climbs out) gives `None`.
 pub fn image_uri(page_dir: &Path, src: &str) -> Option<String> {
-    let rel = src.strip_prefix("assets/")?;
-    if rel.is_empty() || rel.contains("..") || rel.contains('\\') || rel.starts_with('/') {
-        return None;
-    }
-    let full = notecraft_store::tree::display_path(&page_dir.join("assets").join(rel));
+    let full = notecraft_store::tree::display_path(&page_asset_path(page_dir, src)?);
     Some(file_uri(&full))
+}
+
+/// Resolve an owned image reference the same way for drawing and image actions.
+pub(crate) fn page_asset_path(page_dir: &Path, src: &str) -> Option<PathBuf> {
+    let rel = src.strip_prefix("assets/")?;
+    let mut path = page_dir.join("assets");
+    for part in rel.split('/') {
+        let part = decode_asset_component(part);
+        // Decode within each component, never as part of parsing the path.
+        // Only normal components can be appended below the assets directory.
+        if part.trim_matches([' ', '.']).is_empty() || part.contains(['/', '\\', ':', '\0']) {
+            return None;
+        }
+        path.push(part.as_ref());
+    }
+    Some(path)
+}
+
+fn decode_asset_component(raw: &str) -> Cow<'_, str> {
+    if !raw.as_bytes().contains(&b'%') {
+        return Cow::Borrowed(raw);
+    }
+    let hex = |b| char::from(b).to_digit(16).map(|n| n as u8);
+    let bytes = raw.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if let [b'%', hi, lo, ..] = &bytes[i..]
+            && let (Some(hi), Some(lo)) = (hex(*hi), hex(*lo))
+        {
+            decoded.push(hi * 16 + lo);
+            i += 3;
+        } else {
+            decoded.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(decoded).map_or(Cow::Borrowed(raw), Cow::Owned)
 }
 
 /// Load attachment bytes directly. This is deliberately used by the live page renderer:
@@ -116,11 +151,7 @@ fn picture_reads(ctx: &egui::Context) -> usize {
 /// time in the order they are asked for, so the top of a page comes first, and the window is
 /// drawn again when it is in.
 fn picture(ctx: &egui::Context, page_dir: &Path, src: &str) -> Picture {
-    let Some(rel) = src.strip_prefix("assets/") else { return Picture::Missing };
-    if rel.is_empty() || rel.contains("..") || rel.contains('\\') || rel.starts_with('/') {
-        return Picture::Missing;
-    }
-    let path = page_dir.join("assets").join(rel);
+    let Some(path) = page_asset_path(page_dir, src) else { return Picture::Missing };
     // Asked every frame for every picture drawn: kept a moment, so a page of printouts on a
     // synced folder does not ask its mount hundreds of times a frame.
     let seen = crate::fscache::seen(&path);
@@ -1636,6 +1667,22 @@ mod tests {
         let html = blocks_for(PageFormat::Html, "<h1>Title</h1><ul><li>a</li><li>b</li></ul>");
         assert_eq!(md.len(), html.len());
         assert!(matches!(&html[0], Block::Heading { level: 1, .. }));
+    }
+
+    #[test]
+    fn ordinary_percent_encoded_and_consecutive_dot_image_names_load() {
+        let t = notecraft_store::testing::TempDir::new("preview-owned-image-names");
+        let assets = t.path().join("assets");
+        std::fs::create_dir(&assets).expect("assets directory");
+        let png = include_bytes!("../../import/tests/fixtures/synthetic-pixel.png");
+        for (file, reference) in [("Sketch-café.png", "Sketch-caf%C3%A9.png"), ("Daily-plan..png", "Daily-plan..png")] {
+            std::fs::write(assets.join(file), png).expect("picture");
+            let ctx = egui::Context::default();
+            let src = format!("assets/{reference}");
+            let (_, bytes) = ready(&ctx, t.path(), &src);
+            assert_eq!(bytes.as_ref(), png);
+            assert_eq!(crate::imagemenu::validate_and_read_image(t.path(), &src).expect("image action reads same asset").1, file);
+        }
     }
 
     #[test]

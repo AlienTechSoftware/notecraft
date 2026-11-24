@@ -673,7 +673,7 @@ fn cells(line: &str) -> Vec<String> {
     cells
 }
 
-fn list_marker(line: &str) -> Option<(bool, usize, usize, &str)> {
+pub(crate) fn list_marker(line: &str) -> Option<(bool, usize, usize, &str)> {
     // Returns (ordered, number, indent width, rest after the marker).
     let indent = line.len() - line.trim_start().len();
     let t = line.trim_start();

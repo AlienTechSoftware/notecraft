@@ -130,6 +130,25 @@ fn selection_box_id() -> Id {
     Id::new("containers-selection-box")
 }
 
+/// The pictures, by block, that share a box with other blocks and so can be taken out of it
+/// (issue #481). By block, not source: two copies of one picture are two pictures. Written every
+/// frame the boxes are drawn; the picture's menu reads it to offer Take out of box.
+pub fn unboxable_id() -> Id {
+    Id::new("containers-unboxable")
+}
+
+/// A picture, by block, that its menu asked to be taken out of its box (issue #481): the next frame
+/// the boxes are drawn it is lifted out where it stands, as a drag would, without moving. It is
+/// lifted only if that block is still a picture sharing a box.
+pub fn unbox_request_id() -> Id {
+    Id::new("containers-unbox-request")
+}
+
+/// Whether the picture in `block` shares a box with other blocks, as last drawn.
+pub fn can_unbox(ctx: &egui::Context, block: usize) -> bool {
+    ctx.data(|d| d.get_temp::<Vec<usize>>(unboxable_id())).is_some_and(|all| all.contains(&block))
+}
+
 /// True when a container took this frame's right click, so the page's own menu stays shut.
 pub fn took_right_click(ctx: &egui::Context) -> bool {
     ctx.data(|d| d.get_temp::<u64>(claimed_id())) == Some(ctx.cumulative_pass_nr())
@@ -336,6 +355,10 @@ pub fn show(
     // the picture has one of its own, which is what a picture is moved by. Done after the
     // boxes are drawn, because it renumbers them.
     let mut lift_picture: Option<PictureLift> = None;
+    // Take out of box, picked in the picture's menu last frame, and the pictures it can be
+    // offered for this frame.
+    let unbox_asked = ui.data_mut(|d| d.remove_temp::<usize>(unbox_request_id()));
+    let mut unboxable: Vec<usize> = Vec::new();
     let mut object_sel = selected_object(ui.ctx(), page_dir);
     // Ctrl and a click, while something is selected, adds the box clicked or takes it out of the
     // selection, as in OneNote: the click does not also put the caret in its words or pick up a
@@ -614,6 +637,15 @@ pub fn show(
                 // A printout page brings the rest of its printout along. When the printout is
                 // all the box holds, the box itself is what moves.
                 let printout = printout_blocks(blocks, &range, *block);
+                let lifted = printout.clone().unwrap_or(*block..*block + 1);
+                // The whole of what is lifted, as drawn: every page and the card above them.
+                let drawn = || hits.iter().filter(|(b, ..)| lifted.contains(b)).fold(*rect, |all, (_, r, _)| all.union(*r));
+                if printout.as_ref() != Some(&range) {
+                    unboxable.push(*block);
+                    if lift_picture.is_none() && unbox_asked == Some(*block) {
+                        lift_picture = Some(PictureLift { container: i, block: *block, blocks: lifted.clone(), rect: drawn(), drag: false });
+                    }
+                }
                 if printout.as_ref() == Some(&range) {
                     if body.dragged() {
                         let pull = scroll_at_edges(ui, area.min.y, zoom);
@@ -624,10 +656,8 @@ pub fn show(
                         out.boxes = true;
                     }
                 } else if body.drag_started() && lift_picture.is_none() {
-                    let lifted = printout.unwrap_or(*block..*block + 1);
-                    // The whole of what is lifted, as drawn: every page and the card above them.
-                    let drawn = hits.iter().filter(|(b, ..)| lifted.contains(b)).fold(*rect, |all, (_, r, _)| all.union(*r));
-                    lift_picture = Some(PictureLift { container: i, block: *block, blocks: lifted, rect: drawn });
+                    let rect = drawn();
+                    lift_picture = Some(PictureLift { container: i, block: *block, blocks: lifted, rect, drag: true });
                 }
             }
         }
@@ -963,6 +993,7 @@ pub fn show(
     // nothing on the page jumps; the picture's box is then moved with the pointer, in this same
     // frame, so even a quick flick of the mouse takes it along. From the next frame it is a box
     // holding one picture, and the drag goes on in the code above.
+    ui.data_mut(|d| d.insert_temp(unboxable_id(), unboxable));
     if let Some(lift) = lift_picture
         && delete_at.is_none()
         && delete_object.is_none()
@@ -979,8 +1010,12 @@ pub fn show(
             let (parts, picture_at) = lift_out(whole, range, lift.blocks.clone(), area.min, zoom, lift.rect, next_top);
             boxes.splice(lift.container..=lift.container, parts);
             let picture_box = lift.container + picture_at;
-            let pull = scroll_at_edges(ui, area.min.y, zoom);
-            if let Some(c) = boxes.get_mut(picture_box) {
+            // Taken out from the menu, the picture stays where it is drawn; dragged, it goes with
+            // the pointer.
+            if lift.drag
+                && let Some(c) = boxes.get_mut(picture_box)
+            {
+                let pull = scroll_at_edges(ui, area.min.y, zoom);
                 let to = moved_to(ui, picture_grab_id(ui, lift.block), area.min, (c.x, c.y), true, zoom, pull, snap);
                 *c = Container::new(to.0, to.1, c.width, c.blocks);
             }
@@ -1922,6 +1957,8 @@ struct PictureLift {
     blocks: std::ops::Range<usize>,
     /// Where they are drawn, on screen.
     rect: Rect,
+    /// Taken hold of and dragged, rather than taken out from the menu where it stands.
+    drag: bool,
 }
 
 /// The file a printout page was made from, read from the page's picture: `assets/a.pdf` for
@@ -2006,6 +2043,10 @@ fn lift_out(
     /// What the page leaves between one block and the next, in page points.
     const BETWEEN: f32 = 6.0;
     let zoom = zoom.max(0.01);
+    // A box's first block has its header row above the box's bar, so a box's words start that row
+    // and a handle below its top. Left at a handle alone, the picture and the words after it each
+    // dropped a row as they came out.
+    let above = HANDLE + crate::block_emoji::HEADER_ROW;
     let mut parts = Vec::with_capacity(3);
     let before = lifted.start - range.start;
     if before > 0 {
@@ -2015,14 +2056,14 @@ fn lift_out(
     // The box's inside starts a pad in from its left edge and a handle's height below its top.
     parts.push(Container::new(
         (picture.min.x - origin.x) / zoom - PAD,
-        (picture.min.y - origin.y) / zoom - HANDLE,
+        (picture.min.y - origin.y) / zoom - above,
         picture.width() / zoom,
         lifted.len(),
     ));
     let after = range.end - lifted.end;
     if after > 0 {
         let top = next_top.map_or(picture.max.y + BETWEEN * zoom, |y| y.max(picture.max.y));
-        parts.push(Container::new(whole.x, (top - origin.y) / zoom - HANDLE, whole.width, after));
+        parts.push(Container::new(whole.x, (top - origin.y) / zoom - above, whole.width, after));
     }
     (parts, picture_at)
 }
@@ -2502,15 +2543,16 @@ more
     #[test]
     fn lifting_a_picture_out_of_a_shared_box_keeps_every_part_where_it_was() {
         let whole = Container::new(40.0, 20.0, 400.0, 5);
-        // The page's corner is at (100, 50); the box's inside starts at 100+40+6, 50+20+14.
+        // The page's corner is at (100, 50); the box's inside starts at 100+40+6, 50+20+24+14: a
+        // header row and a handle below the box's top.
         let origin = pos2(100.0, 50.0);
         let picture = Rect::from_min_size(pos2(146.0, 154.0), vec2(200.0, 120.0));
         let (parts, at) = lift_out(whole, 0..5, 2..3, origin, 1.0, picture, Some(290.0));
         assert_eq!(parts.iter().map(|c| c.blocks).collect::<Vec<_>>(), vec![2, 1, 2], "words, picture, words");
         assert_eq!(at, 1);
         assert_eq!(parts[0], Container::new(40.0, 20.0, 400.0, 2), "the words before keep the box's place and width");
-        assert_eq!((parts[1].x, parts[1].y, parts[1].width), (40.0, 90.0, 200.0), "the picture's box starts where the picture is drawn");
-        assert_eq!((parts[2].x, parts[2].y, parts[2].width), (40.0, 226.0, 400.0), "the words after start where they were drawn");
+        assert_eq!((parts[1].x, parts[1].y, parts[1].width), (40.0, 66.0, 200.0), "the picture's box starts where the picture is drawn");
+        assert_eq!((parts[2].x, parts[2].y, parts[2].width), (40.0, 202.0, 400.0), "the words after start where they were drawn");
     }
 
     #[test]
@@ -2527,10 +2569,10 @@ more
     fn lifting_a_picture_follows_the_zoom_and_never_loses_a_block() {
         let whole = Container::new(0.0, 0.0, 300.0, 4);
         // At 200 % the picture is drawn twice as far from the corner and twice as big.
-        let picture = Rect::from_min_size(pos2(24.0, 68.0), vec2(300.0, 160.0));
-        let (parts, _) = lift_out(whole, 0..4, 1..2, pos2(0.0, 0.0), 2.0, picture, Some(260.0));
+        let picture = Rect::from_min_size(pos2(24.0, 116.0), vec2(300.0, 160.0));
+        let (parts, _) = lift_out(whole, 0..4, 1..2, pos2(0.0, 0.0), 2.0, picture, Some(310.0));
         assert_eq!((parts[1].x, parts[1].y, parts[1].width), (6.0, 20.0, 150.0), "page points, not screen points");
-        assert_eq!(parts[2].y, 116.0);
+        assert_eq!(parts[2].y, 117.0);
         assert_eq!(parts.iter().map(|c| c.blocks).sum::<usize>(), 4);
         // A box that is only a picture and a line, lifted below a range that starts later.
         let (parts, _) = lift_out(Container::new(0.0, 0.0, 300.0, 2), 3..5, 4..5, pos2(0.0, 0.0), 1.0, picture, None);

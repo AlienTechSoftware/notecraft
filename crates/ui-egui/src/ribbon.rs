@@ -683,6 +683,7 @@ pub struct View<'a> {
     pub pressure_available: bool,
     /// A page is open for page-specific History commands.
     pub has_page: bool,
+    pub has_recycle_notebook: bool,
     /// The open page was marked unread by hand (issue #291).
     pub page_marked_unread: bool,
     /// History > Hide Authors is on (issue #292).
@@ -755,7 +756,7 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
         // is wider than the window, which looks like a stray black artifact.  Keep
         // the scroll area (overflow tabs still scroll) but do not paint that bar.
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-        .scroll_source(egui::scroll_area::ScrollSource { drag: egui::scroll_area::DragScroll::OnTouch, ..egui::scroll_area::ScrollSource::default() })
+        .scroll_source(egui::scroll_area::ScrollSource { drag: finger_drag(ui.ctx()), ..egui::scroll_area::ScrollSource::default() })
         .show(ui, |ui| {
             ui.horizontal_top(|ui| {
                 ui.add_space(4.0);
@@ -3435,7 +3436,7 @@ fn history_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
             acts.push(Act::PageVersions);
         }
         if ui
-            .add_enabled_ui(view.has_page, |ui| {
+            .add_enabled_ui(view.has_recycle_notebook, |ui| {
                 big(
                     ui,
                     Icon::Notebook,
@@ -4139,5 +4140,39 @@ mod tests {
     #[test]
     fn the_font_size_list_is_onenotes_whole_sizes() {
         assert_eq!(FONT_SIZES.as_slice(), [8u8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72].as_slice());
+    }
+}
+
+/// Where the last touch is kept: true when it was a finger, false when it was a pen.
+fn finger_id() -> egui::Id {
+    egui::Id::new("ribbon-last-touch-a-finger")
+}
+
+/// Notes, once a frame and whether the ribbon is shown or not, whether the last touch to come
+/// down was a finger (a touch that reports no force) or a pen (one that reports a force).
+pub fn note_touches(ctx: &egui::Context) {
+    let was = ctx.data(|d| d.get_temp::<bool>(finger_id())).unwrap_or(false);
+    let now = ctx.input(|i| {
+        i.events.iter().fold(was, |finger, e| match e {
+            egui::Event::Touch { phase: egui::TouchPhase::Start, force, .. } => force.is_none(),
+            _ => finger,
+        })
+    });
+    if now != was {
+        ctx.data_mut(|d| d.insert_temp(finger_id(), now));
+    }
+}
+
+/// Whether a drag on the ribbon scrolls it. egui's `OnTouch` asks whether a touch screen was
+/// ever seen, and a pen on a tablet arrives as a touch too (with a force): after the first stroke
+/// every drag scrolled the ribbon, and a pen's tap, which moves a pixel or two, became a scroll
+/// instead of a click. The ribbon scrolls under a drag while the last touch was a finger, as
+/// `OnTouch` does once a finger has been seen, and not once a pen has come down. It is decided
+/// before a press, not on it: egui finds what a press is on among the last frame's widgets.
+fn finger_drag(ctx: &egui::Context) -> egui::scroll_area::DragScroll {
+    if ctx.data(|d| d.get_temp::<bool>(finger_id())).unwrap_or(false) {
+        egui::scroll_area::DragScroll::Always
+    } else {
+        egui::scroll_area::DragScroll::Never
     }
 }

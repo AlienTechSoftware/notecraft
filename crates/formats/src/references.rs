@@ -45,7 +45,9 @@ pub fn in_text(format: PageFormat, text: &str) -> Vec<Reference> {
                     continue;
                 }
             }
-            if fence.is_some() || spaces >= 4 {
+            // Native CMGFM writes two spaces per list level. Those lines are
+            // list items, not code, even at a depth of two or more.
+            if fence.is_some() || (spaces >= 4 && crate::markdown::list_marker(trimmed).is_none()) {
                 i = end;
                 continue;
             }
@@ -70,7 +72,22 @@ pub fn in_text(format: PageFormat, text: &str) -> Vec<Reference> {
                 i = text[i + 4..].find("-->").map_or(bytes.len(), |n| i + 4 + n + 3);
                 continue;
             }
-            let Some(end) = tag_end(bytes, i + 1) else { break };
+            if format == PageFormat::Cmgfm {
+                // A comparison such as "budget < actual" is ordinary text.
+                // Don't search across subsequent links for its closing angle.
+                let name = i + 1 + usize::from(bytes.get(i + 1) == Some(&b'/'));
+                if !bytes.get(name).is_some_and(u8::is_ascii_alphabetic) {
+                    i += 1;
+                    continue;
+                }
+            }
+            let Some(end) = tag_end(bytes, i + 1) else {
+                if format == PageFormat::Html {
+                    break;
+                }
+                i += 1;
+                continue;
+            };
             let tag = &text[i + 1..end];
             let name = tag.split_ascii_whitespace().next().unwrap_or("").trim_end_matches('/').to_ascii_lowercase();
             if matches!(name.as_str(), "pre" | "code" | "script") {
@@ -211,6 +228,13 @@ mod tests {
         assert_eq!(&text[refs[0].range.clone()], "assets/pic.png");
         let refs = in_text(PageFormat::Cmgfm, "[name](assets/\\日本語.png)");
         assert_eq!(refs[0].target, "assets/\\日本語.png", "only ASCII punctuation consumes a Markdown escape");
+    }
+
+    #[test]
+    fn markdown_references_follow_literal_comparisons_and_nested_list_items() {
+        let text = "Budget < actual\n\n[Appendix](../appendix/)\n- Goal\n  - Step\n    - [Details](../details/)\n    1. [Checklist](../checklist/)\n\n    [Indented example](missing)\n";
+        let references = in_text(PageFormat::Cmgfm, text);
+        assert_eq!(references.iter().map(|r| r.target.as_str()).collect::<Vec<_>>(), ["../appendix/", "../details/", "../checklist/"]);
     }
 
     #[test]
