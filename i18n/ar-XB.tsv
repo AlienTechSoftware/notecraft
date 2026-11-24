@@ -687,6 +687,7 @@
 @id	ui.rule_line_colour_not_built	[[RLI]]$$$Rule line colour (not built)@@@[[PDI]]
 @id	ui.ruled	[[RLI]]$$$Ruled@@@[[PDI]]
 @id	ui.save_picture_as	[[RLI]]$$$Save picture as...@@@[[PDI]]
+@id	ui.take_out_of_box	[[RLI]]$$$Take out of box@@@[[PDI]]
 @id	ui.save_picture_2	[[RLI]]$$$Save@@@[[PDI]]\n[[RLI]]$$$picture@@@[[PDI]]
 @id	ui.saved	[[RLI]]$$$Saved@@@[[PDI]]
 @id	ui.saved_copies_of_this_page	[[RLI]]$$$Saved copies of this page@@@[[PDI]]
