@@ -2284,6 +2284,27 @@ pub fn show(
     changed
 }
 
+/// Whether a paragraph's emoji header is drawn under the paragraph instead of above it. Off until
+/// the UI/UX of that placement is decided: the layout of paragraphs with emoji is not settled.
+const PARAGRAPH_HEADER_BELOW: bool = false;
+
+/// A paragraph's emoji header, drawn under the paragraph once its words are down (issue #441
+/// follow-up). Headings and the other blocks keep theirs above, and a box's frame keeps its own.
+fn paragraph_header_below(ui: &mut Ui, page_dir: &std::path::Path, blocks: &mut [Block], i: usize, changed: &mut Changed, zoom: f32) {
+    if !PARAGRAPH_HEADER_BELOW || !matches!(blocks.get(i), Some(Block::Paragraph(..))) {
+        return;
+    }
+    // The first block of a box has its header above the frame, drawn by the box: not twice.
+    if ui.data(|d| d.get_temp::<Option<usize>>(crate::block_emoji::box_first_header_id()).flatten()) == Some(i) {
+        return;
+    }
+    let emoji = blocks[i].emoji().to_vec();
+    if let Some(next) = crate::block_emoji::header(ui, page_dir, i, &emoji, true, zoom) {
+        blocks[i].set_emoji(next);
+        changed.blocks = true;
+    }
+}
+
 /// The blocks in `range`, drawn and written in. This is the body of a page, and of one
 /// container on a page that has them.
 #[allow(clippy::too_many_arguments)]
@@ -2361,7 +2382,13 @@ pub fn show_blocks(
         // The header strip with the emoji `+` sits above the block. The page's date stamp
         // has none.
         let drawn_above_box = ui.data(|d| d.get_temp::<Option<usize>>(crate::block_emoji::box_first_header_id()).flatten()) == Some(i);
-        if !drawn_above_box && let Some(next) = crate::block_emoji::header(ui, page_dir, i, blocks[i].emoji(), true, zoom) {
+        // A paragraph's header goes under its words instead (see `paragraph_header_below`).
+        // Paragraphs draw no emoji `+` and show no emoji for now. Their emoji data stays in the page.
+        let paragraph = matches!(blocks[i], Block::Paragraph(..));
+        if !drawn_above_box
+            && !paragraph
+            && let Some(next) = crate::block_emoji::header(ui, page_dir, i, blocks[i].emoji(), true, zoom)
+        {
             blocks[i].set_emoji(next);
             changed.blocks = true;
         }
@@ -2500,6 +2527,7 @@ pub fn show_blocks(
                     }
                 }
                 frame_block(ui, top, outlined, t, zoom);
+                paragraph_header_below(ui, page_dir, blocks, i, &mut changed, zoom);
                 if let Some(a) = action.take() {
                     apply_keeping_widths(a, blocks, caret, &mut changed, cols);
                 }
@@ -2803,6 +2831,7 @@ pub fn show_blocks(
                 }
             }
             frame_block(ui, top, outlined, t, zoom);
+            paragraph_header_below(ui, page_dir, blocks, i, &mut changed, zoom);
         } else {
             // A finished block. Clicking it puts the caret in it, under the pointer, and a
             // to-do box on it can be ticked without putting the caret anywhere.
@@ -2908,6 +2937,7 @@ pub fn show_blocks(
                 ui.ctx().set_cursor_icon(if over_link { egui::CursorIcon::PointingHand } else { egui::CursorIcon::Text });
             }
             frame_block(ui, top, false, t, zoom);
+            paragraph_header_below(ui, page_dir, blocks, i, &mut changed, zoom);
         }
     }
     // The last block may have been written in or been a table, which never ask for the least

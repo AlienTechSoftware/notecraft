@@ -15190,3 +15190,39 @@ fn the_pointer_shows_the_move_cursor_over_a_new_blocks_bar() {
     h.run();
     assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Move, "the move cursor over the bar");
 }
+
+/// A paragraph's emoji header sits under the paragraph, and a heading's sits above it; the frame
+/// of a box keeps its header above (issue #441 follow-up on the block header row).
+// Ignored until the UI/UX of a paragraph's emoji header is decided (see PARAGRAPH_HEADER_BELOW).
+#[ignore = "paragraph emoji placement is undecided; see PARAGRAPH_HEADER_BELOW"]
+#[test]
+fn a_paragraph_emoji_header_sits_under_the_paragraph() {
+    let (_t, app, s) = sample_app("ui-paragraph-emoji-below");
+    let body = "<h2 data-nc-emoji=\"\u{1F929}\">Heading</h2><p data-nc-emoji=\"\u{1F631}\">Paragraph words</p>";
+    notecraft_store::page::save_body(&s.html_page, body).expect("a heading and a paragraph with emoji");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    let words = h.query_all_by_label_contains("Paragraph words").next().expect("the paragraph").rect();
+    let chip = h.query_all_by_label("Remove \u{1F631} from block 2").next().expect("the paragraph's emoji").rect();
+    assert!(chip.min.y > words.max.y, "the paragraph's emoji is under its words: chip {chip:?}, words {words:?}");
+    let title = h.query_all_by_label("Heading").map(|n| n.rect()).find(|r| r.min.x > 300.0 && r.min.y > 150.0).expect("the heading on the page");
+    let heading_chip = h.query_all_by_label("Remove \u{1F929} from block 1").next().expect("the heading's emoji").rect();
+    assert!(heading_chip.max.y <= title.min.y + 1.0, "a heading's emoji stays above it: chip {heading_chip:?}, heading {title:?}");
+}
+
+/// Paragraphs draw no emoji `+` and show no emoji; their data is kept. A heading keeps its `+`,
+/// and the box's top block keeps its header above the frame.
+#[test]
+fn paragraphs_draw_no_plus_and_keep_the_box_top_header() {
+    let (_t, app, s) = sample_app("ui-paragraph-no-plus");
+    let body = "<h2>Plain heading</h2><p>Plain paragraph</p><div class=\"nc-box\" data-x=\"0\" data-y=\"0\" data-width=\"400\"><h2>Boxed heading</h2><p>Boxed paragraph</p></div>";
+    notecraft_store::page::save_body(&s.html_page, body).expect("a heading, a paragraph and a box");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Add emoji to block 1").count(), 1, "the top block keeps its +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 2").count(), 0, "a paragraph draws no +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 3").count(), 1, "a heading in a box keeps its +");
+    assert_eq!(h.query_all_by_label("Add emoji to block 4").count(), 0, "a paragraph in a box draws no +");
+}

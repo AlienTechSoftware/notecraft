@@ -1656,6 +1656,9 @@ pub fn show_ink_view(
         child.spacing_mut().item_spacing.y *= zoom;
         let child_id = child.id();
         let first = range.start;
+        // The box's first block keeps its header, as the editor draws it above the box: the row is
+        // reserved the same way here, so the pen view and the page lay the blocks out alike.
+        let box_first = range.clone().find(|&n| blocks.get(n).is_some() && !pageedit::is_title_echo(blocks, n, shown_title));
         for index in range {
             if pageedit::is_title_echo(blocks, index, shown_title) {
                 continue;
@@ -1666,8 +1669,11 @@ pub fn show_ink_view(
                 pageedit::show_table_read(&mut child, block, index, t, page, columns, zoom);
                 continue;
             }
-            // The same emoji header as a block on the page, above the block in its box.
-            let _ = crate::block_emoji::header(&mut child, page_dir, index, block.emoji(), false, zoom);
+            // The same emoji header as a block on the page, above the block in its box. Paragraphs
+            // show none for now (see `pageedit`), except the box's first block.
+            if !matches!(block, Block::Paragraph(..)) || box_first == Some(index) {
+                let _ = crate::block_emoji::header(&mut child, page_dir, index, block.emoji(), false, zoom);
+            }
             // In a scope of its own, as the ordinary view draws a finished block: egui spaces a
             // scope from the next block as it spaces the block itself, and drawn straight into
             // the column the blocks sat a little closer, so the page jumped when the pen was
