@@ -1301,4 +1301,13 @@ A nested test page.
         assert!(art_dir().join("ocr-letter-en.png").is_file(), "the English handwritten example is in assets/demo");
         assert!(art_dir().join("ocr-receipt.png").is_file(), "the English printed example is in assets/demo");
     }
+
+    /// The OCR section is part of the demo in every language. A missing `ocr/` folder is allowed by the
+    /// generator, so this test is the guard that keeps a language from silently losing its OCR section.
+    #[test]
+    fn every_language_has_an_ocr_section() {
+        let missing: Vec<&str> =
+            LANGUAGES.iter().filter(|language| !content_dir().join(language.code).join(OCR_FOLDER).is_dir()).map(|language| language.code).collect();
+        assert!(missing.is_empty(), "languages without authored OCR content: {missing:?}");
+    }
 }
