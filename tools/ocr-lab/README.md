@@ -77,8 +77,13 @@ light's reason is repeated there.
 
 - **+ Blank drawing** under a group adds a white 1200 × 800 PNG to that group's folder, named
   `drawing-1.png`, `drawing-2.png`, and so on, and opens it with the pen ready.
-- **Pen on picture** draws black ink onto the open picture. The picture on screen changes at once,
-  but the file does not until you press **Save drawing**. Until then you cannot open another picture.
+- **Pens** appear in the right panel only for a digital drawing (a sample tagged as a drawing). They are
+  the app's own pens: the same tools, colours and widths as the app's default rack (pen, pencil,
+  highlighter). Choose one and draw on the picture. A highlighter lets the picture show through.
+- The picture on screen changes at once, but the file does not until you press **Save drawing**. Until
+  then you cannot open another picture.
+- Pens draw full pressure, since a mouse has none. Undo, more pens, and saving the drawing as the app
+  stores it (SVG with the pen's readings) are not built yet.
 - Saving removes the old OCR run for that picture, so the next **Run OCR** reads the new drawing.
 
 ## Picture sliders
