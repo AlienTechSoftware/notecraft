@@ -9,6 +9,7 @@
 
 mod app;
 mod case;
+mod json_view;
 mod metrics;
 mod models;
 mod pen;

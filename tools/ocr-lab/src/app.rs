@@ -181,6 +181,8 @@ pub struct Lab {
     /// The ruled lines or squares shown over the picture, from the ribbon's View tab. A view only: the
     /// file is not changed, so OCR reads the picture as it is.
     rules: ribbon::RuleLines,
+    /// A text file shown in the main area instead of the picture: its path and its text.
+    viewing_json: Option<(PathBuf, String)>,
     /// What the ribbon's pointer is set to: Type to select, or Draw to write with the pen in hand.
     pointer: ribbon::Pointer,
     /// The ribbon's chosen tab, and whether the ribbon is folded to its tab names.
@@ -225,6 +227,7 @@ impl Lab {
             pen: crate::pen::Pen::new(),
             open_path: Vec::new(),
             pointer: ribbon::Pointer::default(),
+            viewing_json: None,
             rules: ribbon::RuleLines::default(),
             stylus: Default::default(),
             sensitivity: 50,
@@ -1274,6 +1277,7 @@ impl Lab {
         let mut pick = None;
         let mut delete_req: Option<usize> = None;
         let mut save_now = false;
+        let mut view_json: Option<PathBuf> = None;
         // Language, then how the sample was made, then what it contains. A sample with several content
         // tags appears under each of them.
         type Contents = std::collections::BTreeMap<String, Vec<usize>>;
@@ -1372,7 +1376,13 @@ impl Lab {
                                                 if text_file.is_file() {
                                                     let child = text_file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                                                     ui.indent(("ocr-text", i), |ui| {
-                                                        ui.small(format!("📄 {child}"));
+                                                        if ui
+                                                            .selectable_label(false, format!("📄 {child}"))
+                                                            .on_hover_text("Show this file in the main area")
+                                                            .clicked()
+                                                        {
+                                                            view_json = Some(text_file.clone());
+                                                        }
                                                     });
                                                 }
                                             }
@@ -1409,6 +1419,9 @@ impl Lab {
         }
         if save_now {
             self.save_if_dirty();
+        }
+        if let Some(path) = view_json {
+            self.show_file(&path);
         }
         if let Some(i) = delete_req {
             self.pending_delete = Some(i);
@@ -1592,7 +1605,36 @@ impl Lab {
         }
     }
 
+    /// Loads a text file into the main area, read-only. Picking a sample or closing the view shows the picture again.
+    fn show_file(&mut self, path: &Path) {
+        match std::fs::read_to_string(path) {
+            Ok(text) => self.viewing_json = Some((path.to_path_buf(), text.trim_start_matches('\u{feff}').to_string())),
+            Err(e) => self.status = format!("Could not read {}: {e}", path.display()),
+        }
+    }
+
     fn picture_area(&mut self, ui: &mut egui::Ui) {
+        if self.viewing_json.is_some() {
+            let mut close = false;
+            if let Some((path, text)) = self.viewing_json.as_ref() {
+                ui.horizontal(|ui| {
+                    ui.strong(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+                    if ui.button("Close").clicked() {
+                        close = true;
+                    }
+                });
+                ui.separator();
+                let font = egui::FontId::monospace(13.0);
+                let plain = ui.visuals().text_color();
+                egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+                    ui.label(crate::json_view::job(text, font, plain));
+                });
+            }
+            if close {
+                self.viewing_json = None;
+            }
+            return;
+        }
         let Some(loaded) = self.loaded.as_ref() else {
             ui.centered_and_justified(|ui| ui.label("Pick a test case on the left."));
             return;
@@ -2009,6 +2051,20 @@ mod tests {
         let screen = Lab::to_screen(origin, 2.0, [30.0, 10.0]);
         assert_eq!(screen, egui::pos2(160.0, 60.0));
         assert_eq!(Lab::to_pixels(origin, 2.0, screen), [30.0, 10.0]);
+    }
+
+    #[test]
+    fn a_json_file_is_shown_in_the_main_area_without_its_byte_order_mark() {
+        let dir = std::env::temp_dir().join(format!("ocr-lab-view-{}", crate::unique_suffix()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let file = dir.join("p.png.ocr.json");
+        std::fs::write(&file, "\u{feff}{\"version\": 1}").expect("file");
+        let mut lab = Lab::new(dir.clone(), None, None, false, telemetry::Log::open(&dir.join("log.txt")));
+        lab.show_file(&file);
+        let (path, text) = lab.viewing_json.clone().expect("the file is open in the main area");
+        assert_eq!(path, file);
+        assert_eq!(text, "{\"version\": 1}", "the byte-order mark is not shown");
+        std::fs::remove_dir_all(&dir).expect("clean up");
     }
 
     // P0 check, run only when asked: `cargo test -p notecraft-ocr-lab -- --ignored`.
