@@ -254,12 +254,7 @@ impl NoteCraftApp {
         if notecraft_store::page::load_page(&dir).is_err() {
             return false;
         }
-        if let Some(ed) = &mut self.editor {
-            ed.dirty_since = None;
-        }
-        if let Some(pad) = &mut self.pad {
-            pad.dirty = false;
-        }
+        self.drop_unsaved_edits();
         if let Some(old) = self.current_page().map(Path::to_path_buf) {
             self.nav.relocate(&old, &dir);
         }
@@ -288,11 +283,30 @@ impl NoteCraftApp {
         if let Some(pad) = &self.pad {
             pad.save_copy_to(&copy).map_err(|e| e.to_string())?;
         }
-        ed.dirty_since = None;
+        // The edits are in the copy now. Left marked unsaved here, they kept the copy from opening
+        // (a page with unsaved edits is not left), and a later save of the ink would have written
+        // it into the old page's folder again (issue #497).
+        self.drop_unsaved_edits();
         self.page_conflict = false;
         self.page_revision = None;
         self.open_page(&copy);
+        if self.current_page() != Some(copy.as_path()) {
+            return Err(format!("the copy was kept at {}, but it could not be opened", copy.display()));
+        }
         Ok(copy)
+    }
+
+    /// Forgets this view's unsaved words, title and ink, once they are in a copy or have been
+    /// replaced by the page on disk. The title counts: it is saved apart from the words, and an
+    /// edited one kept the page from being left (issue #496).
+    fn drop_unsaved_edits(&mut self) {
+        if let Some(ed) = &mut self.editor {
+            ed.dirty_since = None;
+            ed.title_buf = if ed.titled { ed.title.clone() } else { String::new() };
+        }
+        if let Some(pad) = &mut self.pad {
+            pad.dirty = false;
+        }
     }
 
     pub(super) fn conflict_screen(&mut self, ui: &mut Ui) {

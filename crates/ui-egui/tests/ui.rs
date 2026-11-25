@@ -14109,6 +14109,92 @@ fn window_capture_clean_view_reloads_changes_and_missing_pages_keep_unsaved_inpu
     assert!(second.is_dirty());
 }
 
+/// A second view of a page whose words, and ink or title, were edited when the page was changed
+/// on disk. Returns it in a harness, with the page in conflict. The edited title still has the
+/// keyboard, so it is not saved yet.
+fn conflicted_second_view(name: &str, ink: bool, title: bool) -> (TempDir, Harness<'static, NoteCraftApp>, Sample) {
+    let (t, mut first, sample) = sample_app(name);
+    let page = sample.html_page.clone();
+    first.open_path(&page.to_string_lossy());
+    let second = first.child_window(&notecraft_ui_egui::windows::Request { path: page.clone(), quick: false }).expect("second");
+    drop(first);
+    let mut h = sized_harness(second, LIGHT, egui::vec2(1500.0, 900.0));
+    settle(&mut h);
+    h.state_mut().set_body("<p>second view words</p>");
+    if title {
+        h.get_by_role_and_label(egui::accesskit::Role::MultilineTextInput, "Title").click();
+        pump(&mut h);
+        ask(&mut h, "ui.key", json!({"key":"A", "ctrl":true})).expect("select title");
+        pump(&mut h);
+        ask(&mut h, "ui.text", json!({"text":"Title edited in the second view"})).expect("title text");
+        pump(&mut h);
+    }
+    if ink {
+        h.get_by_label("Draw").click();
+        h.run();
+        h.get_by_label("Pen red").click();
+        h.run();
+        let body = h.state().page_rect().expect("the page is on the screen");
+        let y = body.min.y + 160.0;
+        ask(&mut h, "ui.press", json!({"x": body.min.x + 40.0, "y": y})).expect("down");
+        pump(&mut h);
+        for step in 1..=6 {
+            ask(&mut h, "ui.move", json!({"x": body.min.x + 40.0 + step as f32 * 30.0, "y": y})).expect("move");
+            pump(&mut h);
+        }
+        ask(&mut h, "ui.release", json!({"x": body.min.x + 220.0, "y": y})).expect("up");
+        pump(&mut h);
+    }
+    notecraft_store::page::save_body(&page, "<p>words saved elsewhere</p>").expect("a change from elsewhere");
+    h.state_mut().save();
+    assert!(h.state().has_page_conflict());
+    assert!(h.state().is_dirty());
+    assert!(!page.join("ink.svg").exists(), "the second view's ink is not written over the newer page");
+    (t, h, sample)
+}
+
+#[test]
+fn keep_a_copy_opens_the_copy_with_its_ink_and_title_and_leaves_the_page_alone() {
+    // #497: the unsaved ink (or title) left the view marked unsaved, so the copy was made but
+    // never opened, and change checks stopped.
+    for (ink, title) in [(true, false), (false, true)] {
+        let (_t, mut h, sample) = conflicted_second_view("window-keep-copy-opens", ink, title);
+        let page = sample.html_page;
+        let copy = h.state_mut().keep_conflicted_copy().expect("keep copy");
+        assert_ne!(copy, page);
+        assert_eq!(h.state().current_page(), Some(copy.as_path()), "the copy is the page shown (ink {ink}, title {title})");
+        assert!(!h.state().has_page_conflict());
+        assert!(!h.state().is_dirty());
+        assert!(notecraft_store::page::load_page(&copy).expect("copy").body.contains("second view words"));
+        if ink {
+            assert!(copy.join("ink.svg").exists(), "the ink went with the copy");
+        }
+        if title {
+            assert_eq!(notecraft_store::tree::read_node(&copy).expect("copy").title, "Title edited in the second view");
+        }
+        for _ in 0..10 {
+            settle(&mut h);
+        }
+        assert!(!page.join("ink.svg").exists(), "nothing of the second view is written into the original later");
+        assert_eq!(notecraft_store::page::load_page(&page).expect("original").body, "<p>words saved elsewhere</p>");
+        assert_ne!(notecraft_store::tree::read_node(&page).expect("original").title, "Title edited in the second view");
+    }
+}
+
+#[test]
+fn reload_after_a_conflict_drops_an_edited_title_and_lets_the_page_be_left() {
+    // #496: the edited title kept the reloaded page dirty, so it could not be left.
+    let (_t, mut h, sample) = conflicted_second_view("window-reload-title", false, true);
+    let page = sample.html_page;
+    assert!(h.state_mut().reload_conflicted_page());
+    assert!(!h.state().has_page_conflict());
+    assert!(!h.state().is_dirty(), "the reloaded page has nothing unsaved");
+    assert!(h.state().body().expect("reloaded").contains("words saved elsewhere"));
+    assert_ne!(notecraft_store::tree::read_node(&page).expect("page").title, "Title edited in the second view");
+    ask(&mut h, "ui.open", json!({"path": sample.md_page.to_string_lossy()})).expect("open another page");
+    assert_eq!(h.state().current_page(), Some(sample.md_page.as_path()), "the page can be left");
+}
+
 #[test]
 fn window_capture_refreshed_caret_uses_the_new_pages_formatting() {
     for html in [false, true] {
@@ -16010,6 +16096,50 @@ fn one_backspace_removes_one_grapheme_in_each_page_caret_without_joining_blocks(
     settle(&mut h);
     let status = ask(&mut h, "ui.inspect", json!({})).expect("block count");
     assert_eq!(status["page"]["blocks"], json!(3), "a second press genuinely at the start still joins the blocks");
+}
+
+/// Issue #498: with the search box focused, Ctrl+V pastes into the search box, once, and
+/// never into the page, however the paste arrives.
+#[test]
+fn ctrl_v_with_search_focused_pastes_into_search_and_not_the_page() {
+    let board = MemoryBoard::new();
+    let (_t, app, s) = sample_app("ui-search-paste");
+    let mut h = harness(app.with_clipboard(Box::new(board.clone())), LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("page caret");
+    settle(&mut h);
+    let before = h.state().body().expect("page body").to_owned();
+    let search_text = |h: &Harness<'_, NoteCraftApp>| {
+        h.get_all_by_role(egui::accesskit::Role::TextInput).find_map(|node| node.value().filter(|v| v.contains("needle"))).unwrap_or_default()
+    };
+    for path in ["key-only", "queued", "queued-with-event"] {
+        ask(&mut h, "ui.key", json!({"key": "F", "ctrl": true})).expect("focus search");
+        settle(&mut h);
+        ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select the search text");
+        pump(&mut h);
+        board.put_text("needle7731");
+        if path == "key-only" {
+            ask(&mut h, "ui.key", json!({"key": "V", "ctrl": true})).expect("Ctrl+V");
+        } else {
+            h.state_mut().queue_keyboard_paste();
+            if path == "queued-with-event" {
+                h.event(egui::Event::Paste("needle7731".into()));
+            }
+        }
+        settle(&mut h);
+        assert_eq!(h.state().body().expect("page body"), before, "{path} pasted into the page");
+        assert_eq!(search_text(&h), "needle7731", "{path} puts the text into the search box once");
+        ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave search");
+        settle(&mut h);
+    }
+    // With the search box left, Ctrl+V pastes into the page again.
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("page caret");
+    settle(&mut h);
+    board.put_text("page paste still works");
+    h.state_mut().queue_keyboard_paste();
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("page paste still works"));
 }
 
 /// The picker search, not the underlying note, owns native clipboard shortcuts.
