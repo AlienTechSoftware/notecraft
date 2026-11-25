@@ -18251,6 +18251,13 @@ fn a_selection_across_paragraphs_replaced_or_cut_keeps_the_table_widths() {
     settle(&mut h);
     let kept = notecraft_store::page::table_columns(&page_dir).expect("widths");
     assert_eq!(kept.of(1), Some([110.0, 130.0].as_slice()), "the widths moved up with the table after a cut: {kept:?}");
+    // One Undo puts the paragraphs back, and the widths back with the table.
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("Third line"), "Undo put the cut words back");
+    let kept = notecraft_store::page::table_columns(&page_dir).expect("widths");
+    assert_eq!(kept.of(2), Some([110.0, 130.0].as_slice()), "the widths went back with the table: {kept:?}");
+    assert_eq!(kept.of(1), None, "and none is left where the table was not: {kept:?}");
 }
 
 /// Issue #563: Alt+Shift+Up and Down move the paragraph with the caret one place within its box:
