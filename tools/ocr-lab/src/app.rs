@@ -1343,7 +1343,8 @@ impl Lab {
                                             });
                                             for &i in indexes {
                                                 let path = &self.pictures[i];
-                                                let current = self.loaded.as_ref().is_some_and(|l| l.index == i);
+                                                // One row is lit at a time: the picture, unless its OCR file is open in the main area.
+                                                let current = self.viewing_json.is_none() && self.loaded.as_ref().is_some_and(|l| l.index == i);
                                                 let labelled = case::label_path(path).is_file();
                                                 let mark = if labelled { "  ✎" } else { "" };
                                                 let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
