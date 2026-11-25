@@ -735,6 +735,19 @@ pub fn show(
             let object_rect = hits.iter().find(|(at, _, _)| at == block).map(|(_, rect, _)| *rect).unwrap_or(image_rect);
             log::debug!("embedded object affordance: block={block} kind={kind} rect={object_rect:?}");
             ui.painter().rect_stroke(object_rect, 1.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
+            // A picture's (>) menu: detected text as an overlay. View state only; see image_text.rs.
+            if kind.as_str() == "image"
+                && let Some(Block::Image { src, .. }) = blocks.get(*block)
+            {
+                let picture = page_dir.join(src);
+                if crate::image_text::showing(ui.ctx(), page_dir, *block) {
+                    let boxes = crate::image_text::read_boxes(&crate::image_text::lines_path(&picture));
+                    if let Ok((w, h)) = image::image_dimensions(&picture) {
+                        crate::image_text::paint(ui.painter(), object_rect, [w, h], &boxes, t.accent);
+                    }
+                }
+                crate::image_text::menu(ui, object_rect, page_dir, *block, &picture);
+            }
             let image_rect = object_rect;
             let size = resize_handle_size;
 
