@@ -569,3 +569,9 @@ equivalent), **WC-only** (WordCraft has it, NoteCraft does not propose it yet).
 - On acceptance, the owner moves it to `SKILLS/nc-design-artcraft-integration/references/` with
   Appendix A as the integration record.
 - Changes to the RFC bump its own version (section 14). App versions do not change it.
+
+## 5.3 Generated objects and the user's content
+
+A generated object (OCR text, boxes, descriptions) is a sidecar beside its source, identified by the source's file name, and it is never a required part of the user's content. A block may refer to it, but the page stays complete without it: a missing sidecar is rebuilt from the source.
+
+Moving generated data into the user's content is an explicit edit, and a permanent one is not reversible. See `nc-prod` principle 6 for the rule.
