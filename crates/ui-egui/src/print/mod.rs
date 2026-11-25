@@ -90,7 +90,9 @@ pub fn print_page(dir: &Path, layout: &Layout) -> Result<PrintedPage, String> {
     crate::fonts::install_once(&ctx);
     crate::pictures::install(&ctx);
     ctx.set_visuals(crate::theme::Theme::DEFAULT.visuals());
-    // Paper shows the note, not egui's debugging marks or the page's own controls.
+    // Paper shows the note, not egui's debugging marks or the page's own controls. egui has the
+    // marks, and the style field that turns them off, in debug builds only.
+    #[cfg(debug_assertions)]
     ctx.global_style_mut(|style| style.debug = egui::style::DebugOptions { show_unaligned: false, ..Default::default() });
     ctx.data_mut(|data| data.insert_temp(printing_id(), true));
     let mut textures = Textures::default();
