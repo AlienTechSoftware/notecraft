@@ -72,7 +72,7 @@ OCR is not needed to build or run the app. To work on it:
 - `run.cmd --ocr-lab` opens the OCR test and label lab, with its own guide and screenshots in
   [`tools/ocr-lab/README.md`](tools/ocr-lab/README.md). Its header light shows whether the models
   are present and intact. Its settings, log, reports and downloaded models stay under
-  `tools\ocr-lab\local\`, which is never committed. Saved runs (`<picture>.ocr-run.json`) and labels
+  `tools\ocr-lab\local\`, which is never committed. Saved OCR results (`<picture>.ocr.json`, the one OCR file) and labels
   (`<picture>.label.json`) are written beside each picture; the fixtures folder ignores them in git.
 
 ## Freeing disk space: cargo clean

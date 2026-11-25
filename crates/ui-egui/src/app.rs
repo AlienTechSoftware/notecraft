@@ -8762,6 +8762,15 @@ impl NoteCraftApp {
             ctx.input_mut(|input| input.events.retain(|event| !matches!(event, egui::Event::Paste(_) | egui::Event::PasteImage(_))));
             return;
         }
+        self.paste_text_into_focus(ctx, queued);
+    }
+
+    /// Ctrl+V into a text box of the window's own that has the keyboard (the emoji picker's search,
+    /// or the search box): the clipboard's text, once. The desktop shell catches a paste before
+    /// egui, and a key press alone carries no text, so the text is added as egui's own paste
+    /// unless the frame already has one. A picture on the clipboard goes nowhere.
+    fn paste_text_into_focus(&mut self, ctx: &egui::Context, queued: bool) {
+        ctx.input_mut(|input| input.events.retain(|event| !matches!(event, egui::Event::PasteImage(_))));
         let needs_text = ctx.input(|input| {
             (queued || Self::clipboard_key_hit(input, Key::V)) && !input.events.iter().any(|event| matches!(event, egui::Event::Paste(_)))
         });
@@ -13538,10 +13547,15 @@ impl NoteCraftApp {
         // A dialog of the window's own (Copy Text from Picture) owns the keyboard: a paste goes into
         // its text box, never into the page behind it.
         let modal = self.own_modal_open();
+        // So does the search box when it has the keyboard: Ctrl+V there was pasted into the page
+        // (issue #498).
+        let search_focused = ctx.memory(|memory| memory.has_focus(search_id));
         if emoji_picker_open {
             self.paste_into_emoji_search(ctx, queued_paste);
         } else if modal {
             self.paste_into_modal(ctx, queued_paste);
+        } else if search_focused {
+            self.paste_text_into_focus(ctx, queued_paste);
         } else if queued_paste {
             log::debug!("queued keyboard paste dispatched to paste_here");
             self.paste_here();
@@ -13551,7 +13565,7 @@ impl NoteCraftApp {
         if let Some(notice) = crate::filepicker::take_notice() {
             self.say(notice);
         }
-        if !emoji_picker_open && !modal {
+        if !emoji_picker_open && !modal && !search_focused {
             self.clipboard_keys(ctx);
         }
         self.poll_control(ctx);

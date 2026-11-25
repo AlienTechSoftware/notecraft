@@ -1293,6 +1293,11 @@ pub struct Changed {
 
 /// Consume before TextEdit handles Command+B/I/U as cursor movement or text deletion.
 /// A retained page caret does not own input when search, title or another field has focus.
+/// The id of the window's search box, which owns the keyboard while it has focus.
+pub(crate) fn search_id(ctx: &egui::Context) -> egui::Id {
+    egui::Id::new(("page-search", ctx.viewport_id()))
+}
+
 fn formatting_key(ui: &Ui, id: egui::Id) -> Option<&'static str> {
     if !ui.is_enabled() || !ui.memory(|memory| memory.has_focus(id)) {
         return None;
@@ -1410,7 +1415,7 @@ fn table(
     let here = caret.as_ref().filter(|c| c.block == i).and_then(|c| c.cell);
     // Read before any cell is drawn: a text box takes Tab for itself as it is shown, so
     // asking afterwards never sees it, and Tab did nothing in a table at all.
-    let search_id = egui::Id::new(("page-search", ui.ctx().viewport_id()));
+    let search_id = search_id(ui.ctx());
     // Tab can move egui focus before the table draws. It still belongs to search
     // if that widget held the keyboard when the frame began.
     let search_owns_keys = ui.ctx().memory(|memory| memory.has_focus(search_id) || memory.had_focus_last_frame(search_id));
@@ -2348,7 +2353,9 @@ pub fn show_blocks(
     let count = blocks.len();
     // A table copied from OneNote, Word or Excel arrives as plain text with tabs between
     // cells. Caught here, before the text box puts it all on one line.
-    if let Some(at) = caret.as_ref().map(|c| c.block) {
+    // Not while the search box has the keyboard: the paste is the search box's (issue #498).
+    let search_has_keys = ui.ctx().memory(|memory| memory.has_focus(search_id(ui.ctx())));
+    if let Some(at) = caret.as_ref().map(|c| c.block).filter(|_| !search_has_keys) {
         let pastes: Vec<String> = ui.input(|i| {
             i.events
                 .iter()
@@ -3488,6 +3495,8 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
     let behind = ui.painter().add(egui::Shape::Noop);
     crate::bidi::paint(ui, rect.min, &drawn);
 
+    // The caret was just put here (a click, an arrow, a command): this line takes the keyboard.
+    let arriving = c.focus || resp.clicked() || resp.drag_started();
     if c.focus {
         c.focus = false;
         // Where the caret lands when it arrives in this line: where the click was, and
@@ -3512,8 +3521,13 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
         let restore_id = restore_selection_id(ui.ctx());
         ui.data_mut(|d| d.remove::<(usize, usize, usize)>(restore_id));
     }
-    // The caret is in this block, so this is where the typing goes.
-    if !resp.has_focus() {
+    // The caret is in this block, so this is where the typing goes: when it has just arrived,
+    // or when nothing else has the keyboard. Another control that has it (the search box, or one
+    // Tab moved to from there) keeps it; taking it back every frame left nobody able to type
+    // anywhere else.
+    let search = search_id(ui.ctx());
+    let elsewhere = ui.memory(|memory| memory.focused().is_some_and(|focused| focused != resp.id) || memory.had_focus_last_frame(search));
+    if !resp.has_focus() && (arriving || !elsewhere) {
         resp.request_focus();
     }
     let mut changed = false;

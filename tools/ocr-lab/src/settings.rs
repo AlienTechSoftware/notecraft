@@ -13,6 +13,15 @@ pub struct Settings {
     /// Follow the system's light or dark setting, as the app's switch does.
     #[serde(default)]
     pub follow_system: bool,
+    /// The open path in the navigator: language, source, content. Empty means the tree is all closed.
+    #[serde(default)]
+    pub open_path: Vec<String>,
+    /// The drawing ribbon's chosen tab, such as "Draw". None means the default.
+    #[serde(default)]
+    pub ribbon_tab: Option<String>,
+    /// Whether the drawing ribbon is folded to its tab names.
+    #[serde(default)]
+    pub ribbon_folded: bool,
 }
 
 fn file() -> PathBuf {
