@@ -321,6 +321,8 @@ impl Lab {
     // }
 
     fn select(&mut self, ctx: &egui::Context, index: usize) {
+        // Picking a sample shows the picture again, so the OCR file is hidden.
+        self.viewing_json = None;
         let path = self.pictures[index].clone();
         // The new picture's texture has no adjustments yet, so the sliders must be applied to it again.
         self.applied_adjust = None;
@@ -1376,9 +1378,10 @@ impl Lab {
                                                 if text_file.is_file() {
                                                     let child = text_file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                                                     ui.indent(("ocr-text", i), |ui| {
+                                                        let showing = self.viewing_json.as_ref().is_some_and(|(p, _)| *p == text_file);
                                                         if ui
-                                                            .selectable_label(false, format!("📄 {child}"))
-                                                            .on_hover_text("Show this file in the main area")
+                                                            .selectable_label(showing, format!("📄 {child}"))
+                                                            .on_hover_text("Show or hide this file in the main area")
                                                             .clicked()
                                                         {
                                                             view_json = Some(text_file.clone());
@@ -1420,8 +1423,13 @@ impl Lab {
         if save_now {
             self.save_if_dirty();
         }
+        // Clicking the file's row shows it, and clicking it again hides it.
         if let Some(path) = view_json {
-            self.show_file(&path);
+            if self.viewing_json.as_ref().is_some_and(|(p, _)| *p == path) {
+                self.viewing_json = None;
+            } else {
+                self.show_file(&path);
+            }
         }
         if let Some(i) = delete_req {
             self.pending_delete = Some(i);
@@ -1614,25 +1622,15 @@ impl Lab {
     }
 
     fn picture_area(&mut self, ui: &mut egui::Ui) {
-        if self.viewing_json.is_some() {
-            let mut close = false;
-            if let Some((path, text)) = self.viewing_json.as_ref() {
-                ui.horizontal(|ui| {
-                    ui.strong(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
-                    if ui.button("Close").clicked() {
-                        close = true;
-                    }
-                });
-                ui.separator();
-                let font = egui::FontId::monospace(13.0);
-                let plain = ui.visuals().text_color();
-                egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-                    ui.label(crate::json_view::job(text, font, plain));
-                });
-            }
-            if close {
-                self.viewing_json = None;
-            }
+        // The OCR file, when it is open, replaces the picture until another sample is picked or the file row is clicked again.
+        if let Some((path, text)) = self.viewing_json.as_ref() {
+            ui.strong(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+            ui.separator();
+            let font = egui::FontId::monospace(13.0);
+            let plain = ui.visuals().text_color();
+            egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+                ui.label(crate::json_view::job(text, font, plain));
+            });
             return;
         }
         let Some(loaded) = self.loaded.as_ref() else {
