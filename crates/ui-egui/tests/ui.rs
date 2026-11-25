@@ -3545,7 +3545,11 @@ fn page_versions_is_a_workspace_with_the_list_beside_the_preview() {
     notecraft_store::page::save_body(&page, "the page now\n").expect("save");
     // Saved versions as the folder keeps them (`.notecraft/versions/<id>/`): the store keeps one
     // every five minutes, too slow to wait for here.
-    for (n, (words, when)) in [("first draft", "2026-11-20T09:00:00Z"), ("second draft", "2026-11-21T09:00:00Z"), ("third draft", "2026-11-22T09:00:00Z")].iter().enumerate() {
+    for (n, (words, when)) in
+        [("first draft", "2026-11-20T09:00:00Z"), ("second draft", "2026-11-21T09:00:00Z"), ("third draft", "2026-11-22T09:00:00Z")]
+            .iter()
+            .enumerate()
+    {
         let id = format!("{:016x}{:04x}", 0x1000 + n, n);
         let entry = page.join(".notecraft").join("versions").join(&id);
         std::fs::create_dir_all(&entry).expect("version folder");
@@ -3572,7 +3576,10 @@ fn page_versions_is_a_workspace_with_the_list_beside_the_preview() {
     // Down selects the newest saved version and shows it beside the list.
     h.key_press(egui::Key::ArrowDown);
     settle(&mut h);
-    let heading = h.get_all_by_label_contains("Saved version, ").find(|n| n.accesskit_node().role() == egui::accesskit::Role::Label).expect("the preview's heading");
+    let heading = h
+        .get_all_by_label_contains("Saved version, ")
+        .find(|n| n.accesskit_node().role() == egui::accesskit::Role::Label)
+        .expect("the preview's heading");
     assert!(heading.rect().min.x > list_right, "the preview is beside the list");
     assert!(!h.get_by_label("Restore this version").accesskit_node().is_disabled());
     h.get_by_label("Compare with the page").click();
@@ -3618,13 +3625,20 @@ fn page_versions_is_a_workspace_with_the_list_beside_the_preview() {
     h.input_mut().events.push(egui::Event::PointerMoved(at));
     h.step();
     for pressed in [true, false] {
-        h.input_mut().events.push(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE });
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
         h.step();
     }
     settle(&mut h);
-    let row = h.get_all_by_label_contains("Saved version, ").find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button).expect("row").rect();
+    let row =
+        h.get_all_by_label_contains("Saved version, ").find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button).expect("row").rect();
     // The heading wraps at this width, so it is found by its first words.
-    let heading = h.get_all_by_label_contains("Saved version").find(|n| n.accesskit_node().role() == egui::accesskit::Role::Label).expect("heading").rect();
+    let heading =
+        h.get_all_by_label_contains("Saved version").find(|n| n.accesskit_node().role() == egui::accesskit::Role::Label).expect("heading").rect();
     assert!(heading.min.y > row.max.y, "narrow: the preview is under the list");
     review(&mut h, "page_versions_narrow");
 }
@@ -3642,8 +3656,12 @@ fn recent_edits_tell_two_pages_of_one_name_apart() {
     assert_ne!(sections[0], sections[1], "the sample's two pages are in two sections");
     let mut made = Vec::new();
     for section in &sections {
-        let page = ask(&mut h, "engine.execute", json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Weekly plan", "format": "cmgfm"}}))
-            .expect("page");
+        let page = ask(
+            &mut h,
+            "engine.execute",
+            json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Weekly plan", "format": "cmgfm"}}),
+        )
+        .expect("page");
         made.push(std::path::PathBuf::from(page.as_str().expect("a path")));
     }
     settle(&mut h);
@@ -15528,6 +15546,85 @@ fn insert_time_stamps_are_one_stack_and_reachable_when_narrow() {
     for needed in ["Table", "File Attachment", "Pictures", "Link", "Date", "Time", "Date & Time", "Stickers"] {
         assert!(seen.contains(needed), "{needed} is reached with Tab at 1000 points: {seen:?}");
     }
+}
+
+/// Issue #380: a row's menu opens from the keyboard (Shift+F10 or the Menu key) on the focused row,
+/// opens at that row rather than at the pointer, stays inside the window near its bottom edge, and
+/// Escape gives the keyboard back to the row.
+#[test]
+fn a_row_menu_opens_from_the_keyboard_at_its_row_and_escape_returns() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-row-menu-keys");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1200.0, 760.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let title = notecraft_store::tree::read_node(&s.md_page).expect("page").title;
+    let row = h.get_all_by_label(&title).map(|n| n.rect()).min_by(|a, b| a.min.y.total_cmp(&b.min.y)).expect("page row");
+    let focused = |h: &Harness<'_, NoteCraftApp>| h.query_by(|n| n.is_focused()).and_then(|n| n.accesskit_node().label());
+    for (modifiers, key) in [(egui::Modifiers::SHIFT, egui::Key::F10), (egui::Modifiers::NONE, egui::Key::Menu)] {
+        h.get_all_by_label(&title).find(|n| n.rect() == row).expect("row").focus();
+        h.step();
+        h.key_press_modifiers(modifiers, key);
+        settle(&mut h);
+        let new_page = h.get_by_label("New page").rect();
+        assert!(
+            new_page.min.y >= row.min.y - 2.0 && new_page.min.y - row.max.y < 40.0,
+            "{key:?}: the menu opens at its row: {new_page:?} under {row:?}"
+        );
+        h.key_press(egui::Key::Escape);
+        settle(&mut h);
+        assert!(h.query_by_label("New page").is_none(), "Escape closes the menu");
+        assert_eq!(focused(&h).as_deref(), Some(title.as_str()), "and the row has the keyboard again");
+    }
+    // Near the bottom of a short window the menu still fits inside it.
+    let (_t2, app, s2) = sample_app("ui-row-menu-edge");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(900.0, 420.0));
+    h.state_mut().open_path(&s2.md_page.to_string_lossy());
+    settle(&mut h);
+    let title = notecraft_store::tree::read_node(&s2.md_page).expect("page").title;
+    let row = h.get_all_by_label(&title).map(|n| n.rect()).max_by(|a, b| a.min.y.total_cmp(&b.min.y)).expect("page row");
+    h.get_all_by_label(&title).find(|n| n.rect() == row).expect("row").click_secondary();
+    settle(&mut h);
+    for item in ["New page", "Rename..."] {
+        let r = h.get_by_label(item).rect();
+        assert!(r.max.y <= 420.0 && r.min.y >= 0.0 && r.max.x <= 900.0, "{item} is inside the window: {r:?}");
+    }
+}
+
+/// Issue #380: two pages side by side with one title, in separate folders. A menu acts on the row
+/// it was opened from, never on its twin.
+#[test]
+fn a_row_menu_acts_on_its_own_page_when_two_share_a_title() {
+    let (_t, app, s) = sample_app("ui-row-menu-identity");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1200.0, 760.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let section = s.md_page.parent().expect("section").to_string_lossy().into_owned();
+    let mut made = Vec::new();
+    for _ in 0..2 {
+        let page = ask(
+            &mut h,
+            "engine.execute",
+            json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Twin", "format": "cmgfm"}}),
+        )
+        .expect("page");
+        made.push(std::path::PathBuf::from(page.as_str().expect("a path")));
+    }
+    settle(&mut h);
+    assert_ne!(made[0], made[1], "two folders");
+    let rows: Vec<egui::Rect> = {
+        let mut r: Vec<_> = h.get_all_by_label("Twin").map(|n| n.rect()).collect();
+        r.sort_by(|a, b| a.min.y.total_cmp(&b.min.y));
+        r
+    };
+    assert_eq!(rows.len(), 2, "both rows are in the page list");
+    // The lower row is the page made second.
+    h.get_all_by_label("Twin").find(|n| n.rect() == rows[1]).expect("second row").click_secondary();
+    settle(&mut h);
+    h.get_by_label("Lock read only").click();
+    settle(&mut h);
+    let locked = |p: &std::path::Path| notecraft_store::page::read_only(p).expect("read");
+    assert!(locked(&made[1]) && !locked(&made[0]), "the menu locked the row it was opened on and not its twin");
 }
 
 /// Issue #380: the tree's menu keeps the shortcut out of the label.

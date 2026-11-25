@@ -2628,7 +2628,8 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     // The arrows step the size, Enter takes it, Escape goes back to the Table button.
     let (mut down, mut right) = (0i32, 0i32);
     ui.input_mut(|i| {
-        for (key, dr, dc) in [(egui::Key::ArrowDown, 1, 0), (egui::Key::ArrowUp, -1, 0), (egui::Key::ArrowRight, 0, 1), (egui::Key::ArrowLeft, 0, -1)] {
+        for (key, dr, dc) in [(egui::Key::ArrowDown, 1, 0), (egui::Key::ArrowUp, -1, 0), (egui::Key::ArrowRight, 0, 1), (egui::Key::ArrowLeft, 0, -1)]
+        {
             if i.consume_key(egui::Modifiers::NONE, key) {
                 down += dr;
                 right += dc;
@@ -2825,11 +2826,19 @@ fn rule_lines_row(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>)
     let popup_id = ui.id().with("rule-lines-row");
     let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
     let rules = view.rules;
-    let resp = value_row(ui, crate::tl_id!("ui.rule_lines"), rules.translated_label(), crate::tl_id!("ui.lines_or_squares_behind_the_page_as_on_paper"), open, t, |painter, area| {
-        painter.rect_filled(area, 1.0, t.editor);
-        paint_paper(&painter.with_clip_rect(area), area, rules, 0.3, t.rule_line_strong, t.rule_line_strong);
-        painter.rect_stroke(area, 1.0, egui::Stroke::new(1.0, t.muted), egui::StrokeKind::Inside);
-    });
+    let resp = value_row(
+        ui,
+        crate::tl_id!("ui.rule_lines"),
+        rules.translated_label(),
+        crate::tl_id!("ui.lines_or_squares_behind_the_page_as_on_paper"),
+        open,
+        t,
+        |painter, area| {
+            painter.rect_filled(area, 1.0, t.editor);
+            paint_paper(&painter.with_clip_rect(area), area, rules, 0.3, t.rule_line_strong, t.rule_line_strong);
+            painter.rect_stroke(area, 1.0, egui::Stroke::new(1.0, t.muted), egui::StrokeKind::Inside);
+        },
+    );
     egui::Popup::menu(&resp).id(popup_id).show(|ui| {
         let mut picked = false;
         for papers in [&[RuleLines::None][..], &RuleLines::RULED[..], &RuleLines::GRIDS[..], &RuleLines::CRAFT[..]] {
@@ -2871,24 +2880,40 @@ fn paper_size_row(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>)
     let popup_id = ui.id().with("paper-size-row");
     let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
     let paper = view.paper_size;
-    let resp = value_row(ui, crate::tl_id!("ui.paper_size"), &paper_value(paper), crate::tl_id!("ui.the_sheet_this_page_is_written_for_its_size_turn_and_margins"), open, t, |painter, area| {
-        // A sheet the shape of the paper, or a dashed edge for Auto, which has none.
-        let sheet = paper.map_or(area.shrink2(vec2(3.0, 1.0)), |p| {
-            let (w, h) = p.sheet_mm();
-            let scale = (area.width() / w).min(area.height() / h);
-            Rect::from_center_size(area.center(), vec2(w * scale, h * scale))
-        });
-        painter.rect_filled(sheet, 1.0, t.editor);
-        if paper.is_some() {
-            painter.rect_stroke(sheet, 1.0, egui::Stroke::new(1.0, t.muted), egui::StrokeKind::Inside);
-        } else {
-            for side in [[sheet.left_top(), sheet.right_top()], [sheet.right_top(), sheet.right_bottom()], [sheet.right_bottom(), sheet.left_bottom()], [sheet.left_bottom(), sheet.left_top()]] {
-                painter.add(egui::Shape::dashed_line(&side, egui::Stroke::new(1.0, t.muted), 2.0, 2.0));
+    let resp = value_row(
+        ui,
+        crate::tl_id!("ui.paper_size"),
+        &paper_value(paper),
+        crate::tl_id!("ui.the_sheet_this_page_is_written_for_its_size_turn_and_margins"),
+        open,
+        t,
+        |painter, area| {
+            // A sheet the shape of the paper, or a dashed edge for Auto, which has none.
+            let sheet = paper.map_or(area.shrink2(vec2(3.0, 1.0)), |p| {
+                let (w, h) = p.sheet_mm();
+                let scale = (area.width() / w).min(area.height() / h);
+                Rect::from_center_size(area.center(), vec2(w * scale, h * scale))
+            });
+            painter.rect_filled(sheet, 1.0, t.editor);
+            if paper.is_some() {
+                painter.rect_stroke(sheet, 1.0, egui::Stroke::new(1.0, t.muted), egui::StrokeKind::Inside);
+            } else {
+                for side in [
+                    [sheet.left_top(), sheet.right_top()],
+                    [sheet.right_top(), sheet.right_bottom()],
+                    [sheet.right_bottom(), sheet.left_bottom()],
+                    [sheet.left_bottom(), sheet.left_top()],
+                ] {
+                    painter.add(egui::Shape::dashed_line(&side, egui::Stroke::new(1.0, t.muted), 2.0, 2.0));
+                }
             }
-        }
-    });
+        },
+    );
     // It stays open while sizes are tried and margins dragged; a click away closes it.
-    egui::Popup::menu(&resp).id(popup_id).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| paper_size_menu(ui, paper, t, acts));
+    egui::Popup::menu(&resp)
+        .id(popup_id)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| paper_size_menu(ui, paper, t, acts));
 }
 
 fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
@@ -2965,10 +2990,12 @@ fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts:
         // off, for this system, is a button away rather than only on a hover.
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
-            let (label, colour) = if pressure_available { (crate::tl_id!("ui.pressure_on"), t.text) } else { (crate::tl_id!("ui.pressure_off"), t.muted) };
+            let (label, colour) =
+                if pressure_available { (crate::tl_id!("ui.pressure_on"), t.text) } else { (crate::tl_id!("ui.pressure_off"), t.muted) };
             ui.label(egui::RichText::new(label).size(10.5).color(colour));
             if !pressure_available {
-                let why = ui.add(egui::Button::new(egui::RichText::new(crate::tl_id!("ui.pressure_why")).size(10.5).color(t.accent)).frame(false).small());
+                let why =
+                    ui.add(egui::Button::new(egui::RichText::new(crate::tl_id!("ui.pressure_why")).size(10.5).color(t.accent)).frame(false).small());
                 egui::Popup::menu(&why).id(ui.id().with("pressure-why")).show(|ui| {
                     ui.set_max_width(280.0);
                     ui.label(pressure_unavailable_tip());
@@ -3177,7 +3204,7 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
     // The menu hangs off the pen's own response. A second interact over the same
     // rectangle looked harmless and was not: later widgets win in egui, so it swallowed
     // every left click and only the eraser, which had no such overlay, could be picked up.
-    resp.context_menu(|ui| {
+    floating::row_menu(&resp, |ui| {
         if ui.button(crate::tl_id!("ui.modify_tool")).clicked() {
             modify = true;
             ui.close();
@@ -3414,8 +3441,14 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                 if confirming {
                     ui.label(egui::RichText::new(crate::tl_id!("ui.delete_tool_confirm")).size(11.5).color(t.text));
                     ui.horizontal(|ui| {
-                        if popup_action_button(ui, crate::tl_id!("ui.delete_tool"), rack_len > 1, t.warn, crate::tl_id!("ui.remove_this_tool_from_the_rack"))
-                            .clicked()
+                        if popup_action_button(
+                            ui,
+                            crate::tl_id!("ui.delete_tool"),
+                            rack_len > 1,
+                            t.warn,
+                            crate::tl_id!("ui.remove_this_tool_from_the_rack"),
+                        )
+                        .clicked()
                         {
                             acts.push(Act::InkRack(RackEdit::Remove(i)));
                             ui.data_mut(|d| d.remove::<bool>(confirm_id));
@@ -3425,8 +3458,14 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                             ui.data_mut(|d| d.remove::<bool>(confirm_id));
                         }
                     });
-                } else if popup_action_button(ui, crate::tl_id!("ui.delete_tool_ellipsis"), rack_len > 1, t.muted, crate::tl_id!("ui.remove_this_tool_from_the_rack"))
-                    .clicked()
+                } else if popup_action_button(
+                    ui,
+                    crate::tl_id!("ui.delete_tool_ellipsis"),
+                    rack_len > 1,
+                    t.muted,
+                    crate::tl_id!("ui.remove_this_tool_from_the_rack"),
+                )
+                .clicked()
                 {
                     ui.data_mut(|d| d.insert_temp(confirm_id, true));
                 }

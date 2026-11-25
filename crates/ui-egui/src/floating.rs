@@ -40,6 +40,31 @@ const ROW_H: f32 = 26.0;
 const ICON_COL: f32 = 30.0;
 const GLYPH: f32 = 16.0;
 
+/// A row's or object's own menu (issue #380): it opens from the row itself, not wherever the
+/// pointer happens to be, so it is clear which row it is for and it stays inside the window,
+/// turning to open upwards or the other way near an edge. A secondary click opens it, and so do
+/// Shift+F10 and the Menu key while the row has the keyboard; Escape closes it and gives the
+/// keyboard back to the row.
+pub fn row_menu<R>(resp: &Response, add: impl FnOnce(&mut Ui) -> R) -> Option<egui::InnerResponse<R>> {
+    let by_keys = resp.has_focus()
+        && resp.ctx.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, egui::Key::F10) || i.consume_key(egui::Modifiers::NONE, egui::Key::Menu));
+    let set = if resp.secondary_clicked() || by_keys {
+        Some(egui::SetOpenCommand::Bool(true))
+    } else if resp.clicked() {
+        Some(egui::SetOpenCommand::Bool(false))
+    } else {
+        None
+    };
+    let id = egui::Popup::default_response_id(resp);
+    let was_open = egui::Popup::is_id_open(&resp.ctx, id);
+    let escaped = was_open && resp.ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    let shown = egui::Popup::menu(resp).open_memory(set).show(add);
+    if escaped && !egui::Popup::is_id_open(&resp.ctx, id) {
+        resp.request_focus();
+    }
+    shown
+}
+
 /// One row of a context menu: a picture in its own column, then the words. `glyph` is `None`
 /// for a row that has no picture; its words still start where the others' do, so a column of
 /// mixed rows lines up as it does in Office.

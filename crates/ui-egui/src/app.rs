@@ -4435,7 +4435,7 @@ impl NoteCraftApp {
                 acts.push(Act::Select(node.path.clone()));
             }
         }
-        resp.context_menu(|ui| {
+        floating::row_menu(&resp, |ui| {
             // A locked page keeps its menu, with the changes to it greyed out (issue #441). Read
             // from the page's head only while this menu is open.
             let edits_off = node.info.kind == NodeKind::Page && notecraft_store::page::read_only(&node.path).unwrap_or(false);
@@ -12535,7 +12535,8 @@ impl NoteCraftApp {
                         egui::ScrollArea::vertical().max_height(380.0).auto_shrink([false, true]).show(ui, |ui| {
                             for e in shown {
                                 let when = notecraft_model::time::long_from_iso(&notecraft_model::time::iso_from_secs(e.at)).unwrap_or_default();
-                                let note = (!e.stamped).then_some(crate::tl_id!("ui.this_page_keeps_no_time_of_its_own_this_is_when_its_file_was_last_changed"));
+                                let note = (!e.stamped)
+                                    .then_some(crate::tl_id!("ui.this_page_keeps_no_time_of_its_own_this_is_when_its_file_was_last_changed"));
                                 if result_row(ui, &t, &e.title, &e.notebook, &e.section, Some(&when), note) {
                                     go = Some(e.page.clone());
                                 }
@@ -12572,7 +12573,8 @@ impl NoteCraftApp {
                 // Up and Down move through the list, as in any list, while no text box has the keys.
                 if !ctx.egui_wants_keyboard_input() {
                     let rows = versions.len();
-                    let (up, down) = ctx.input_mut(|i| (i.consume_key(Modifiers::NONE, Key::ArrowUp), i.consume_key(Modifiers::NONE, Key::ArrowDown)));
+                    let (up, down) =
+                        ctx.input_mut(|i| (i.consume_key(Modifiers::NONE, Key::ArrowUp), i.consume_key(Modifiers::NONE, Key::ArrowDown)));
                     if down && rows > 0 {
                         select = Some(Some(selected.map_or(0, |n| (n + 1).min(rows - 1))));
                     } else if up {
@@ -12610,9 +12612,12 @@ impl NoteCraftApp {
                         let list = |ui: &mut Ui, select: &mut Option<Option<usize>>, list_height: f32| {
                             // A height of its own: the window is sized to what it holds, and a list left to
                             // shrink to the room it is given showed one row and hid the next.
-                            egui::ScrollArea::vertical().id_salt("page-versions-list").max_height(list_height).min_scrolled_height(list_height).auto_shrink([false, true]).show(
-                                ui,
-                                |ui| {
+                            egui::ScrollArea::vertical()
+                                .id_salt("page-versions-list")
+                                .max_height(list_height)
+                                .min_scrolled_height(list_height)
+                                .auto_shrink([false, true])
+                                .show(ui, |ui| {
                                     ui.spacing_mut().item_spacing.y = 2.0;
                                     let current_sub = saved_at.as_ref().map_or_else(
                                         || crate::tl_id!("ui.the_page_as_it_is_now").to_string(),
@@ -12622,7 +12627,8 @@ impl NoteCraftApp {
                                         *select = Some(None);
                                     }
                                     for (n, version) in versions.iter().enumerate() {
-                                        let size = crate::i18n::format_message_id("ui.size_kb", &[("size", &version.bytes.div_ceil(1024).to_string())]);
+                                        let size =
+                                            crate::i18n::format_message_id("ui.size_kb", &[("size", &version.bytes.div_ceil(1024).to_string())]);
                                         let sub = format!("{} \u{b7} {size}", crate::versions::when(&version.created));
                                         if version_row(ui, &t, crate::tl_id!("ui.saved_version"), &sub, selected == Some(n)).clicked() {
                                             *select = Some(Some(n));
@@ -12636,8 +12642,7 @@ impl NoteCraftApp {
                                                 .color(t.muted),
                                         );
                                     }
-                                },
-                            );
+                                });
                         };
                         let shown = |ui: &mut Ui, preview: &mut Option<Box<crate::versions::Preview>>, preview_height: f32| {
                             ui.vertical(|ui| {
@@ -12654,7 +12659,10 @@ impl NoteCraftApp {
                                         .size(15.0)
                                         .color(t.text),
                                 );
-                                ui.colored_label(t.warn, crate::tl_id!("ui.an_older_version_read_only_the_page_is_not_changed_unless_you_restore_it"));
+                                ui.colored_label(
+                                    t.warn,
+                                    crate::tl_id!("ui.an_older_version_read_only_the_page_is_not_changed_unless_you_restore_it"),
+                                );
                                 ui.add_space(2.0);
                                 ui.horizontal(|ui| {
                                     ui.label(egui::RichText::new(crate::tl_id!("ui.show")).small().color(t.muted));
@@ -12668,12 +12676,18 @@ impl NoteCraftApp {
                                 ui.separator();
                                 // The preview is its own surface: the paper colour, framed, so the
                                 // version does not read as the live page behind the window.
-                                egui::Frame::new().fill(t.editor).stroke(egui::Stroke::new(1.0, t.faint)).corner_radius(4.0).inner_margin(egui::Margin::same(8)).show(
-                                    ui,
-                                    |ui| {
-                                        egui::ScrollArea::vertical().id_salt("page-version-preview").max_height(preview_height).min_scrolled_height(preview_height).auto_shrink([false, false]).show(
-                                            ui,
-                                            |ui| {
+                                egui::Frame::new()
+                                    .fill(t.editor)
+                                    .stroke(egui::Stroke::new(1.0, t.faint))
+                                    .corner_radius(4.0)
+                                    .inner_margin(egui::Margin::same(8))
+                                    .show(ui, |ui| {
+                                        egui::ScrollArea::vertical()
+                                            .id_salt("page-version-preview")
+                                            .max_height(preview_height)
+                                            .min_scrolled_height(preview_height)
+                                            .auto_shrink([false, false])
+                                            .show(ui, |ui| {
                                                 if p.comparing {
                                                     let changed = p.changes.iter().any(|c| !matches!(c, crate::versions::Change::Same(_)));
                                                     if p.truncated {
@@ -12698,12 +12712,17 @@ impl NoteCraftApp {
                                                         .color(t.muted),
                                                     );
                                                 } else {
-                                                    let _ = crate::preview::show(ui, &p.blocks, page, &t, None, &notecraft_model::justify::Justified::default());
+                                                    let _ = crate::preview::show(
+                                                        ui,
+                                                        &p.blocks,
+                                                        page,
+                                                        &t,
+                                                        None,
+                                                        &notecraft_model::justify::Justified::default(),
+                                                    );
                                                 }
-                                            },
-                                        );
-                                    },
-                                );
+                                            });
+                                    });
                             });
                         };
                         if side_by_side {
@@ -12726,7 +12745,8 @@ impl NoteCraftApp {
                         ui.add_space(8.0);
                         ui.horizontal(|ui| {
                             let chosen = preview.as_ref().map(|p| p.id.clone());
-                            if modal_button_enabled(ui, &t, crate::tl_id!("ui.restore_this_version"), true, can_restore && chosen.is_some()).clicked() {
+                            if modal_button_enabled(ui, &t, crate::tl_id!("ui.restore_this_version"), true, can_restore && chosen.is_some()).clicked()
+                            {
                                 restore = chosen;
                             }
                             if modal_button(ui, &t, crate::tl_id!("ui.return_to_page"), false).clicked() {
