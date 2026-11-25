@@ -3519,8 +3519,10 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
         let restore_id = restore_selection_id(ui.ctx());
         ui.data_mut(|d| d.remove::<(usize, usize, usize)>(restore_id));
     }
-    // The caret is in this block, so this is where the typing goes.
-    if !resp.has_focus() {
+    // The caret is in this block, so this is where the typing goes: unless the search box has
+    // the keyboard, which taking it back every frame would leave nobody able to type into.
+    let search = search_id(ui.ctx());
+    if !resp.has_focus() && !ui.memory(|memory| memory.has_focus(search) || memory.had_focus_last_frame(search)) {
         resp.request_focus();
     }
     let mut changed = false;

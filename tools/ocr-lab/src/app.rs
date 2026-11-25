@@ -134,6 +134,8 @@ pub struct Lab {
     status: String,
     /// The Insert dialog, while it is open (issue #489).
     insert: Option<InsertDialog>,
+    /// Where this test folder's pictures kept on this computer are (`local_pictures`).
+    local: PathBuf,
 }
 
 /// The canvas a picture is drawn on, in pixels, and how many of them one point on screen covers.
@@ -161,6 +163,7 @@ impl Lab {
         let pictures = case::discover(&folder);
         log.event(&format!("lab opened: {} pictures in {}", pictures.len(), folder_name(&folder)));
         let mut lab = Lab {
+            local: Lab::local_for(&folder),
             folder,
             pictures,
             loaded: None,
@@ -223,6 +226,7 @@ impl Lab {
 
     /// Points the lab at another test folder and forgets the picture that was open.
     pub fn set_folder(&mut self, folder: PathBuf) {
+        self.local = Lab::local_for(&folder);
         self.folder = folder;
         self.pictures = self.discover();
         self.insert = None;
@@ -286,9 +290,14 @@ impl Lab {
         }
     }
 
-    /// Where pictures inserted for this computer only are kept for this test folder.
+    /// Where pictures inserted for this computer only are kept for this test folder. Worked out
+    /// once per folder: the list asks for every picture on every frame.
     fn local_pictures(&self) -> PathBuf {
-        crate::insert::local_folder(&crate::lab_root().join("local").join("inserted"), &self.folder)
+        self.local.clone()
+    }
+
+    fn local_for(folder: &Path) -> PathBuf {
+        crate::insert::local_folder(&crate::lab_root().join("local").join("inserted"), folder)
     }
 
     /// The test folder's pictures, then those inserted on this computer for it.
@@ -301,12 +310,11 @@ impl Lab {
     /// The group a picture is listed under: by its folders under the test folder, or under the
     /// local folder for a picture kept on this computer.
     fn group(&self, path: &Path) -> (String, String) {
-        let local = self.local_pictures();
-        if !path.starts_with(&local) {
+        if !path.starts_with(&self.local) {
             return case::group_of(&self.folder, path);
         }
         // Folder names have no spaces (see `insert::local_group_folder`); this kind is the lab's own.
-        let (kind, language) = case::group_of(&local, path);
+        let (kind, language) = case::group_of(&self.local, path);
         (if kind == "Loose-pictures" { "Loose pictures".to_string() } else { kind }, language)
     }
 

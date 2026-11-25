@@ -16152,6 +16152,27 @@ fn ctrl_v_with_search_focused_pastes_into_search_and_not_the_page() {
     assert!(h.state().body().unwrap_or_default().contains("page paste still works"));
 }
 
+/// The caret of a right-to-left line is a text box of NoteCraft's own. It took the keyboard back
+/// on every frame, so with it on the page nothing could be typed into the search box.
+#[test]
+fn a_right_to_left_caret_leaves_the_keyboard_to_the_search_box() {
+    let (_t, app, s) = sample_app("ui-search-rtl-caret");
+    notecraft_store::page::save_body(&s.html_page, "<p>\u{645}\u{631}\u{62d}\u{628}\u{627} hello</p>").expect("an Arabic line");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("page caret");
+    settle(&mut h);
+    let before = h.state().body().expect("page body").to_owned();
+    ask(&mut h, "ui.key", json!({"key": "F", "ctrl": true})).expect("focus search");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "zebra9917"})).expect("type");
+    settle(&mut h);
+    assert_eq!(h.state().body().expect("page body"), before, "the typing did not go into the page");
+    let typed = h.get_all_by_role(egui::accesskit::Role::TextInput).any(|node| node.value().is_some_and(|v| v.contains("zebra9917")));
+    assert!(typed, "the typing went into the search box");
+}
+
 /// The picker search, not the underlying note, owns native clipboard shortcuts.
 #[test]
 fn emoji_picker_paste_stays_in_search_then_page_paste_resumes() {
