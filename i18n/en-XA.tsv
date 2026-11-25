@@ -1580,3 +1580,10 @@
 @id	ui.orange_2	$$$orange@@@
 @id	ui.purple_2	$$$purple@@@
 @id	ui.magenta_2	$$$magenta@@@
+@id	ui.current_page	$$$Current page@@@
+@id	ui.saved_version	$$$Saved version@@@
+@id	ui.saved_when	$$$Saved {when}@@@
+@id	ui.the_page_as_it_is_now	$$$The page as it is now@@@
+@id	ui.current_page_explainer	$$$This is the page as it is now. Choose a saved version in the list to read it here and compare it with the page.@@@
+@id	ui.saved_version_when	$$$Saved version, {when}@@@
+@id	ui.return_to_page	$$$Return to page@@@

@@ -3501,7 +3501,8 @@ fn a_page_version_can_be_previewed_and_compared_before_it_is_restored() {
         }
         h.get_by_label("Page Versions").click();
         settle(h);
-        h.get_by_label("Preview").click();
+        // Issue #382: selecting a saved version in the list is how it is looked at.
+        h.get_all_by_label_contains("Saved version, ").next().expect("the newest saved version").click();
         settle(h);
     };
     open_preview(&mut h);
@@ -3515,11 +3516,11 @@ fn a_page_version_can_be_previewed_and_compared_before_it_is_restored() {
     assert!(h.query_by_label(&format!("− {then_line}")).is_some(), "a line only in the version is marked −: {then_line}");
     review(&mut h, "page_version_compare");
 
-    // Back and Close leave everything as it was.
-    h.get_by_label("Back to the list").click();
+    // Back to the current page and Return to page leave everything as it was.
+    h.get_all_by_label_contains("Current page, ").next().expect("the current page row").click();
     settle(&mut h);
-    assert!(h.query_by_label("Saved copies of this page").is_some(), "back at the list");
-    h.get_by_label("Close").click();
+    assert!(h.query_by_label_contains("This is the page as it is now.").is_some(), "the current page is selected");
+    h.get_by_label("Return to page").click();
     settle(&mut h);
     assert_eq!(std::fs::read(&file).expect("read"), saved, "the page file is untouched");
 
@@ -3529,6 +3530,163 @@ fn a_page_version_can_be_previewed_and_compared_before_it_is_restored() {
     settle(&mut h);
     let now = h.state().body().unwrap_or_default().to_string();
     assert!(now.contains(&then_line) && !now.contains("bravo"), "restored: {now}");
+}
+
+/// Issue #382: Page Versions is one workspace. The current page and each saved version are rows
+/// with their times; selecting a version shows it beside the list without touching the page, the
+/// arrow keys move through the list, Compare keeps its mode as the selection moves, Escape and
+/// Return to page leave the page as it was, and Restore puts back the version selected. A narrow
+/// window stacks the list over the preview.
+#[test]
+fn page_versions_is_a_workspace_with_the_list_beside_the_preview() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-versions-workspace");
+    let page = s.md_page.clone();
+    notecraft_store::page::save_body(&page, "the page now\n").expect("save");
+    // Saved versions as the folder keeps them (`.notecraft/versions/<id>/`): the store keeps one
+    // every five minutes, too slow to wait for here.
+    for (n, (words, when)) in [("first draft", "2026-11-20T09:00:00Z"), ("second draft", "2026-11-21T09:00:00Z"), ("third draft", "2026-11-22T09:00:00Z")].iter().enumerate() {
+        let id = format!("{:016x}{:04x}", 0x1000 + n, n);
+        let entry = page.join(".notecraft").join("versions").join(&id);
+        std::fs::create_dir_all(&entry).expect("version folder");
+        std::fs::write(entry.join("index.md"), format!("---\ntitle: Version\n---\n\n{words}\n")).expect("version body");
+        std::fs::write(entry.join("version.toml"), format!("id = \"{id}\"\ncreated = \"{when}\"\n")).expect("version info");
+    }
+    let versions = notecraft_store::page::versions(&page).expect("versions");
+    assert!(versions.len() >= 3, "several saved versions: {}", versions.len());
+    let file = page.join("index.md");
+    let live = std::fs::read(&file).expect("page");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    h.state_mut().open_path(&page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("History").click();
+    settle(&mut h);
+    h.get_by_label("Page Versions").click();
+    settle(&mut h);
+    let rows: Vec<_> = h.query_all_by_label_contains("Saved version, ").map(|n| n.rect()).collect();
+    assert_eq!(rows.len(), versions.len(), "one row per saved version");
+    let current = h.get_all_by_label_contains("Current page, ").next().expect("the current page row");
+    assert_eq!(current.accesskit_node().toggled(), Some(egui::accesskit::Toggled::True), "the current page is selected first");
+    let list_right = current.rect().max.x;
+    assert!(h.get_by_label("Restore this version").accesskit_node().is_disabled(), "nothing to restore with the page selected");
+    // Down selects the newest saved version and shows it beside the list.
+    h.key_press(egui::Key::ArrowDown);
+    settle(&mut h);
+    let heading = h.get_all_by_label_contains("Saved version, ").find(|n| n.accesskit_node().role() == egui::accesskit::Role::Label).expect("the preview's heading");
+    assert!(heading.rect().min.x > list_right, "the preview is beside the list");
+    assert!(!h.get_by_label("Restore this version").accesskit_node().is_disabled());
+    h.get_by_label("Compare with the page").click();
+    settle(&mut h);
+    assert!(h.query_by_label("+ the page now").is_some(), "the comparison shows the page's own line");
+    h.key_press(egui::Key::ArrowDown);
+    settle(&mut h);
+    assert_eq!(is_on(&h, "Compare with the page"), Some(true), "the mode stays as the selection moves");
+    review(&mut h, "page_versions_workspace");
+    assert_eq!(std::fs::read(&file).expect("page"), live, "looking changes nothing");
+    h.key_press(egui::Key::ArrowUp);
+    h.key_press(egui::Key::ArrowUp);
+    settle(&mut h);
+    assert!(h.query_by_label_contains("This is the page as it is now.").is_some(), "Up goes back to the current page");
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert!(h.query_by_label("Return to page").is_none(), "Escape leaves Page Versions");
+    assert_eq!(std::fs::read(&file).expect("page"), live, "and the page is as it was");
+
+    // Restore puts back the version selected, the second newest here.
+    h.get_by_label("Page Versions").click();
+    settle(&mut h);
+    let chosen = versions[1].clone();
+    let (_, chosen_body) = notecraft_store::page::version_body(&page, &chosen.id).expect("its body");
+    h.key_press(egui::Key::ArrowDown);
+    h.key_press(egui::Key::ArrowDown);
+    settle(&mut h);
+    h.get_by_label("Restore this version").click();
+    settle(&mut h);
+    let restored = h.state().body().unwrap_or_default().to_string();
+    let words = chosen_body.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or_default().to_string();
+    assert!(restored.contains(&words), "the selected version was restored: {restored} / {words}");
+
+    // A narrow window stacks the preview under the list.
+    let (_t2, app, s2) = sample_app("ui-versions-narrow");
+    notecraft_store::page::save_body(&s2.md_page, "a saved draft\n").expect("save");
+    let mut h = sized_harness(app, DARK, egui::vec2(700.0, 820.0));
+    h.state_mut().open_path(&s2.md_page.to_string_lossy());
+    settle(&mut h);
+    h.state_mut().open_page_versions();
+    settle(&mut h);
+    let at = h.get_all_by_label_contains("Saved version, ").next().expect("a version row").rect().center();
+    h.input_mut().events.push(egui::Event::PointerMoved(at));
+    h.step();
+    for pressed in [true, false] {
+        h.input_mut().events.push(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE });
+        h.step();
+    }
+    settle(&mut h);
+    let row = h.get_all_by_label_contains("Saved version, ").find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button).expect("row").rect();
+    // The heading wraps at this width, so it is found by its first words.
+    let heading = h.get_all_by_label_contains("Saved version").find(|n| n.accesskit_node().role() == egui::accesskit::Role::Label).expect("heading").rect();
+    assert!(heading.min.y > row.max.y, "narrow: the preview is under the list");
+    review(&mut h, "page_versions_narrow");
+}
+
+/// Issue #382: History results tell two pages of one name apart by where they are and when they
+/// were changed, and the one chosen is the one opened.
+#[test]
+fn recent_edits_tell_two_pages_of_one_name_apart() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-recent-same-name");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    let sections: Vec<String> = [&s.html_page, &s.md_page].iter().map(|p| p.parent().expect("section").to_string_lossy().into_owned()).collect();
+    assert_ne!(sections[0], sections[1], "the sample's two pages are in two sections");
+    let mut made = Vec::new();
+    for section in &sections {
+        let page = ask(&mut h, "engine.execute", json!({"command": "node.create", "params": {"parent": section, "kind": "page", "title": "Weekly plan", "format": "cmgfm"}}))
+            .expect("page");
+        made.push(std::path::PathBuf::from(page.as_str().expect("a path")));
+    }
+    settle(&mut h);
+    h.get_by_label("History").click();
+    settle(&mut h);
+    h.get_by_label("Recent Edits").click();
+    settle(&mut h);
+    let places: Vec<String> = made.iter().map(|p| notecraft_store::tree::read_node(p.parent().expect("section")).expect("section").title).collect();
+    let links: Vec<_> = h.query_all_by_role_and_label(egui::accesskit::Role::Link, "Weekly plan").map(|n| n.rect()).collect();
+    assert_eq!(links.len(), 2, "both pages are listed");
+    for place in &places {
+        assert!(h.query_all_by_label_contains(place).count() > 0, "the section {place} is named under its page");
+    }
+    // The second one, by the place written under it.
+    let detail_under = |h: &Harness<'_, NoteCraftApp>, link: egui::Rect| {
+        h.query_all_by_label_contains(" \u{b7} ")
+            .find(|n| (n.rect().min.y - link.max.y).abs() < 6.0)
+            .and_then(|n| n.accesskit_node().value().or_else(|| n.accesskit_node().label()))
+            .unwrap_or_default()
+    };
+    let link = links.iter().copied().find(|r| detail_under(&h, *r).contains(&places[1])).expect("the link with the second place under it");
+    h.query_all_by_role_and_label(egui::accesskit::Role::Link, "Weekly plan").find(|n| n.rect() == link).expect("link").click();
+    settle(&mut h);
+    assert_eq!(h.state().current_page(), Some(made[1].as_path()), "the page in {} is the one opened", places[1]);
+}
+
+/// Issue #382: a page with no saved versions says so, and offers only its current page.
+#[test]
+fn page_versions_with_no_saved_versions_says_so() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-versions-none");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 900.0));
+    let page = s.html_page.clone();
+    h.state_mut().open_path(&page.to_string_lossy());
+    settle(&mut h);
+    if notecraft_store::page::versions(&page).expect("versions").is_empty() {
+        h.state_mut().open_page_versions();
+        settle(&mut h);
+        assert_eq!(h.query_all_by_label_contains("Saved version, ").count(), 0);
+        assert!(h.query_all_by_label_contains("Current page, ").count() == 1);
+        assert!(h.query_by_label_contains("No saved versions yet").is_some());
+        assert!(h.get_by_label("Restore this version").accesskit_node().is_disabled());
+    }
 }
 
 /// Issue #269: View > Paper Size gives a page a sheet, turned either way and with its own
@@ -16682,11 +16840,11 @@ fn locked_pages_explain_the_lock_and_keep_version_preview_available() {
     settle(&mut h);
     h.get_by_label("Page Versions").click();
     settle(&mut h);
-    assert!(h.get_by_label("Restore").accesskit_node().is_disabled());
-    h.get_by_label("Preview").click();
+    assert!(h.get_by_label("Restore this version").accesskit_node().is_disabled());
+    h.get_all_by_label_contains("Saved version, ").next().expect("a saved version").click();
     settle(&mut h);
     assert!(h.get_by_label("Restore this version").accesskit_node().is_disabled());
-    assert!(h.query_by_label("Back to the list").is_some(), "preview stays usable");
+    assert!(h.query_by_label_contains("An older version, read-only").is_some(), "preview stays usable");
     assert_eq!(std::fs::read(&file).expect("locked page"), before);
 }
 
