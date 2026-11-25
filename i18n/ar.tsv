@@ -804,6 +804,8 @@
 @id	ui.check_for_updates_hint	يتحقق من GitHub بحثًا عن إصدار أحدث في كل مرة يبدأ فيها NoteCraft، وعند الضغط على التحقق من التحديثات. لا يُنزَّل التحديث ولا يُثبَّت إلا عند الضغط على تحديث وإعادة التشغيل.
 @id	ui.update_check_off_at_start	عدم التحقق من التحديثات عند بدء التشغيل
 @id	ui.update_check_not_saved	تعذّر حفظ إعداد التحديثات: {error}
+@id	ui.welcome_notebook_update_prompt	السؤال عن تحديث دفتر الترحيب بعد ترقية التطبيق
+@id	ui.welcome_notebook_update_prompt_not_saved	تعذّر حفظ تفضيل تحديث دفتر الترحيب: {error}
 @id	ui.update_prompt.newest_available	{app} {version} هو أحدث إصدار متاح.
 @id	ui.update_prompt.by_developer	بواسطة {developer}
 @id	ui.update_prompt.version_change	من v{from} إلى {to}

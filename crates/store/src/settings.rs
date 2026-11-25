@@ -141,6 +141,20 @@ impl Settings {
         std::fs::write(&self.path, kv::render(&map)).map_err(|e| StoreError::io("write", &self.path, e))
     }
 
+    /// Whether first-use setup is unfinished or was explicitly requested again.
+    pub fn first_use_pending(&self) -> bool {
+        self.get("privacy_welcome_seen").is_none_or(|value| value.trim().is_empty())
+    }
+
+    /// Whether to prompt again about the Welcome notebook after setup has been completed.
+    pub fn welcome_notebook_update_prompt(&self) -> bool {
+        self.get("welcome_notebook_update_prompt").is_none_or(|value| value.trim() != "false")
+    }
+
+    pub fn set_welcome_notebook_update_prompt(&self, enabled: bool) -> Result<()> {
+        self.set("welcome_notebook_update_prompt", if enabled { "true" } else { "false" })
+    }
+
     /// Removes all saved application preferences. Missing settings are already at defaults.
     pub fn reset(&self) -> Result<()> {
         match std::fs::remove_file(&self.path) {

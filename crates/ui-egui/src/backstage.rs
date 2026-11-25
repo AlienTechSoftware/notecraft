@@ -44,6 +44,7 @@ pub enum Act {
     SetAutoSwitch(bool),
     /// Don't check for updates at start up: the setting is saved, and on by default is off.
     SetUpdateCheckOff(bool),
+    SetWelcomeNotebookUpdatePrompt(bool),
     /// Pick the folder NoteCraft keeps new notebooks in, from the next start.
     ChooseNotebooksFolder,
     /// Go back to the default notebooks folder, from the next start.
@@ -193,6 +194,7 @@ pub fn show(
     ui_scale: u16,
     auto_switch: bool,
     update_check_off: bool,
+    welcome_notebook_update_prompt: bool,
     update: &crate::update::Status,
     copy: &mut CopyChoice,
     account: &mut AccountChoice,
@@ -232,6 +234,7 @@ pub fn show(
                         ui_scale,
                         auto_switch,
                         update_check_off,
+                        welcome_notebook_update_prompt,
                         update,
                         t,
                         &mut acts,
@@ -675,6 +678,7 @@ fn options_page(
     ui_scale: u16,
     auto_switch: bool,
     update_check_off: bool,
+    welcome_notebook_update_prompt: bool,
     update: &crate::update::Status,
     t: &Tokens,
     acts: &mut Vec<Act>,
@@ -786,6 +790,10 @@ fn options_page(
     let mut off = update_check_off;
     if ui.checkbox(&mut off, crate::tl_id!("ui.update_check_off_at_start")).changed() {
         acts.push(Act::SetUpdateCheckOff(off));
+    }
+    let mut prompt = welcome_notebook_update_prompt;
+    if ui.checkbox(&mut prompt, crate::tl_id!("ui.welcome_notebook_update_prompt")).changed() {
+        acts.push(Act::SetWelcomeNotebookUpdatePrompt(prompt));
     }
     ui.add_space(12.0);
     section_heading(ui, 3);

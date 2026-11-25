@@ -801,6 +801,8 @@
 @id	ui.check_for_updates_hint	Prüft bei jedem Start von NoteCraft und beim Drücken von Nach Updates suchen auf GitHub nach einer neueren Version. Herunterladen und Installieren erfolgen erst, wenn Sie Aktualisieren und neu starten drücken.
 @id	ui.update_check_off_at_start	Beim Start nicht nach Updates suchen
 @id	ui.update_check_not_saved	Die Update-Einstellung konnte nicht gespeichert werden: {error}
+@id	ui.welcome_notebook_update_prompt	Nach Programmupdates nach dem Aktualisieren des Willkommensnotizbuchs fragen
+@id	ui.welcome_notebook_update_prompt_not_saved	Die Einstellung für Updates des Willkommensnotizbuchs konnte nicht gespeichert werden: {error}
 @id	ui.update_prompt.newest_available	{app} {version} ist die neueste verfügbare Version.
 @id	ui.update_prompt.by_developer	von {developer}
 @id	ui.update_prompt.version_change	v{from} auf {to}

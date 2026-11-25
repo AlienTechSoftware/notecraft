@@ -1614,7 +1614,7 @@ impl NoteCraftApp {
         let sensitivity = session.settings.get(SENSITIVITY_KEY).and_then(|v| v.trim().parse::<u8>().ok()).unwrap_or(DEFAULT_SENSITIVITY).min(100);
         let qat = quickaccess::Config::load(|k| session.settings.get(k));
         // `--first-use` clears the key to an empty value, which counts as not seen.
-        let privacy_welcome = session.settings.get("privacy_welcome_seen").is_none_or(|v| v.trim().is_empty());
+        let privacy_welcome = session.settings.first_use_pending();
         let telemetry_level = session.settings.get("telemetry_level").unwrap_or_else(|| default_telemetry_level(cfg!(debug_assertions)).to_string());
         log::info!("privacy welcome modal state: show={} telemetry_level={:?}", privacy_welcome, telemetry_level);
         let wizard_format = session.settings.global_format().0;
@@ -4941,6 +4941,7 @@ impl NoteCraftApp {
                 self.ui_scale,
                 self.auto_switch,
                 self.update_check_off,
+                self.session.settings.welcome_notebook_update_prompt(),
                 &update,
                 &mut copy,
                 &mut account,
@@ -5012,6 +5013,11 @@ impl NoteCraftApp {
                     match self.session.settings.set("update_check_off_at_start", if off { "true" } else { "false" }) {
                         Ok(()) => self.update_check_off = off,
                         Err(e) => self.complain(&crate::i18n::format_message_id("ui.update_check_not_saved", &[("error", &e.to_string())])),
+                    }
+                }
+                backstage::Act::SetWelcomeNotebookUpdatePrompt(enabled) => {
+                    if let Err(error) = self.session.settings.set_welcome_notebook_update_prompt(enabled) {
+                        self.complain(&crate::i18n::format_message_id("ui.welcome_notebook_update_prompt_not_saved", &[("error", &error.to_string())]));
                     }
                 }
                 backstage::Act::ChooseNotebooksFolder => self.choose_default_notebooks_folder(),
