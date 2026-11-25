@@ -16133,6 +16133,16 @@ fn ctrl_v_with_search_focused_pastes_into_search_and_not_the_page() {
         ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave search");
         settle(&mut h);
     }
+    // A table copied from a spreadsheet is pasted by the page itself, as blocks: not while the
+    // search box has the keyboard either.
+    ask(&mut h, "ui.key", json!({"key": "F", "ctrl": true})).expect("focus search");
+    settle(&mut h);
+    board.put_text("needle\tcell\nrow\ttwo");
+    ask(&mut h, "ui.key", json!({"key": "V", "ctrl": true})).expect("Ctrl+V");
+    settle(&mut h);
+    assert_eq!(h.state().body().expect("page body"), before, "a table paste stays out of the page");
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("leave search");
+    settle(&mut h);
     // With the search box left, Ctrl+V pastes into the page again.
     ask(&mut h, "ui.caret", json!({"block": 0})).expect("page caret");
     settle(&mut h);

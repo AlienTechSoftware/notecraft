@@ -15,9 +15,14 @@ pub const EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
 
 /// Where a picture inserted for this computer only is kept, for the test folder `folder`: its own
 /// folder under `root` (the lab's `local/inserted`), so each test folder shows its own.
+/// The folder's name is kept for people to read, with a short checksum of its whole path, so two
+/// test folders of the same name keep apart.
 pub fn local_folder(root: &Path, folder: &Path) -> PathBuf {
-    let name = folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "tests".to_string());
-    root.join(safe_name(&name))
+    use sha2::{Digest, Sha256};
+    let full = std::fs::canonicalize(folder).unwrap_or_else(|_| folder.to_path_buf());
+    let name = full.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "tests".to_string());
+    let digest = Sha256::digest(full.to_string_lossy().as_bytes());
+    root.join(format!("{}-{:02x}{:02x}{:02x}{:02x}", safe_name(&name), digest[0], digest[1], digest[2], digest[3]))
 }
 
 /// The folder of a group, for a picture kept on this computer: `<kind>/<language>`, as the lab
@@ -63,10 +68,23 @@ pub fn insert(dir: &Path, name: &str, picture: &Picture, record: Option<&Record>
             if !EXTENSIONS.contains(&extension.as_str()) {
                 return Err(format!("{} is not a PNG or JPEG picture.", file_name(path)));
             }
-            image::image_dimensions(path).map_err(|e| format!("{} cannot be read as a picture: {e}", file_name(path)))?;
+            // Read through, not only its header: a picture that is cut short or damaged is refused
+            // here, not when it is opened in the list.
+            image::open(path).map_err(|e| format!("{} cannot be read as a picture: {e}", file_name(path)))?;
             extension
         }
         Picture::Drawn(_) => "png".to_string(),
+    };
+    // The sources already recorded are read before anything is written: a SOURCES.txt that
+    // cannot be read is never replaced by one with only the new line.
+    let sources = dir.join("SOURCES.txt");
+    let before = match record {
+        None => String::new(),
+        Some(_) => match std::fs::read_to_string(&sources) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(format!("{}: {e}. Nothing was added.", sources.display())),
+        },
     };
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let stem = safe_name(name);
@@ -81,11 +99,18 @@ pub fn insert(dir: &Path, name: &str, picture: &Picture, record: Option<&Record>
         Picture::Drawn(pixels) => pixels.save(&target).map_err(|e| format!("{}: {e}", target.display()))?,
     }
     if let Some(record) = record {
-        let sources = dir.join("SOURCES.txt");
-        let before = std::fs::read_to_string(&sources).unwrap_or_default();
         let gap = if before.is_empty() || before.ends_with('\n') { "" } else { "\n" };
         let line = format!("{gap}{}: {}. Licence: {}.\n", file_name(&target), one_line(&record.source), one_line(&record.licence));
-        std::fs::write(&sources, before + &line).map_err(|e| format!("{}: {e}", sources.display()))?;
+        let written = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&sources)
+            .and_then(|mut file| std::io::Write::write_all(&mut file, line.as_bytes()));
+        if let Err(e) = written {
+            // A picture in the test folder with no record of where it came from is not kept.
+            let _ = std::fs::remove_file(&target);
+            return Err(format!("{}: {e}. The picture was not added.", sources.display()));
+        }
     }
     Ok(target)
 }
@@ -189,7 +214,11 @@ mod tests {
         let local = temp("local");
         let folder = PathBuf::from("/tests/mvp-smoke");
         let dir = local_group_folder(&local_folder(&local, &folder), "Handwriting", "English");
-        assert_eq!(dir, local.join("mvp-smoke").join("handwriting").join("english"));
+        let kept = local_folder(&local, &folder);
+        assert!(kept.file_name().is_some_and(|n| n.to_string_lossy().starts_with("mvp-smoke-")), "{kept:?}");
+        assert_ne!(kept, local_folder(&local, Path::new("/elsewhere/mvp-smoke")), "two test folders of one name keep apart");
+        assert_eq!(kept, local_folder(&local, &folder), "and one folder always gets the same place");
+        assert_eq!(dir, kept.join("handwriting").join("english"));
         let mut sketch = Sketch::new([40, 20]);
         sketch.strokes.push(vec![[5.0, 10.0], [35.0, 10.0]]);
         let path = insert(&dir, "my drawing", &Picture::Drawn(sketch.raster()), None).expect("inserted");
@@ -210,10 +239,26 @@ mod tests {
         let fake = from.join("fake.png");
         std::fs::write(&fake, "not a png").expect("fake");
         assert!(insert(&group, "fake", &Picture::File(fake), None).is_err());
+        // A PNG whose header is fine but whose pictures are cut off.
+        let whole = std::fs::read(png(&from, "whole.png")).expect("png");
+        let cut = from.join("cut.png");
+        std::fs::write(&cut, &whole[..whole.len() - 20]).expect("cut");
+        assert!(insert(&group, "cut", &Picture::File(cut), None).is_err(), "a damaged picture is refused");
         let picture = png(&from, "real.png");
         let record = Record { source: "Mine".into(), licence: " ".into() };
-        assert!(insert(&group, "real", &Picture::File(picture), Some(&record)).is_err());
+        assert!(insert(&group, "real", &Picture::File(picture.clone()), Some(&record)).is_err());
         assert_eq!(std::fs::read_dir(&group).expect("group").count(), 0, "nothing was written");
+        // A SOURCES.txt that cannot be read as text is kept as it is, and nothing is added.
+        std::fs::write(group.join("SOURCES.txt"), [0xff, 0xfe, 0x00, b'a']).expect("sources");
+        let record = Record { source: "Mine".into(), licence: "CC0".into() };
+        assert!(insert(&group, "real", &Picture::File(picture.clone()), Some(&record)).is_err());
+        assert_eq!(std::fs::read(group.join("SOURCES.txt")).expect("kept"), [0xff, 0xfe, 0x00, b'a']);
+        assert!(!group.join("real.png").exists());
+        // Nor when something that is not a file is in its place.
+        std::fs::remove_file(group.join("SOURCES.txt")).expect("remove");
+        std::fs::create_dir(group.join("SOURCES.txt")).expect("a folder where the file would go");
+        assert!(insert(&group, "real", &Picture::File(picture), Some(&record)).is_err());
+        assert!(!group.join("real.png").exists(), "no picture without its record");
         let _ = std::fs::remove_dir_all(from);
         let _ = std::fs::remove_dir_all(group);
     }

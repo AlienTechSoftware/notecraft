@@ -286,14 +286,40 @@ impl NoteCraftApp {
         // The edits are in the copy now. Left marked unsaved here, they kept the copy from opening
         // (a page with unsaved edits is not left), and a later save of the ink would have written
         // it into the old page's folder again (issue #497).
+        let kept = self.unsaved_edits();
+        let revision = self.page_revision.take();
         self.drop_unsaved_edits();
         self.page_conflict = false;
-        self.page_revision = None;
         self.open_page(&copy);
         if self.current_page() != Some(copy.as_path()) {
+            // The page shown is still the original, with these edits not on its disk: it stays
+            // unsaved and in conflict, so the window and the folder keep agreeing.
+            self.opening = None;
+            self.restore_unsaved_edits(kept);
+            self.page_revision = revision;
+            self.page_conflict = true;
             return Err(format!("the copy was kept at {}, but it could not be opened", copy.display()));
         }
         Ok(copy)
+    }
+
+    /// What `drop_unsaved_edits` forgets: when the words were changed, the title as typed, and
+    /// whether the ink has changes.
+    fn unsaved_edits(&self) -> (Option<Instant>, Option<String>, bool) {
+        let editor = self.editor.as_ref();
+        (editor.and_then(|ed| ed.dirty_since), editor.map(|ed| ed.title_buf.clone()), self.pad.as_ref().is_some_and(|pad| pad.dirty))
+    }
+
+    fn restore_unsaved_edits(&mut self, (dirty_since, title, ink): (Option<Instant>, Option<String>, bool)) {
+        if let Some(ed) = &mut self.editor {
+            ed.dirty_since = dirty_since;
+            if let Some(title) = title {
+                ed.title_buf = title;
+            }
+        }
+        if let Some(pad) = &mut self.pad {
+            pad.dirty = ink;
+        }
     }
 
     /// Forgets this view's unsaved words, title and ink, once they are in a copy or have been

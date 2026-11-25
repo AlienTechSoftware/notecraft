@@ -422,6 +422,11 @@ impl Lab {
         match crate::insert::insert(&dir, &name, &picture, record) {
             Ok(path) => {
                 self.insert = None;
+                // The open picture's place in the list changes with the new one: it is closed, and
+                // the new one opened, so nothing is saved by an old position.
+                self.loaded = None;
+                self.selected = None;
+                self.drag = None;
                 self.pictures = self.discover();
                 let name = self.relative_name(&path);
                 self.log.event(&format!("inserted {name}"));

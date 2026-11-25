@@ -99,9 +99,15 @@ pub fn in_text(format: PageFormat, text: &str) -> Vec<Reference> {
             } else {
                 bytes.len()
             };
-            // Raw HTML in CMGFM does not run past its block. With no '>' left in the block, this
-            // `<` is text, so the next one is not searched for either.
-            let found = if next_gt < limit || format == PageFormat::Html { tag_end(&bytes[..limit], i + 1) } else { None };
+            // Raw HTML in CMGFM does not run past its block, and is a tag only as CommonMark spells
+            // one, so a `<` in ordinary text stops being a tag at its first character that cannot
+            // be in one, and is not scanned to the end of the block. With no '>' left in the block
+            // it is text at once.
+            let found = match format {
+                PageFormat::Cmgfm if next_gt < limit => raw_tag_end(&bytes[..limit], i + 1),
+                PageFormat::Cmgfm => None,
+                _ => tag_end(bytes, i + 1),
+            };
             let Some(end) = found else {
                 if format == PageFormat::Html {
                     break;
@@ -175,23 +181,97 @@ pub fn in_text(format: PageFormat, text: &str) -> Vec<Reference> {
 
 /// Where the CMGFM block holding byte `i` ends: the start of the first later line that is blank
 /// or starts a new block (a list item, heading, quote or fence), or the end of the text.
+///
+/// A heading is one line. In a quote, the next quoted line carries on the same paragraph, as the
+/// quote is drawn; a quoted line with nothing after its `>` ends it.
 fn block_end(text: &str, i: usize) -> usize {
+    let start = text[..i].rfind('\n').map_or(0, |n| n + 1);
     let mut at = text[i..].find('\n').map_or(text.len(), |n| i + n + 1);
+    let first = text[start..at].trim_start();
+    if first.starts_with('#') {
+        return at;
+    }
+    let quoted = first.starts_with('>');
     while at < text.len() {
         let line = &text[at..text[at..].find('\n').map_or(text.len(), |n| at + n)];
         let trimmed = line.trim_start();
-        if trimmed.is_empty()
-            || crate::markdown::list_marker(line).is_some()
-            || trimmed.starts_with('#')
-            || trimmed.starts_with('>')
-            || trimmed.starts_with("```")
-            || trimmed.starts_with("~~~")
+        let continues_quote = quoted && trimmed.strip_prefix('>').is_some_and(|rest| !rest.trim().is_empty());
+        if !continues_quote
+            && (trimmed.is_empty()
+                || crate::markdown::list_marker(line).is_some()
+                || trimmed.starts_with('#')
+                || trimmed.starts_with('>')
+                || trimmed.starts_with("```")
+                || trimmed.starts_with("~~~"))
         {
             return at;
         }
         at += line.len() + 1;
     }
     text.len()
+}
+
+/// The `>` that closes a CMGFM raw tag starting at `i` (just after its `<`), when the text there
+/// is a tag as CommonMark spells one: a name, then attributes each after a space (a name, and
+/// optionally `=` and a value, unquoted or in quotes), then `>` or `/>`; or `/name>` for a closing
+/// tag. Anything else is not a tag, and the scan stops at the first character that rules it out.
+fn raw_tag_end(bytes: &[u8], mut i: usize) -> Option<usize> {
+    let name = |b: u8| b.is_ascii_alphanumeric() || b == b'-';
+    let space = |b: &u8| b.is_ascii_whitespace();
+    let closing = bytes.get(i) == Some(&b'/');
+    i += usize::from(closing);
+    if !bytes.get(i).is_some_and(u8::is_ascii_alphabetic) {
+        return None;
+    }
+    while bytes.get(i).copied().is_some_and(name) {
+        i += 1;
+    }
+    if closing {
+        while bytes.get(i).is_some_and(space) {
+            i += 1;
+        }
+        return (bytes.get(i) == Some(&b'>')).then_some(i);
+    }
+    loop {
+        let spaced = bytes.get(i).is_some_and(space);
+        while bytes.get(i).is_some_and(space) {
+            i += 1;
+        }
+        match bytes.get(i)? {
+            b'>' => return Some(i),
+            b'/' => return (bytes.get(i + 1) == Some(&b'>')).then_some(i + 1),
+            b if spaced && (b.is_ascii_alphabetic() || matches!(b, b'_' | b':')) => {}
+            _ => return None,
+        }
+        while bytes.get(i).is_some_and(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b':' | b'-')) {
+            i += 1;
+        }
+        let mut after = i;
+        while bytes.get(after).is_some_and(space) {
+            after += 1;
+        }
+        if bytes.get(after) != Some(&b'=') {
+            continue;
+        }
+        i = after + 1;
+        while bytes.get(i).is_some_and(space) {
+            i += 1;
+        }
+        match bytes.get(i)? {
+            &quote @ (b'\'' | b'"') => {
+                i += 1 + bytes.get(i + 1..)?.iter().position(|b| *b == quote)? + 1;
+            }
+            _ => {
+                let start = i;
+                while bytes.get(i).is_some_and(|b| !b.is_ascii_whitespace() && !matches!(b, b'"' | b'\'' | b'=' | b'<' | b'>' | b'`')) {
+                    i += 1;
+                }
+                if i == start {
+                    return None;
+                }
+            }
+        }
+    }
 }
 
 fn tag_end(bytes: &[u8], mut i: usize) -> Option<usize> {
@@ -314,5 +394,33 @@ mod tests {
         // A raw tag can still span lines inside its paragraph, but not a blank line.
         let refs = in_text(PageFormat::Cmgfm, "<a\nhref='../one/'>one</a>\n\n<b\n\n<img src='../two.png'>\n");
         assert_eq!(refs.iter().map(|r| r.target.as_str()).collect::<Vec<_>>(), ["../one/", "../two.png"]);
+        // The block's only '>' inside an unclosed quote: no fragment scans the block again, and a
+        // real tag after the broken one in the same block is still found.
+        let text = format!("{}'> [x](../x/) <a title='it> <img src=\"../three.png\" alt=ok/>\n", "<a ".repeat(40_000));
+        let started = std::time::Instant::now();
+        let refs = in_text(PageFormat::Cmgfm, &text);
+        assert!(started.elapsed() < std::time::Duration::from_secs(2), "took {:?}", started.elapsed());
+        assert_eq!(refs.iter().map(|r| r.target.as_str()).collect::<Vec<_>>(), ["../x/", "../three.png"]);
+    }
+
+    #[test]
+    fn raw_tags_are_read_as_commonmark_spells_them() {
+        let text = "<IMG SRC=assets/a.png /><a\n  href = \"../b/\" data-x='1'>b</a> <span class=x>y</span>\n";
+        let refs = in_text(PageFormat::Cmgfm, text);
+        assert_eq!(refs.iter().map(|r| r.target.as_str()).collect::<Vec<_>>(), ["assets/a.png", "../b/"]);
+        for text in ["<a href='x'title=y>", "<a =x>", "<a href=>", "<a href='open"] {
+            assert!(raw_tag_end(text.as_bytes(), 1).is_none(), "{text} is not a tag");
+        }
+        assert_eq!(raw_tag_end(b"</div  >", 1), Some(7));
+    }
+
+    #[test]
+    fn a_heading_or_a_quote_is_its_own_block_for_code_spans() {
+        // A backtick in a heading does not pair with one in the paragraph under it.
+        let refs = in_text(PageFormat::Cmgfm, "# Heading `literal\n[Kept](../kept/) then closing `\n");
+        assert_eq!(refs.iter().map(|r| r.target.as_str()).collect::<Vec<_>>(), ["../kept/"]);
+        // A quote's lines are one paragraph, so a code span runs on to the next quoted line.
+        let refs = in_text(PageFormat::Cmgfm, "> `a\n> [hidden](../hidden/)` and [shown](../shown/)\n>\n> `b\n\n[after](../after/)\n");
+        assert_eq!(refs.iter().map(|r| r.target.as_str()).collect::<Vec<_>>(), ["../shown/", "../after/"]);
     }
 }
