@@ -2133,8 +2133,24 @@ fn tag_row(ui: &mut Ui, tag: Tag, t: &Tokens) -> egui::Response {
         painter.rect_filled(rect, 3.0, t.row_hover);
     }
     paint_tag(&painter, Rect::from_min_size(egui::pos2(rect.min.x + 2.0, rect.center().y - 9.0), vec2(18.0, 18.0)), tag, t.text, t.accent);
+    // Issue #373: icon, name and shortcut in three columns, the shortcut right-aligned in the quiet
+    // colour as a menu draws it, so the names line up and the keys can be scanned on their own.
+    // A screen reader still hears the name with its keys.
+    let name_text = crate::tl!(tag.label());
+    let keys = tag.shortcut();
+    let keys_w = keys.map_or(0.0, |k| painter.layout_no_wrap(k.to_string(), egui::FontId::proportional(11.5), t.muted).size().x + 8.0);
+    let name_room = (rect.width() - 26.0 - keys_w - 4.0).max(20.0);
+    painter.with_clip_rect(Rect::from_min_size(egui::pos2(rect.min.x + 26.0, rect.min.y), vec2(name_room, rect.height()))).text(
+        egui::pos2(rect.min.x + 26.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        name_text,
+        egui::FontId::proportional(12.5),
+        t.text,
+    );
+    if let Some(keys) = keys {
+        painter.text(egui::pos2(rect.max.x - 6.0, rect.center().y), Align2::RIGHT_CENTER, keys, egui::FontId::proportional(11.5), t.muted);
+    }
     let label = tag_label(tag);
-    painter.text(egui::pos2(rect.min.x + 26.0, rect.center().y), Align2::LEFT_CENTER, &label, egui::FontId::proportional(12.5), t.text);
     let enabled = ui.is_enabled();
     let name = label;
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
