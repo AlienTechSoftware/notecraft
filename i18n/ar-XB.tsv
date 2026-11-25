@@ -1620,3 +1620,4 @@
 @id	ui.the_page_held_is_no_longer_there	[[RLI]]$$$The page that was cut or copied is no longer there.@@@[[PDI]]
 @id	ui.a_page_cannot_go_inside_itself	[[RLI]]$$$A page cannot be pasted inside itself.@@@[[PDI]]
 @id	ui.paste_page	[[RLI]]$$$Paste page@@@[[PDI]]
+@id	ui.the_copy_is_last_in_the_section	[[RLI]]$$$The copy was made, last in the section: it could not go after that page.@@@[[PDI]]

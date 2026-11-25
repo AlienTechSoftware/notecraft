@@ -260,3 +260,53 @@ mod tests {
         assert_eq!(html_link("A <page>", "notecraft:/book/page?a&b"), "<p><a href=\"notecraft:/book/page?a&amp;b\">A &lt;page&gt;</a></p>");
     }
 }
+
+/// Takes a native keyboard paste out of a frame's raw `events`, before egui handles it itself:
+/// Ctrl or Cmd with V, or a pasted picture. Returns `Some(true)` for Ctrl+Shift+V, the paste of
+/// the text only (issue #535), `Some(false)` for any other paste, and `None` when there was none.
+/// The app's native window hook calls it; the queued paste then goes to `paste_plain` or
+/// `paste_here`.
+pub fn take_keyboard_paste(events: &mut Vec<egui::Event>) -> Option<bool> {
+    let mut found: Option<bool> = None;
+    events.retain(|event| {
+        let plain = match event {
+            egui::Event::Key { key: egui::Key::V, pressed: true, modifiers, .. } if modifiers.ctrl || modifiers.command => Some(modifiers.shift),
+            egui::Event::PasteImage(_) => Some(false),
+            _ => None,
+        };
+        if let Some(plain) = plain {
+            found = Some(found.unwrap_or(false) || plain);
+        }
+        plain.is_none()
+    });
+    found
+}
+
+#[cfg(test)]
+mod keyboard_paste_tests {
+    use super::take_keyboard_paste;
+
+    fn key(shift: bool) -> egui::Event {
+        egui::Event::Key {
+            key: egui::Key::V,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers { ctrl: true, command: true, shift, ..egui::Modifiers::NONE },
+        }
+    }
+
+    /// Issue #535: the native hook tells Ctrl+Shift+V (text only) from Ctrl+V, and takes the key
+    /// out either way, leaving the rest of the frame's events.
+    #[test]
+    fn the_native_hook_tells_the_text_only_paste_from_the_ordinary_one() {
+        let mut events = vec![key(true), egui::Event::Text("a".into())];
+        assert_eq!(take_keyboard_paste(&mut events), Some(true));
+        assert_eq!(events, vec![egui::Event::Text("a".into())]);
+        let mut events = vec![key(false)];
+        assert_eq!(take_keyboard_paste(&mut events), Some(false));
+        assert!(events.is_empty());
+        let mut events = vec![egui::Event::Text("v".into())];
+        assert_eq!(take_keyboard_paste(&mut events), None);
+    }
+}

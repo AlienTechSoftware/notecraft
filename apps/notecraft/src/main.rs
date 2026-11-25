@@ -32,19 +32,10 @@ impl eframe::App for Shell {
                 log::debug!("key press: {key:?} shift={} ctrl={} alt={}", modifiers.shift, modifiers.command, modifiers.alt);
             }
         }
-        let mut keyboard_paste = false;
-        raw_input.events.retain(|event| {
-            let is_paste = matches!(
-                event,
-                egui::Event::Key { key: egui::Key::V, pressed: true, modifiers, .. }
-                    if modifiers.ctrl || modifiers.command
-            ) || matches!(event, egui::Event::PasteImage(_));
-            keyboard_paste |= is_paste;
-            !is_paste
-        });
-        if keyboard_paste {
-            log::debug!("raw keyboard paste captured before egui clipboard handling");
-            self.windows.queue_keyboard_paste(raw_input.viewport_id);
+        // Ctrl+V, or Ctrl+Shift+V for the text only (issue #535).
+        if let Some(plain) = notecraft_ui_egui::clipboard::take_keyboard_paste(&mut raw_input.events) {
+            log::debug!("raw keyboard paste captured before egui clipboard handling (text only: {plain})");
+            self.windows.queue_keyboard_paste(raw_input.viewport_id, plain);
         }
         raw_input.events.extend(self.windows.take_events(raw_input.viewport_id));
     }

@@ -825,6 +825,75 @@ pub fn wrap_selection_with(text: &str, selection: (usize, usize), open: &str, cl
 
 /// Puts `insert` where the caret is, replacing whatever is selected. Returns the new text
 /// and where the caret ends up.
+/// Puts plain text in at the caret exactly as written: no Markdown is read in it, so stars,
+/// brackets and backticks stay words (Ctrl+Shift+V, issue #535). The words on both sides of
+/// the caret keep their own formatting. The first line replaces the selection; with more than
+/// one line, each further line is a new paragraph after the caret's block and the last one
+/// takes the words that followed the caret, where the caret is left. In a table's cell the
+/// lines are joined with spaces. Returns how many blocks went in after the caret's block.
+pub fn insert_plain_lines(blocks: &mut Vec<Block>, caret: &mut Caret, lines: &[&str]) -> usize {
+    let at = caret.block;
+    let Some(block) = blocks.get_mut(at) else { return 0 };
+    // Bring the spans up to date with what has been typed, so the halves are the caret's own.
+    caret.write(block);
+    let source = caret.ensure_inline(block).clone();
+    let len = source.text().chars().count();
+    let (lo, hi) = (caret.selection.0.min(caret.selection.1).min(len), caret.selection.0.max(caret.selection.1).min(len));
+    let literal = |line: &str| {
+        let span = Span { text: line.to_owned(), ..Default::default() };
+        InlineEdit::from_spans(if line.is_empty() { &[][..] } else { std::slice::from_ref(&span) })
+    };
+    let joined;
+    let lines = if caret.cell.is_some() && lines.len() > 1 {
+        joined = lines.join(" ");
+        vec![joined.as_str()]
+    } else {
+        lines.to_vec()
+    };
+    let Some((first, rest)) = lines.split_first() else { return 0 };
+    let mut head = source.slice(0..lo);
+    head.join(literal(first));
+    let tail = source.slice(hi..len);
+    if rest.is_empty() {
+        let place = head.text().chars().count();
+        head.join(tail);
+        if let Some(cell) = caret.cell {
+            if let Some(value) = cell_spans_mut(block, cell) {
+                *value = head.spans().to_vec();
+            }
+        } else {
+            let text = head.text().to_owned();
+            head.write(block, &text);
+        }
+        caret.text = head.text().to_owned();
+        caret.inline = Some(head);
+        caret.selection = (place, place);
+        caret.place = Some(place);
+        caret.focus = true;
+        return 0;
+    }
+    let text = head.text().to_owned();
+    head.write(block, &text);
+    let (last, middle) = rest.split_last().unwrap_or((&"", &[]));
+    let mut new: Vec<Block> = middle.iter().map(|line| Block::Paragraph(literal(line).spans().to_vec(), Vec::new())).collect();
+    let mut end = literal(last);
+    let place = end.text().chars().count();
+    end.join(tail);
+    let mut end_block = Block::Paragraph(Vec::new(), Vec::new());
+    let text = end.text().to_owned();
+    end.write(&mut end_block, &text);
+    new.push(end_block);
+    let count = new.len();
+    for (offset, block) in new.into_iter().enumerate() {
+        blocks.insert(at + 1 + offset, block);
+    }
+    renumber(blocks);
+    let end_text = blocks.get(at + count).map(caret_text).unwrap_or_default();
+    *caret =
+        Caret { block: at + count, text: end_text, focus: true, selection: (place, place), place: Some(place), cell: None, span: None, inline: None };
+    count
+}
+
 pub fn insert_at_caret(text: &str, selection: (usize, usize), insert: &str) -> (String, usize) {
     let chars: Vec<char> = text.chars().collect();
     let (a, b) = (selection.0.min(selection.1).min(chars.len()), selection.0.max(selection.1).min(chars.len()));

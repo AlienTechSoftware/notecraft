@@ -1624,6 +1624,8 @@ pub struct NoteCraftApp {
     /// Matching HTML flavor for the same copied item, when one is available.
     pending_copy_html: Option<String>,
     keyboard_paste_requested: bool,
+    /// The queued paste is Ctrl+Shift+V, the text only (issue #535).
+    keyboard_paste_plain: bool,
     /// The File screen, when it is open, and which of its pages.
     backstage: Option<&'static str>,
     /// File > Save a Copy as it is being filled in (issue #301).
@@ -1677,6 +1679,14 @@ impl NoteCraftApp {
     pub fn queue_keyboard_paste(&mut self) {
         log::debug!("queued native keyboard paste");
         self.keyboard_paste_requested = true;
+        self.keyboard_paste_plain = false;
+    }
+
+    /// Queues a native Ctrl+Shift+V: the clipboard's text only (issue #535).
+    pub fn queue_keyboard_paste_plain(&mut self) {
+        log::debug!("queued native keyboard paste, text only");
+        self.keyboard_paste_requested = true;
+        self.keyboard_paste_plain = true;
     }
 
     pub fn new(session: Session) -> NoteCraftApp {
@@ -1855,6 +1865,7 @@ impl NoteCraftApp {
             pending_copy: None,
             pending_copy_html: None,
             keyboard_paste_requested: false,
+            keyboard_paste_plain: false,
             backstage: None,
             copy_choice: backstage::CopyChoice::default(),
             account_choice: backstage::AccountChoice::default(),
@@ -2276,14 +2287,16 @@ impl NoteCraftApp {
 
     /// Keeps `page` as the one to open when its section is chosen again (issue #557).
     fn remember_section_page(&mut self, page: &Path) {
-        let Some(section) = section_in_tree(self.session.tree(), page) else { return };
-        if self.section_pages.get(&section).is_some_and(|p| p == page) {
+        let section = section_in_tree(self.session.tree(), page);
+        // The notebook's too, for switching notebooks (issue #559), even for a page outside any
+        // section.
+        let notebook = self.session.tree().iter().find(|n| page.starts_with(&n.path)).map(|n| n.path.clone());
+        let keys: Vec<PathBuf> = section.into_iter().chain(notebook).collect();
+        if keys.is_empty() || keys.iter().all(|k| self.section_pages.get(k).is_some_and(|p| p == page)) {
             return;
         }
-        self.section_pages.insert(section, page.to_path_buf());
-        // The notebook's too, for switching notebooks (issue #559).
-        if let Some(notebook) = self.session.tree().iter().find(|n| page.starts_with(&n.path)).map(|n| n.path.clone()) {
-            self.section_pages.insert(notebook, page.to_path_buf());
+        for key in keys {
+            self.section_pages.insert(key, page.to_path_buf());
         }
         if self.section_pages.len() > SECTION_PAGES_KEPT {
             // Sections no longer in the open notebooks go first.
@@ -2349,6 +2362,18 @@ impl NoteCraftApp {
                 self.open_page_soon(&page);
             }
             None => {
+                // The page being left is saved and closed first, as choosing an empty section
+                // does, so the canvas is not left showing another notebook's page.
+                self.save_now();
+                if self.is_dirty() || self.page_conflict {
+                    return;
+                }
+                if let Some(left) = self.editor.as_ref().map(|e| e.dir.clone()) {
+                    self.note_read(&left, false);
+                }
+                self.editor = None;
+                self.pad = None;
+                self.opening = None;
                 self.open.insert(notebook.to_path_buf());
                 self.selected = Some(notebook.to_path_buf());
                 self.say(crate::i18n::format_message_id("ui.opened_path_it_has_no_pages_yet", &[("path", &self.shown(notebook))]));
@@ -3626,7 +3651,8 @@ impl NoteCraftApp {
         }
         ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
-        Self::remember_edit(ed);
+        // A step of its own even when only a justification moved, between two lines alike.
+        Self::remember_layout(ed);
         self.save_block_marks((cols, justified));
     }
 
@@ -3675,20 +3701,13 @@ impl NoteCraftApp {
     /// Ctrl+T: the New section dialog, for the section group or notebook the open section is in
     /// (issue #558). Cancelled, it leaves the page as it was.
     fn new_section_here(&mut self) {
-        let tree = self.session.tree();
-        let here = self.editor.as_ref().map(|e| e.dir.clone()).or_else(|| self.selected.clone());
-        let place = here.as_ref().and_then(|h| {
-            let section = if self.kind_in_tree(h) == Some(NodeKind::Section) { Some(h.clone()) } else { section_in_tree(tree, h) };
-            match section {
-                Some(section) => section.parent().map(Path::to_path_buf),
-                None => tree.iter().find(|n| h.starts_with(&n.path)).map(|n| n.path.clone()),
-            }
-        });
-        let Some(parent) = place.or_else(|| tree.first().map(|n| n.path.clone())) else {
+        // The same place the "+ New section" button adds to: the notebook or section group
+        // chosen, or the one around the chosen section or page, so an empty section group
+        // that is selected takes the new section too.
+        let Some((parent, parent_kind)) = self.new_section_parent() else {
             self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None, first: true });
             return;
         };
-        let parent_kind = self.kind_in_tree(&parent).unwrap_or(NodeKind::Notebook);
         self.dialog = Some(Dialog::Add { parent, parent_kind, title: String::new(), kind: NodeKind::Section, format: None });
     }
 
@@ -4604,7 +4623,9 @@ impl NoteCraftApp {
                     self.session.refresh();
                 }
             }
-            Act::Place(path, drop) => self.place_dropped(&path, &drop),
+            Act::Place(path, drop) => {
+                self.place_dropped(&path, &drop);
+            }
             Act::HoldPage(path, cut) => {
                 let title = self.title_in_tree(&path).unwrap_or_default();
                 self.held_page = Some((path, cut));
@@ -4709,12 +4730,12 @@ impl NoteCraftApp {
 
     /// Puts a row dragged in the navigation pane where it was let go: above or below another row,
     /// among the rows beside it, or into one. The window stays on the page it was on, wherever
-    /// that page went.
-    fn place_dropped(&mut self, path: &Path, drop: &crate::navdrag::Drop) {
+    /// that page went. True when the row was put there.
+    fn place_dropped(&mut self, path: &Path, drop: &crate::navdrag::Drop) -> bool {
         use crate::navdrag::Drop;
         self.save_now();
         if self.is_dirty() {
-            return;
+            return false;
         }
         let kind = notecraft_store::tree::read_node(path).map(|n| n.kind);
         let target = crate::navdrag::target(drop).to_path_buf();
@@ -4747,7 +4768,7 @@ impl NoteCraftApp {
         }
         let pairs: Vec<(&str, &str)> = p.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let editor_path = self.editor.as_ref().map(|editor| editor.dir.clone());
-        let Some(Output::Path(new_path)) = self.run("node.place", &params(&pairs)) else { return };
+        let Some(Output::Path(new_path)) = self.run("node.place", &params(&pairs)) else { return false };
         self.session.refresh();
         if matches!(drop, Drop::Into(_)) {
             self.open.insert(to);
@@ -4763,6 +4784,7 @@ impl NoteCraftApp {
             }
         }
         self.say(crate::tl_id!("ui.moved"));
+        true
     }
 
     /// Pastes the page a row's Cut or Copy holds (issue #532): just after the page `target`, or
@@ -4787,7 +4809,11 @@ impl NoteCraftApp {
             return;
         }
         if cut {
-            self.place_dropped(&source, &drop);
+            // A failed move leaves the page where it was, still held, with the move's own
+            // message saying why.
+            if !self.place_dropped(&source, &drop) {
+                return;
+            }
             if notecraft_store::tree::page_file(&source).is_none() {
                 self.held_page = None;
             }
@@ -4795,10 +4821,12 @@ impl NoteCraftApp {
             let to = if into_section { target.to_path_buf() } else { target.parent().map(Path::to_path_buf).unwrap_or_default() };
             let Some(Output::Path(copy)) = self.run("node.copy", &params(&[("path", &path_str(&source)), ("to", &path_str(&to))])) else { return };
             self.session.refresh();
-            if !into_section {
-                self.place_dropped(&copy, &drop);
-            }
             self.open.insert(to);
+            if !into_section && !self.place_dropped(&copy, &drop) {
+                // The copy is made, last in the section, but could not go after the page.
+                self.complain(crate::tl_id!("ui.the_copy_is_last_in_the_section"));
+                return;
+            }
         }
         self.say(crate::tl_id!("ui.pasted"));
     }
@@ -6931,11 +6959,35 @@ impl NoteCraftApp {
         };
         let text = text.replace("\r\n", "\n").replace('\r', "\n");
         let Some(ed) = self.editor.as_mut() else { return };
+        Self::remember_step(ed);
+        // Words selected across blocks are replaced, as typing over them would.
+        if let Some(open) = ed.across.filter(|a| !a.inside_one_block()) {
+            let (block, at) = pageedit::delete_span(&mut ed.blocks, open);
+            let text = ed.blocks.get(block).map(pageedit::caret_text).unwrap_or_default();
+            ed.caret = Some(pageedit::Caret { block, text, focus: true, selection: (at, at), place: Some(at), cell: None, span: None, inline: None });
+        }
+        ed.across = None;
         Self::place_caret_for_format(ed);
-        let Some(caret) = ed.caret.clone() else { return };
-        // A table's cell or a block of code takes the text as it is, in its own box.
-        let words = caret.cell.is_none()
-            && matches!(
+        let mut marks = (false, false);
+        // A page with nothing to write in yet gets a line to paste into.
+        if ed.caret.is_none() {
+            ed.blocks.push(notecraft_formats::Block::Paragraph(Vec::new(), Vec::new()));
+            let block = ed.blocks.len() - 1;
+            marks = ed.blocks_inserted(block, 1);
+            ed.caret = Some(pageedit::Caret {
+                block,
+                text: String::new(),
+                focus: true,
+                selection: (0, 0),
+                place: Some(0),
+                cell: None,
+                span: None,
+                inline: None,
+            });
+        }
+        let Some(mut caret) = ed.caret.take() else { return };
+        let words = caret.cell.is_some()
+            || matches!(
                 ed.blocks.get(caret.block),
                 Some(
                     notecraft_formats::Block::Paragraph(..)
@@ -6944,56 +6996,32 @@ impl NoteCraftApp {
                         | notecraft_formats::Block::Item { .. }
                 )
             );
-        let lines: Vec<&str> = text.split('\n').collect();
-        if !words || lines.len() < 2 {
-            let one = if words || caret.cell.is_some() { text.replace('\n', " ") } else { text.clone() };
-            self.insert_in_page(&one);
-            if let Some(ed) = self.editor.as_mut() {
-                Self::remember_edit(ed);
+        if !words {
+            // A block of code takes the text as it is, line breaks and all.
+            let (new_text, at) = pageedit::insert_at_caret(&caret.text, caret.selection, &text);
+            caret.text = new_text;
+            caret.selection = (at, at);
+            caret.place = Some(at);
+            caret.focus = true;
+            if let Some(b) = ed.blocks.get_mut(caret.block) {
+                caret.write(b);
             }
+            ed.caret = Some(caret);
+            ed.rebuild_body();
+            Self::mark_dirty_from_blocks(ed);
+            Self::remember_edit(ed);
+            self.save_block_marks(marks);
             self.say(crate::tl_id!("ui.pasted_as_text"));
             return;
         }
-        Self::remember_step(ed);
-        let chars: Vec<char> = caret.text.chars().collect();
-        let (lo, hi) = (caret.selection.0.min(caret.selection.1).min(chars.len()), caret.selection.0.max(caret.selection.1).min(chars.len()));
-        let before: String = chars[..lo].iter().collect();
-        let after: String = chars[hi..].iter().collect();
-        // The caret's line ends with the first line; the last line takes what came after the caret.
-        let first = format!("{before}{}", lines[0]);
-        let last_line = lines[lines.len() - 1];
-        let mut new: Vec<notecraft_formats::Block> = lines[1..lines.len() - 1]
-            .iter()
-            .map(|l| notecraft_formats::Block::Paragraph(notecraft_formats::markdown::parse_inline(l), Vec::new()))
-            .collect();
-        new.push(notecraft_formats::Block::Paragraph(notecraft_formats::markdown::parse_inline(&format!("{last_line}{after}")), Vec::new()));
+        let lines: Vec<&str> = text.split('\n').collect();
         let at = caret.block;
-        if let Some(c) = ed.caret.as_mut() {
-            c.text = first;
-            c.selection = (0, 0);
-            if let Some(b) = ed.blocks.get_mut(at) {
-                c.write(b);
-            }
+        let count = pageedit::insert_plain_lines(&mut ed.blocks, &mut caret, &lines);
+        ed.caret = Some(caret);
+        if count > 0 {
+            let more = ed.blocks_inserted(at + 1, count);
+            marks = (marks.0 || more.0, marks.1 || more.1);
         }
-        let count = new.len();
-        for (offset, block) in new.into_iter().enumerate() {
-            ed.blocks.insert(at + 1 + offset, block);
-        }
-        let marks = ed.blocks_inserted(at + 1, count);
-        // The caret goes after the last line pasted, before what followed it.
-        let end = at + count;
-        let end_text = ed.blocks.get(end).map(pageedit::caret_text).unwrap_or_default();
-        let place = end_text.chars().count().saturating_sub(after.chars().count());
-        ed.caret = Some(pageedit::Caret {
-            block: end,
-            text: end_text,
-            focus: true,
-            selection: (place, place),
-            place: Some(place),
-            cell: None,
-            span: None,
-            inline: None,
-        });
         ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
         Self::remember_edit(ed);
@@ -7715,7 +7743,9 @@ impl NoteCraftApp {
     /// such as cells merged or split (issue #298), as a step of its own, so Undo takes back
     /// that change alone. `remember_step` must have noted the layout from before.
     fn remember_layout(ed: &mut Editor) {
-        if ed.history.here().is_some_and(|s| s.columns.as_ref() == Some(&ed.columns) && s.body == ed.body && s.blocks == ed.blocks) {
+        if ed.history.here().is_some_and(|s| {
+            s.columns.as_ref() == Some(&ed.columns) && s.justified.as_ref() == Some(&ed.justified) && s.body == ed.body && s.blocks == ed.blocks
+        }) {
             return;
         }
         let mut step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), crate::history::Kind::Edit);
@@ -14510,6 +14540,7 @@ impl NoteCraftApp {
             }
         }
         let queued_paste = std::mem::take(&mut self.keyboard_paste_requested);
+        let queued_plain = std::mem::take(&mut self.keyboard_paste_plain);
         // A dialog of the window's own (Copy Text from Picture) owns the keyboard: a paste goes into
         // its text box, never into the page behind it.
         let modal = self.own_modal_open();
@@ -14522,6 +14553,9 @@ impl NoteCraftApp {
             self.paste_into_modal(ctx, queued_paste);
         } else if search_focused {
             self.paste_text_into_focus(ctx, queued_paste);
+        } else if queued_paste && queued_plain {
+            log::debug!("queued keyboard paste dispatched to paste_plain");
+            self.paste_plain();
         } else if queued_paste {
             log::debug!("queued keyboard paste dispatched to paste_here");
             self.paste_here();

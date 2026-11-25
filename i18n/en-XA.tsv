@@ -1620,3 +1620,4 @@
 @id	ui.the_page_held_is_no_longer_there	$$$The page that was cut or copied is no longer there.@@@
 @id	ui.a_page_cannot_go_inside_itself	$$$A page cannot be pasted inside itself.@@@
 @id	ui.paste_page	$$$Paste page@@@
+@id	ui.the_copy_is_last_in_the_section	$$$The copy was made, last in the section: it could not go after that page.@@@
