@@ -852,6 +852,25 @@ impl Editor {
         }
     }
 
+    /// The blocks `range` were just taken out of the page: their boxes count them no more, and
+    /// the widths and justification kept against blocks after them move up with them. Returns,
+    /// as [`Self::blocks_inserted`] does, whether those two changed and need saving.
+    fn blocks_removed(&mut self, range: std::ops::Range<usize>) -> (bool, bool) {
+        if range.is_empty() {
+            return (false, false);
+        }
+        let counted: usize = self.boxes.iter().map(|c| c.blocks).sum();
+        if !self.boxes.is_empty() && counted == self.blocks.len() + range.len() {
+            // From the last back, so each block is still found in the box it was in.
+            for at in range.clone().rev() {
+                if let Some((i, _)) = notecraft_model::container::place(&self.boxes, at) {
+                    self.boxes[i].blocks -= 1;
+                }
+            }
+        }
+        (self.columns.remove_blocks(range.clone()), self.justified.remove_blocks(range))
+    }
+
     /// The block at `at` was just taken out of the page: its box counts one fewer.
     fn count_removed_from_boxes(&mut self, at: usize) {
         let counted: usize = self.boxes.iter().map(|c| c.blocks).sum();
@@ -6961,19 +6980,22 @@ impl NoteCraftApp {
         let Some(ed) = self.editor.as_mut() else { return };
         Self::remember_step(ed);
         // Words selected across blocks are replaced, as typing over them would.
+        let mut marks = (false, false);
         if let Some(open) = ed.across.filter(|a| !a.inside_one_block()) {
+            let before = ed.blocks.len();
             let (block, at) = pageedit::delete_span(&mut ed.blocks, open);
+            marks = ed.blocks_removed(block + 1..block + 1 + before.saturating_sub(ed.blocks.len()));
             let text = ed.blocks.get(block).map(pageedit::caret_text).unwrap_or_default();
             ed.caret = Some(pageedit::Caret { block, text, focus: true, selection: (at, at), place: Some(at), cell: None, span: None, inline: None });
         }
         ed.across = None;
         Self::place_caret_for_format(ed);
-        let mut marks = (false, false);
         // A page with nothing to write in yet gets a line to paste into.
         if ed.caret.is_none() {
             ed.blocks.push(notecraft_formats::Block::Paragraph(Vec::new(), Vec::new()));
             let block = ed.blocks.len() - 1;
-            marks = ed.blocks_inserted(block, 1);
+            let more = ed.blocks_inserted(block, 1);
+            marks = (marks.0 || more.0, marks.1 || more.1);
             ed.caret = Some(pageedit::Caret {
                 block,
                 text: String::new(),
@@ -9615,13 +9637,16 @@ impl NoteCraftApp {
             self.pending_copy = Some(notecraft_formats::render::blocks_to_text(&copied));
             self.pending_copy_html = Some(notecraft_formats::render::blocks_to_html(&copied));
             if which == "cut" {
+                let before = ed.blocks.len();
                 let (block, at) = pageedit::delete_span(&mut ed.blocks, open);
+                let marks = ed.blocks_removed(block + 1..block + 1 + before.saturating_sub(ed.blocks.len()));
                 let text = ed.blocks.get(block).map(pageedit::caret_text).unwrap_or_default();
                 ed.caret =
                     Some(pageedit::Caret { block, text, focus: true, selection: (at, at), place: Some(at), cell: None, span: None, inline: None });
                 ed.across = None;
                 ed.rebuild_body();
                 Self::mark_dirty_from_blocks(ed);
+                self.save_block_marks(marks);
             }
             self.say(if which == crate::tl_id!("ui.cut_2") { crate::tl_id!("ui.cut") } else { crate::tl_id!("ui.copied") });
             return;

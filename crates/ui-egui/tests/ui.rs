@@ -18201,6 +18201,58 @@ fn the_text_only_paste_keeps_markup_as_words() {
     assert!(words(&body).iter().any(|l| l == "**fresh**"), "the native Ctrl+Shift+V pasted the text only on the empty page:\n{body}");
 }
 
+/// From review of #584: words picked across paragraphs and replaced by a text-only paste, or cut,
+/// take their paragraphs out of the page, and a table after them keeps its column widths.
+#[test]
+fn a_selection_across_paragraphs_replaced_or_cut_keeps_the_table_widths() {
+    use notecraft_ui_egui::clipboard::Board as _;
+    let board = MemoryBoard::new();
+    let (_t, app, s) = sample_app("ui-paste-across-widths");
+    let app = app.with_clipboard(Box::new(board.clone()));
+    let mut h = harness(app, LIGHT);
+    let body = "First line\n\nSecond line\n\nThird line\n\n| a | b |\n|---|---|\n| 1 | 2 |";
+    let page = page_of(&mut h, &s, "Widths", body);
+    let page_dir = PathBuf::from(&page);
+    notecraft_store::page::set_table_columns(&page_dir, &notecraft_model::tablecols::parse("3:110,130")).expect("widths");
+    let reopen = |h: &mut Harness<'_, NoteCraftApp>| {
+        h.state_mut().open_path(&s.md_page.to_string_lossy());
+        settle(h);
+        h.state_mut().open_path(&page);
+        settle(h);
+    };
+    let pick = |h: &mut Harness<'_, NoteCraftApp>, from: &str, to: &str| {
+        let (a, b) = (h.get_by_label(from).rect(), h.get_by_label(to).rect());
+        ask(h, "ui.press", json!({"x": a.center().x, "y": a.center().y})).expect("press");
+        settle(h);
+        ask(h, "ui.move", json!({"x": b.center().x, "y": b.center().y})).expect("drag");
+        settle(h);
+        ask(h, "ui.release", json!({"x": b.center().x, "y": b.center().y})).expect("release");
+        settle(h);
+    };
+    reopen(&mut h);
+    board.clone().set_text("Pasted").expect("clipboard");
+    pick(&mut h, "First line", "Second line");
+    h.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::V);
+    settle(&mut h);
+    let kept = notecraft_store::page::table_columns(&page_dir).expect("widths");
+    assert_eq!(kept.of(2), Some([110.0, 130.0].as_slice()), "the widths moved up with the table: {kept:?}");
+    assert_eq!(kept.of(3), None, "and nothing is kept where the table was: {kept:?}");
+
+    // Cut does the same.
+    reopen(&mut h);
+    let (a, b) = (h.get_by_label_contains("Pasted").rect(), h.get_by_label("Third line").rect());
+    ask(&mut h, "ui.press", json!({"x": a.center().x, "y": a.center().y})).expect("press");
+    settle(&mut h);
+    ask(&mut h, "ui.move", json!({"x": b.center().x, "y": b.center().y})).expect("drag");
+    settle(&mut h);
+    ask(&mut h, "ui.release", json!({"x": b.center().x, "y": b.center().y})).expect("release");
+    settle(&mut h);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::X);
+    settle(&mut h);
+    let kept = notecraft_store::page::table_columns(&page_dir).expect("widths");
+    assert_eq!(kept.of(1), Some([110.0, 130.0].as_slice()), "the widths moved up with the table after a cut: {kept:?}");
+}
+
 /// Issue #563: Alt+Shift+Up and Down move the paragraph with the caret one place within its box:
 /// a list item stays an item, a table's kept layout goes with the table, one Undo puts it back,
 /// and nothing moves past the top of the box.
