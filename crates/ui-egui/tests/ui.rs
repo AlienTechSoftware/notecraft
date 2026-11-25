@@ -3688,6 +3688,40 @@ fn recent_edits_tell_two_pages_of_one_name_apart() {
     assert_eq!(h.state().current_page(), Some(made[1].as_path()), "the page in {} is the one opened", places[1]);
 }
 
+/// Issue #382: a version picked with the keys far down a long list is scrolled into sight.
+#[test]
+fn page_versions_scrolls_a_version_picked_with_the_keys_into_sight() {
+    let (_t, app, s) = sample_app("ui-versions-scroll");
+    let page = s.md_page.clone();
+    for n in 0..24u32 {
+        let id = format!("{:016x}{:04x}", 0x2000 + n, n);
+        let entry = page.join(".notecraft").join("versions").join(&id);
+        std::fs::create_dir_all(&entry).expect("version folder");
+        std::fs::write(entry.join("index.md"), format!("---\ntitle: Version\n---\n\nDraft {n}\n")).expect("version body");
+        std::fs::write(entry.join("version.toml"), format!("id = \"{id}\"\ncreated = \"2026-10-{:02}T09:00:00Z\"\n", n + 1)).expect("version info");
+    }
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1200.0, 640.0));
+    h.state_mut().open_path(&page.to_string_lossy());
+    settle(&mut h);
+    h.state_mut().open_page_versions();
+    settle(&mut h);
+    let restore = h.get_by_label("Restore this version").rect();
+    for _ in 0..20 {
+        h.key_press(egui::Key::ArrowDown);
+        h.step();
+    }
+    settle(&mut h);
+    let selected = h
+        .query_all_by_label_contains("Saved version, ")
+        .find(|n| {
+            use egui_kittest::kittest::NodeT as _;
+            n.accesskit_node().toggled() == Some(egui::accesskit::Toggled::True)
+        })
+        .expect("the selected row")
+        .rect();
+    assert!(selected.max.y <= restore.min.y, "the 20th version's row is in sight above the buttons: {selected:?} / {restore:?}");
+}
+
 /// Issue #382: a page with no saved versions says so, and offers only its current page.
 #[test]
 fn page_versions_with_no_saved_versions_says_so() {
@@ -15302,6 +15336,32 @@ fn view_paper_and_zoom_are_reachable_by_keyboard_when_narrow_and_long() {
     }
 }
 
+/// Issue #376: Page Setup shows the paper the page is drawn on, its own when it has one; and the
+/// page's zoom keys leave the page alone while Customize Tags is open over it.
+#[test]
+fn view_shows_a_page_s_own_paper_and_its_keys_wait_for_customize_tags() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-view-own-paper");
+    notecraft_store::page::set_appearance(&s.md_page, Some("college"), None).expect("the page's own paper");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 800.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    assert_eq!(h.get_by_label("Rule lines").accesskit_node().value().as_deref(), Some("College ruled"), "the page's own paper is the one named");
+    h.get_by_label("Home").click();
+    settle(&mut h);
+    h.get_by_label("More tags").click();
+    h.run_steps(2);
+    h.get_by_label("Customize Tags...").click();
+    h.run_steps(2);
+    h.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::ALT, egui::Key::Equals);
+    h.key_press(egui::Key::F11);
+    settle(&mut h);
+    assert_eq!(h.state().zoom_percent(), 100, "no zoom behind the dialog");
+    assert!(!h.state().is_full_page(), "and no Full Page View");
+}
+
 /// Issues #372 and #376: on every tab, at a laptop width and a wide one, no control runs into the
 /// name of its group under it (View's Paper size used to sit on "Page Setup").
 #[test]
@@ -15502,6 +15562,7 @@ fn insert_table_grid_answers_the_keyboard_and_keeps_its_readout() {
     h.step();
     h.step();
     assert!(h.query_all_by_label("2 x 2 Table").count() >= 2, "the readout keeps 2 x 2, as well as the square of that name");
+    assert_eq!(focused(&h).as_deref(), Some("2 x 2 Table"), "the keyboard went with the pointer, so Enter takes what the readout says");
     h.get_by_label("3 x 4 Table").focus();
     h.step();
     h.key_press(egui::Key::Enter);

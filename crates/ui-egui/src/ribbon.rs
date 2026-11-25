@@ -2677,6 +2677,9 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 let mut over = None;
                 let mut focused_now = None;
                 let mut chose = None;
+                // While a square has the keyboard, pointing at another moves the keyboard to it, so
+                // Enter takes the size the readout shows.
+                let grid_has_keys = ui.memory(|m| m.focused()).is_some_and(|f| (0..MOST).any(|r| (0..MOST).any(|c| f == open_id.with((r, c)))));
                 let mut cells = Vec::with_capacity(MOST * MOST);
                 for r in 0..MOST {
                     for c in 0..MOST {
@@ -2691,6 +2694,9 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &name));
                         if resp.hovered() {
                             over = Some((r, c));
+                            if grid_has_keys && !resp.has_focus() && cursor != Some((r, c)) {
+                                resp.request_focus();
+                            }
                         }
                         // A square reached with Tab is the size in hand, as one stepped to is.
                         if resp.gained_focus() && !opening && !stepped {

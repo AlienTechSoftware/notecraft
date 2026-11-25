@@ -222,11 +222,10 @@ fn result_row(ui: &mut Ui, t: &Tokens, title: &str, notebook: &str, section: &[S
     clicked
 }
 
-/// When the page's own file was last written, as an ISO time, for Page Versions' "Current page".
+/// When the page was last saved, as an ISO time, for Page Versions' "Current page": the stamp the
+/// page keeps in its own file, which the web build's files can give as well as a desktop's.
 fn page_saved_at(page: &Path) -> Option<String> {
-    let modified = ["index.html", "index.md"].iter().find_map(|name| std::fs::metadata(page.join(name)).ok()?.modified().ok())?;
-    let secs = modified.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
-    Some(notecraft_model::time::iso_from_secs(i64::try_from(secs).ok()?))
+    notecraft_store::recent::stamp(page).map(notecraft_model::time::iso_from_secs)
 }
 
 /// One row of Page Versions' list (issue #382): what it is ("Current page", "Saved version") over
@@ -5586,7 +5585,8 @@ impl NoteCraftApp {
             always_on_top: self.always_on_top,
             docked: self.docked.is_some(),
             full_page: self.full_page,
-            rules: self.rules,
+            // The paper the page is drawn on: its own, or the window's (what Rule lines shows).
+            rules: self.paper_now(),
             hide_title: self.hide_title,
             snap: self.snap_to_grid,
             zoom_percent: self.zoom_percent,
@@ -12581,6 +12581,13 @@ impl NoteCraftApp {
                         select = Some(selected.and_then(|n| n.checked_sub(1)));
                     }
                 }
+                // A row picked with the keys is scrolled into sight on the next frame, when it is drawn
+                // as the selected one.
+                let reveal_id = egui::Id::new("page-versions-reveal");
+                let reveal = ctx.data_mut(|d| d.remove_temp::<bool>(reveal_id)).unwrap_or(false);
+                if select.is_some() {
+                    ctx.data_mut(|d| d.insert_temp(reveal_id, true));
+                }
                 let screen = ctx.viewport_rect();
                 let width = (screen.width() - 48.0).clamp(320.0, 980.0);
                 let side_by_side = width >= 720.0;
@@ -12623,14 +12630,22 @@ impl NoteCraftApp {
                                         || crate::tl_id!("ui.the_page_as_it_is_now").to_string(),
                                         |when| crate::i18n::format_message_id("ui.saved_when", &[("when", when)]),
                                     );
-                                    if version_row(ui, &t, crate::tl_id!("ui.current_page"), &current_sub, selected.is_none()).clicked() {
+                                    let current = version_row(ui, &t, crate::tl_id!("ui.current_page"), &current_sub, selected.is_none());
+                                    if reveal && selected.is_none() {
+                                        current.scroll_to_me(None);
+                                    }
+                                    if current.clicked() {
                                         *select = Some(None);
                                     }
                                     for (n, version) in versions.iter().enumerate() {
                                         let size =
                                             crate::i18n::format_message_id("ui.size_kb", &[("size", &version.bytes.div_ceil(1024).to_string())]);
                                         let sub = format!("{} \u{b7} {size}", crate::versions::when(&version.created));
-                                        if version_row(ui, &t, crate::tl_id!("ui.saved_version"), &sub, selected == Some(n)).clicked() {
+                                        let row = version_row(ui, &t, crate::tl_id!("ui.saved_version"), &sub, selected == Some(n));
+                                        if reveal && selected == Some(n) {
+                                            row.scroll_to_me(None);
+                                        }
+                                        if row.clicked() {
                                             *select = Some(Some(n));
                                         }
                                     }
@@ -13733,7 +13748,8 @@ impl NoteCraftApp {
         // The page's own zoom from the keyboard, as OneNote has it: Ctrl+Alt with plus, minus or 0
         // (issue #376). Ctrl alone with them stays egui's size for the whole window (issue #377
         // keeps the two apart).
-        if self.dialog.is_none() && !self.own_modal_open() {
+        let page_keys_free = self.dialog.is_none() && !self.own_modal_open() && self.custom_tags.is_none();
+        if page_keys_free {
             let keys = Modifiers::COMMAND | Modifiers::ALT;
             let step = ctx.input_mut(|i| {
                 if i.consume_key(keys, Key::Equals) || i.consume_key(keys, Key::Plus) {
@@ -13752,7 +13768,7 @@ impl NoteCraftApp {
         }
         // F11 gives the page the whole window and brings the notebooks back, as in OneNote, so Full
         // Page View can be left from the keyboard as well as from its button (issue #376).
-        if self.dialog.is_none() && !self.own_modal_open() && self.editor.is_some() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F11)) {
+        if page_keys_free && self.editor.is_some() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F11)) {
             self.full_page = !self.full_page;
             self.compact_full_page = false;
         }

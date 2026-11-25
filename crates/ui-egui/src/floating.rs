@@ -76,8 +76,13 @@ pub fn menu_row(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Tokens) -> R
     let width = ui.available_width().min(MENU_W);
     let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
+    if resp.hovered() || resp.has_focus() {
         painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    // The row the keyboard is on is ringed as well as lit (issue #380), so a menu opened from
+    // the keyboard shows where Enter will go.
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     if let Some(glyph) = glyph {
         glyph.paint(&painter, Rect::from_center_size(egui::pos2(rect.min.x + ICON_COL / 2.0, rect.center().y), vec2(GLYPH, GLYPH)), t);
@@ -122,8 +127,13 @@ pub fn menu_row_danger(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Token
     let width = ui.available_width().min(MENU_W);
     let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
+    if resp.hovered() || resp.has_focus() {
         painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    // The row the keyboard is on is ringed as well as lit (issue #380), so a menu opened from
+    // the keyboard shows where Enter will go.
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     let icon = Rect::from_center_size(egui::pos2(rect.min.x + ICON_COL / 2.0, rect.center().y), vec2(GLYPH, GLYPH));
     match glyph {
@@ -146,8 +156,13 @@ pub fn menu_check_row(ui: &mut Ui, checked: bool, label: &str, t: &Tokens) -> Re
     let width = ui.available_width().min(MENU_W);
     let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
+    if resp.hovered() || resp.has_focus() {
         painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    // The row the keyboard is on is ringed as well as lit (issue #380), so a menu opened from
+    // the keyboard shows where Enter will go.
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     if checked {
         let c = egui::pos2(rect.min.x + ICON_COL / 2.0, rect.center().y);
@@ -356,8 +371,13 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
 fn bar_button(ui: &mut Ui, b: &BarButton, t: &Tokens) -> Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(BTN, BTN), Sense::click());
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
+    if resp.hovered() || resp.has_focus() {
         painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    // The row the keyboard is on is ringed as well as lit (issue #380), so a menu opened from
+    // the keyboard shows where Enter will go.
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     b.glyph.paint(&painter, Rect::from_center_size(rect.center(), vec2(GLYPH, GLYPH)), t);
     let enabled = ui.is_enabled();
