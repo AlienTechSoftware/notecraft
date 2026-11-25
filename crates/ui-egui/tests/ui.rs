@@ -3685,7 +3685,12 @@ fn recent_edits_tell_two_pages_of_one_name_apart() {
     let link = links.iter().copied().find(|r| detail_under(&h, *r).contains(&places[1])).expect("the link with the second place under it");
     h.query_all_by_role_and_label(egui::accesskit::Role::Link, "Weekly plan").find(|n| n.rect() == link).expect("link").click();
     settle(&mut h);
-    assert_eq!(h.state().current_page(), Some(made[1].as_path()), "the page in {} is the one opened", places[1]);
+    // Compared as the folders they name: on Windows the engine's path and the tree's can be spelt
+    // differently for the same folder.
+    let same = |a: &std::path::Path, b: &std::path::Path| std::fs::canonicalize(a).ok() == std::fs::canonicalize(b).ok();
+    let open = h.state().current_page().map(std::path::Path::to_path_buf).expect("a page is open");
+    assert!(same(&open, &made[1]), "the page in {} is the one opened: {open:?}, not {:?}", places[1], made[0]);
+    assert!(!same(&open, &made[0]));
 }
 
 /// Issue #382: a version picked with the keys far down a long list is scrolled into sight.
