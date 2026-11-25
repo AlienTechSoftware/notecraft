@@ -1500,6 +1500,9 @@
 @id	ui.picture_text_language	$$$Reads printed text in the Latin alphabet, such as English, French or Spanish. Your pictures stay as they are.@@@
 @id	ui.picture_text_copied	$$$The text is on the clipboard.@@@
 @id	ui.picture_text_models_folder_incomplete	$$$That folder does not hold text-detection.onnx and text-recognition.onnx.@@@
+@id	ui.image_text_detect	$$$Detect text@@@
+@id	ui.image_text_hide	$$$Hide detected text@@@
+@id	ui.image_text_none_yet	$$$No text has been read from this picture yet.@@@
 @id	ui.choose_the_ocr_models_folder	$$$Choose the folder with the text recognition models@@@
 @id	ui.picture_text_copy_failed	$$$The text could not be put on the clipboard: {error}@@@
 @id	ui.print	$$$Print@@@
