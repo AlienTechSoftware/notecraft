@@ -801,6 +801,8 @@
 @id	ui.check_for_updates_hint	NoteCraft शुरू होने पर और जब आप अपडेट जांचें दबाते हैं, GitHub पर नई रिलीज़ की जांच होती है। डाउनलोड और इंस्टॉल तभी होता है जब आप अपडेट करें और पुनः आरंभ करें दबाते हैं।
 @id	ui.update_check_off_at_start	शुरू होने पर अपडेट न जांचें
 @id	ui.update_check_not_saved	अपडेट सेटिंग सहेजी नहीं जा सकी: {error}
+@id	ui.welcome_notebook_update_prompt	ऐप अपग्रेड के बाद स्वागत नोटबुक को अपडेट करने के लिए पूछें
+@id	ui.welcome_notebook_update_prompt_not_saved	स्वागत नोटबुक अपडेट करने की प्राथमिकता सहेजी नहीं जा सकी: {error}
 @id	ui.update_prompt.newest_available	{app} {version} उपलब्ध सबसे नया संस्करण है।
 @id	ui.update_prompt.by_developer	{developer} द्वारा
 @id	ui.update_prompt.version_change	v{from} से {to}

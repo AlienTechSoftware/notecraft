@@ -801,6 +801,8 @@
 @id	ui.check_for_updates_hint	בודק ב-GitHub אם יש גרסה חדשה בכל הפעלה של NoteCraft, וכשלוחצים על בדיקת עדכונים. ההורדה וההתקנה מתבצעות רק אחרי לחיצה על עדכון והפעלה מחדש.
 @id	ui.update_check_off_at_start	לא לבדוק עדכונים בהפעלה
 @id	ui.update_check_not_saved	לא ניתן לשמור את הגדרת העדכונים: {error}
+@id	ui.welcome_notebook_update_prompt	לשאול אם לעדכן את מחברת הברוכים הבאים לאחר שדרוג היישום
+@id	ui.welcome_notebook_update_prompt_not_saved	לא ניתן לשמור את ההעדפה לעדכון מחברת הברוכים הבאים: {error}
 @id	ui.update_prompt.newest_available	{app} {version} היא הגרסה העדכנית ביותר הזמינה.
 @id	ui.update_prompt.by_developer	מאת {developer}
 @id	ui.update_prompt.version_change	מ-v{from} ל-{to}

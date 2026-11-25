@@ -963,6 +963,8 @@
 @id	ui.check_for_updates_hint	[[RLI]]$$$Checks GitHub for a newer release each time NoteCraft starts, and when you press Check for Updates. It downloads and installs only when you press Update and Restart.@@@[[PDI]]
 @id	ui.update_check_off_at_start	[[RLI]]$$$Don't check for updates at start up@@@[[PDI]]
 @id	ui.update_check_not_saved	[[RLI]]$$$The update setting could not be saved: {error}@@@[[PDI]]
+@id	ui.welcome_notebook_update_prompt	[[RLI]]$$$Ask to update the Welcome notebook after upgrades@@@[[PDI]]
+@id	ui.welcome_notebook_update_prompt_not_saved	[[RLI]]$$$The Welcome notebook update preference could not be saved: {error}@@@[[PDI]]
 @id	ui.open_the_releases_page	[[RLI]]$$$Open the releases page@@@[[PDI]]
 @id	ui.update_checking	[[RLI]]$$$Looking for a newer version…@@@[[PDI]]
 @id	ui.update_up_to_date	[[RLI]]$$$NoteCraft is up to date. The newest release is {version}.@@@[[PDI]]
