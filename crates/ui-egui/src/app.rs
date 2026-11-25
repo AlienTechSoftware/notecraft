@@ -7821,11 +7821,17 @@ impl NoteCraftApp {
             Self::mark_dirty_from_blocks(ed);
             return;
         }
-        let (text, _) = pageedit::wrap_selection(&caret.text, caret.selection, marks);
+        let (text, selection) = pageedit::wrap_selection(&caret.text, caret.selection, marks);
         caret.text = text;
+        // The caret goes where the wrapped words now are: between the marks for an empty
+        // selection, so the next words typed are inside them, not after the closing mark.
+        caret.selection = selection;
+        caret.place = Some(selection.1);
+        caret.focus = true;
         if let Some(b) = ed.blocks.get_mut(caret.block) {
             caret.write(b);
         }
+        ed.restore_format_selection = Some((caret.block, selection.0, selection.1));
         ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
     }

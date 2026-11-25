@@ -17563,3 +17563,19 @@ fn a_click_outside_the_keyboard_page_menu_keeps_the_keyboard_where_it_landed() {
         "the typing went to the search box the click landed on"
     );
 }
+
+/// Review of #510: Code with no caret wraps nothing at the end of the page's last words, and the
+/// caret goes between the marks, so the next words typed are code.
+#[test]
+fn code_with_no_caret_puts_the_next_words_typed_inside_its_marks() {
+    let (_t, app, s) = sample_app("ui-code-no-caret");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("Code").click();
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "codewords"})).expect("type");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("`codewords`"), "the words typed after Code are code:\n{body}");
+}
