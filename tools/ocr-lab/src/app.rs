@@ -86,7 +86,14 @@ pub fn rotate_hue(rgb: [u8; 3], degrees: f32) -> [u8; 3] {
 pub enum Mode {
     Select,
     Draw,
+    /// Pen on the open picture. The strokes change the picture, so save them to keep them.
+    Ink,
 }
+
+/// Width of the pen, in picture pixels.
+const INK_RADIUS: i32 = 2;
+/// Size of a new blank drawing, in picture pixels.
+const BLANK_SIZE: [u32; 2] = [1200, 800];
 
 /// A gesture in progress, in picture pixels.
 #[derive(Debug, Clone, Copy)]
@@ -108,11 +115,17 @@ struct Loaded {
     lines: Vec<Line>,
     timings: Vec<Timing>,
     score: Option<Score>,
+    /// True when the pen has changed the picture and it is not saved yet.
+    dirty: bool,
+    /// Where the pen was last, in picture pixels, so a stroke has no gaps.
+    last_ink: Option<[f32; 2]>,
 }
 
 pub struct Lab {
     folder: PathBuf,
     pictures: Vec<PathBuf>,
+    /// The tags of each picture, in the same order as `pictures`.
+    tags: Vec<case::Tags>,
     loaded: Option<Loaded>,
     reader: Option<OcrsReader>,
     reader_error: Option<String>,
@@ -137,10 +150,12 @@ pub struct Lab {
 impl Lab {
     pub fn new(folder: PathBuf, models: Option<PathBuf>, saved_theme: Option<String>, saved_follow: bool, mut log: Log) -> Lab {
         let pictures = case::discover(&folder);
+        let tags = pictures.iter().map(|p| case::load_tags(p)).collect();
         log.event(&format!("lab opened: {} pictures in {}", pictures.len(), folder_name(&folder)));
         let mut lab = Lab {
             folder,
             pictures,
+            tags,
             loaded: None,
             reader: None,
             reader_error: Some(
@@ -199,8 +214,8 @@ impl Lab {
 
     /// Points the lab at another test folder and forgets the picture that was open.
     pub fn set_folder(&mut self, folder: PathBuf) {
-        self.pictures = case::discover(&folder);
         self.folder = folder;
+        self.reload_pictures();
         self.loaded = None;
         self.selected = None;
         self.drag = None;
@@ -242,7 +257,19 @@ impl Lab {
             Ok(file) => {
                 self.log.event(&format!("opened {name} {}x{} with {} labels", size[0], size[1], file.labels.len()));
                 let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-                let mut loaded = Loaded { index, texture, original: rgba, size, bytes, file, lines: Vec::new(), timings: Vec::new(), score: None };
+                let mut loaded = Loaded {
+                    index,
+                    texture,
+                    original: rgba,
+                    size,
+                    bytes,
+                    file,
+                    lines: Vec::new(),
+                    timings: Vec::new(),
+                    score: None,
+                    dirty: false,
+                    last_ink: None,
+                };
                 if let Some((lines, timings)) = load_run(&path) {
                     loaded.score = Some(case::score(&loaded.file.labels, &lines));
                     loaded.lines = lines;
@@ -258,6 +285,170 @@ impl Lab {
                 self.status = e.clone();
                 self.log.event(&format!("labels did not load for {name}: {e}"));
             }
+        }
+    }
+
+    /// Rescans the test folder and loads each picture's tags, in the same order.
+    fn reload_pictures(&mut self) {
+        self.pictures = case::discover(&self.folder);
+        self.tags = self.pictures.iter().map(|p| case::load_tags(p)).collect();
+    }
+
+    /// Makes a new white drawing in `dir`, saves it as a PNG with `tags`, and opens it with the pen
+    /// ready. The file is named drawing-1.png, drawing-2.png, ... so an existing drawing is never
+    /// overwritten.
+    fn new_drawing(&mut self, ctx: &egui::Context, dir: &Path, tags: case::Tags) {
+        if self.loaded.as_ref().is_some_and(|l| l.dirty) {
+            self.status = "Save the drawing you are working on first.".to_string();
+            return;
+        }
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            self.status = format!("Could not create {}: {e}", dir.display());
+            return;
+        }
+        let path = (1..).map(|n| dir.join(format!("drawing-{n}.png"))).find(|p| !p.exists()).expect("an unused drawing name");
+        let blank = image::RgbaImage::from_pixel(BLANK_SIZE[0], BLANK_SIZE[1], image::Rgba([255, 255, 255, 255]));
+        if let Err(e) = blank.save(&path) {
+            self.status = format!("Could not create the drawing: {e}");
+            self.log.event(&format!("could not create a drawing: {e}"));
+            return;
+        }
+        if let Err(e) = case::save_tags(&path, &tags) {
+            self.status = e;
+        }
+        self.reload_pictures();
+        self.log.event(&format!("blank drawing created: {}", self.relative_name(&path)));
+        if let Some(index) = self.pictures.iter().position(|p| *p == path) {
+            self.select(ctx, index);
+            self.mode = Mode::Ink;
+            self.status = format!("{} is blank. Draw on it, then press Save drawing.", self.relative_name(&path));
+        }
+    }
+
+    /// Copies a picture the person picks into `dir` with `tags`, and opens it. A name already in use
+    /// gets a number, so nothing is overwritten.
+    fn import_picture(&mut self, ctx: &egui::Context, dir: &Path, tags: case::Tags) {
+        if self.loaded.as_ref().is_some_and(|l| l.dirty) {
+            self.status = "Save the drawing you are working on first.".to_string();
+            return;
+        }
+        let Some(source) = rfd::FileDialog::new().add_filter("Pictures", &["png", "jpg", "jpeg", "webp", "gif", "bmp"]).pick_file() else {
+            return;
+        };
+        let stem = source.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "picture".to_string());
+        let ext = source.extension().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "png".to_string());
+        let result = std::fs::create_dir_all(dir).and_then(|_| {
+            let target = (1..)
+                .map(|n| if n == 1 { dir.join(format!("{stem}.{ext}")) } else { dir.join(format!("{stem}-{n}.{ext}")) })
+                .find(|p| !p.exists())
+                .expect("an unused name");
+            std::fs::copy(&source, &target).map(|_| target)
+        });
+        match result {
+            Ok(target) => {
+                if let Err(e) = case::save_tags(&target, &tags) {
+                    self.status = e;
+                }
+                self.reload_pictures();
+                self.log.event(&format!("picture imported: {}", self.relative_name(&target)));
+                if let Some(index) = self.pictures.iter().position(|p| *p == target) {
+                    self.select(ctx, index);
+                }
+            }
+            Err(e) => {
+                self.status = format!("Could not import the picture: {e}");
+                self.log.event(&format!("could not import a picture: {e}"));
+            }
+        }
+    }
+
+    /// Paints one pen dab, or a line from the last dab, into the open picture. Only the picture on
+    /// screen and in memory changes until the drawing is saved.
+    fn paint_ink(&mut self, ctx: &egui::Context, p: [f32; 2]) {
+        let Some(loaded) = self.loaded.as_mut() else { return };
+        let from = loaded.last_ink.unwrap_or(p);
+        let steps = (p[0] - from[0]).abs().max((p[1] - from[1]).abs()).ceil().max(1.0) as i32;
+        let (w, h) = (loaded.size[0] as i32, loaded.size[1] as i32);
+        for s in 0..=steps {
+            let t = s as f32 / steps as f32;
+            let (x, y) = (from[0] + (p[0] - from[0]) * t, from[1] + (p[1] - from[1]) * t);
+            for dy in -INK_RADIUS..=INK_RADIUS {
+                for dx in -INK_RADIUS..=INK_RADIUS {
+                    if dx * dx + dy * dy > INK_RADIUS * INK_RADIUS {
+                        continue;
+                    }
+                    let (px, py) = (x as i32 + dx, y as i32 + dy);
+                    if px >= 0 && py >= 0 && px < w && py < h {
+                        loaded.original.put_pixel(px as u32, py as u32, image::Rgba([0, 0, 0, 255]));
+                    }
+                }
+            }
+        }
+        loaded.last_ink = Some(p);
+        loaded.dirty = true;
+        let shown = self.adjust.apply(&loaded.original);
+        loaded.texture.set(shown, egui::TextureOptions::LINEAR);
+        ctx.request_repaint();
+    }
+
+    /// Writes the drawing to its picture file. The old OCR run no longer matches the picture, so
+    /// it is removed and the next run reads the new drawing.
+    fn save_drawing(&mut self) {
+        let Some(loaded) = self.loaded.as_mut() else { return };
+        let path = self.pictures[loaded.index].clone();
+        if let Err(e) = loaded.original.save(&path) {
+            self.status = format!("Could not save the drawing: {e}");
+            self.log.event(&format!("could not save a drawing: {e}"));
+            return;
+        }
+        loaded.dirty = false;
+        loaded.bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        loaded.lines.clear();
+        loaded.timings.clear();
+        loaded.score = None;
+        let _ = remove_run_file(&path);
+        let name = self.relative_name(&path);
+        self.log.event(&format!("drawing saved: {name}"));
+        self.status = format!("Saved {name}. Run OCR to read it.");
+    }
+
+    /// The models section of the details pane: the engine and its sources, the licence, and each
+    /// model's size, role and capabilities. It shows what is expected even when no files are there.
+    fn models_info(&mut self, ui: &mut egui::Ui) {
+        use crate::models;
+        ui.label(format!("Engine: {}", models::ENGINE_NAME));
+        ui.label(format!("Model format: ONNX. Family: {}", models::MODEL_FAMILY));
+        ui.label(format!("Inference runtime: {}", models::INFERENCE_RUNTIME));
+        ui.label(format!("Versions: {}", models::ENGINE_VERSION));
+        ui.label("Runs on: CPU");
+        // Greyed out on purpose: the lab runs on the CPU only. The control is kept for a later GPU path.
+        let mut gpu = false;
+        ui.add_enabled(false, egui::Checkbox::new(&mut gpu, "Use GPU (not built)"))
+            .on_disabled_hover_text("GPU inference is not built. The lab and the app run on the CPU.");
+        ui.label(format!("Performance: {}", models::PERF_SUMMARY));
+        ui.horizontal_wrapped(|ui| {
+            ui.hyperlink_to("Runtime source", models::INFERENCE_SOURCE);
+            ui.hyperlink_to("Engine source", models::ENGINE_SOURCE);
+            ui.hyperlink_to("Model repository", models::MODEL_REPO);
+            ui.hyperlink_to("Model card", models::MODEL_CARD);
+        });
+        ui.small(format!("Licence: {}", models::LICENCE));
+        let state = if self.reader.is_some() {
+            "loaded"
+        } else if self.reader_error.is_some() {
+            "not loaded"
+        } else {
+            "not loaded yet"
+        };
+        ui.label(format!("State: {state}. Files: {}", self.health.describe()));
+        for model in &models::MODELS {
+            ui.add_space(4.0);
+            ui.strong(model.name);
+            ui.label(format!("Size: {:.1} MB (expected)", model.size as f64 / 1_000_000.0));
+            ui.label(format!("Role: {}", model.role));
+            ui.label(format!("Capabilities: {}", model.capabilities));
+            ui.label(format!("Version: {}", model.version));
+            ui.label(format!("Performance: {}", model.perf));
         }
     }
 
@@ -679,38 +870,88 @@ impl Lab {
         });
         ui.separator();
         let mut pick = None;
-        // Kind (handwriting, drawings, ...) first, then language, then the pictures.
-        let mut tree: std::collections::BTreeMap<String, std::collections::BTreeMap<String, Vec<usize>>> = std::collections::BTreeMap::new();
+        // Language, then how the sample was made, then what it contains. A sample with several content
+        // tags appears under each of them.
+        type Contents = std::collections::BTreeMap<String, Vec<usize>>;
+        type Sources = std::collections::BTreeMap<String, Contents>;
+        let mut tree: std::collections::BTreeMap<String, Sources> = std::collections::BTreeMap::new();
         for (i, path) in self.pictures.iter().enumerate() {
-            let (kind, language) = case::group_of(&self.folder, path);
-            tree.entry(kind).or_default().entry(language).or_default().push(i);
+            let language = case::language_of(&self.folder, path);
+            for (source, content) in self.tags[i].nodes() {
+                tree.entry(language.clone()).or_default().entry(source).or_default().entry(content).or_default().push(i);
+            }
         }
+        // Every language shows every source and every content node, so a new picture can go into an empty one.
+        for sources in tree.values_mut() {
+            for (source, _) in case::SOURCES {
+                let contents = sources.entry(source.to_string()).or_default();
+                for (content, _) in case::CONTENTS.iter().chain(std::iter::once(&case::UNTAGGED)) {
+                    contents.entry(content.to_string()).or_default();
+                }
+            }
+        }
+        let mut blank_in: Option<(PathBuf, case::Tags)> = None;
+        let mut import_in: Option<(PathBuf, case::Tags)> = None;
         egui::ScrollArea::vertical().show(ui, |ui| {
-            for (kind, languages) in &tree {
-                let count: usize = languages.values().map(Vec::len).sum();
-                egui::CollapsingHeader::new(format!("{kind} ({count})")).id_salt(kind).default_open(true).show(ui, |ui| {
-                    for (language, indexes) in languages {
-                        egui::CollapsingHeader::new(format!("{language} ({})", indexes.len())).id_salt((kind, language)).default_open(true).show(
-                            ui,
-                            |ui| {
-                                for &i in indexes {
-                                    let path = &self.pictures[i];
-                                    let current = self.loaded.as_ref().is_some_and(|l| l.index == i);
-                                    let labelled = case::label_path(path).is_file();
-                                    let mark = if labelled { "  ✎" } else { "" };
-                                    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                                    if ui.selectable_label(current, format!("{name}{mark}")).clicked() {
-                                        pick = Some(i);
-                                    }
-                                }
-                            },
-                        );
+            for (language, sources) in &tree {
+                let count = self.pictures.iter().filter(|p| case::language_of(&self.folder, p) == *language).count();
+                egui::CollapsingHeader::new(format!("{language} ({count})")).id_salt(language).default_open(true).show(ui, |ui| {
+                    for (source, contents) in sources {
+                        let source_label = case::label_for(&case::SOURCES, source).unwrap_or("Other");
+                        egui::CollapsingHeader::new(source_label).id_salt((language, source)).default_open(true).show(ui, |ui| {
+                            for (content, indexes) in contents {
+                                let content_label = if content == case::UNTAGGED.0 {
+                                    case::UNTAGGED.1
+                                } else {
+                                    case::label_for(&case::CONTENTS, content).unwrap_or("Other")
+                                };
+                                egui::CollapsingHeader::new(format!("{content_label} ({})", indexes.len()))
+                                    .id_salt((language, source, content))
+                                    .default_open(true)
+                                    .show(ui, |ui| {
+                                        // Insert, like the main app's "A page here": the new sample gets this node's tags.
+                                        let content_ids: Vec<&str> = if content == case::UNTAGGED.0 { Vec::new() } else { vec![content.as_str()] };
+                                        let tags = case::Tags::new(source, &content_ids);
+                                        let dir = case::language_folder(&self.folder, language);
+                                        ui.menu_button("+ A page here", |ui| {
+                                            if ui.button("New blank drawing").clicked() {
+                                                blank_in = Some((dir.clone(), tags.clone()));
+                                                ui.close();
+                                            }
+                                            if ui.button("Import picture…").clicked() {
+                                                import_in = Some((dir.clone(), tags.clone()));
+                                                ui.close();
+                                            }
+                                        });
+                                        for &i in indexes {
+                                            let path = &self.pictures[i];
+                                            let current = self.loaded.as_ref().is_some_and(|l| l.index == i);
+                                            let labelled = case::label_path(path).is_file();
+                                            let mark = if labelled { "  ✎" } else { "" };
+                                            let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                                            if ui.selectable_label(current, format!("{name}{mark}")).clicked() {
+                                                pick = Some(i);
+                                            }
+                                        }
+                                    });
+                            }
+                        });
                     }
                 });
             }
         });
+        if let Some((dir, tags)) = blank_in {
+            self.new_drawing(ctx, &dir, tags);
+        }
+        if let Some((dir, tags)) = import_in {
+            self.import_picture(ctx, &dir, tags);
+        }
         if let Some(i) = pick {
-            self.select(ctx, i);
+            if self.loaded.as_ref().is_some_and(|l| l.dirty) {
+                self.status = "Save the drawing you are working on first.".to_string();
+            } else {
+                self.select(ctx, i);
+            }
         }
     }
 
@@ -776,7 +1017,12 @@ impl Lab {
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.mode, Mode::Select, "Select / move / resize");
             ui.selectable_value(&mut self.mode, Mode::Draw, "Draw a label");
+            ui.selectable_value(&mut self.mode, Mode::Ink, "Pen on picture");
         });
+        let dirty = self.loaded.as_ref().is_some_and(|l| l.dirty);
+        if dirty && ui.button("Save drawing").clicked() {
+            self.save_drawing();
+        }
         ui.checkbox(&mut self.show_engine, "Show the engine's lines (orange)");
         egui::CollapsingHeader::new("Metrics").default_open(false).show(ui, |ui| self.metrics.show(ui));
         egui::CollapsingHeader::new("Picture").default_open(false).show(ui, |ui| {
@@ -788,6 +1034,7 @@ impl Lab {
             }
             ui.small("Only the picture on screen changes. OCR reads the file.");
         });
+        egui::CollapsingHeader::new("Models").default_open(false).show(ui, |ui| self.models_info(ui));
         ui.separator();
         let Some(loaded) = self.loaded.as_ref() else {
             ui.label("No picture open.");
@@ -902,11 +1149,26 @@ impl Lab {
             Some(l) => l.size,
             None => return,
         };
+        if self.mode == Mode::Ink {
+            if let Some(pos) = response.interact_pointer_pos().filter(|_| response.dragged() || response.drag_started()) {
+                let p = Self::clamp_point(Self::to_pixels(origin, scale, pos), size);
+                let ctx = response.ctx.clone();
+                self.paint_ink(&ctx, p);
+            }
+            if response.drag_stopped()
+                && let Some(loaded) = self.loaded.as_mut()
+            {
+                loaded.last_ink = None;
+            }
+            return;
+        }
         if response.drag_started() {
             let Some(pos) = response.interact_pointer_pos() else { return };
             let p = Self::clamp_point(Self::to_pixels(origin, scale, pos), size);
             match self.mode {
                 Mode::Draw => self.drag = Some(Drag::New { start: p, now: p }),
+                // The pen is handled at the top of this function.
+                Mode::Ink => {}
                 Mode::Select => {
                     let Some(loaded) = self.loaded.as_ref() else { return };
                     // A corner within reach resizes; inside a label moves it; anywhere else clears the selection.

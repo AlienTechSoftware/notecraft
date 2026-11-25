@@ -12,7 +12,33 @@ pub struct ModelFile {
     pub url: &'static str,
     pub size: u64,
     pub sha256: &'static str,
+    /// What the model does in the OCR pipeline.
+    pub role: &'static str,
+    /// What the model can and cannot read, as measured or documented.
+    pub capabilities: &'static str,
+    /// Where the file's version is recorded, and what the header says about how it was made.
+    pub version: &'static str,
+    /// Measured cost, from the bake-off (see the OCR skill's references).
+    pub perf: &'static str,
 }
+
+/// Versions of the code that runs the models, as pinned in Cargo.lock.
+pub const ENGINE_VERSION: &str = "ocrs 0.14.0, rten 0.28.0";
+/// Measured on the POC pictures, release build, one run each (bake-off 2026-11-22).
+pub const PERF_SUMMARY: &str = "Load of both models about 6 ms. One picture 109 to 154 ms, including decoding, on a Windows development machine";
+
+/// Where the models and the engine come from. Shown in the lab's details pane and opened by its links.
+pub const ENGINE_NAME: &str = "ocrs 0.14 (robertknight/ocrs)";
+pub const ENGINE_SOURCE: &str = "https://github.com/robertknight/ocrs";
+/// The neural-network runtime that runs the ONNX models. Pure Rust, from the same author as `ocrs`.
+pub const INFERENCE_RUNTIME: &str = "rten 0.28 (pure Rust), runs ONNX model files";
+/// The model family: the official ocrs detection and recognition models, both in ONNX format.
+pub const MODEL_FAMILY: &str = "ocrs official models (ONNX format): text detection and text recognition";
+pub const INFERENCE_SOURCE: &str = "https://crates.io/crates/rten";
+pub const MODEL_REPO: &str = "https://github.com/robertknight/ocrs-models";
+pub const MODEL_CARD: &str = "https://huggingface.co/robertknight/ocrs";
+/// The weights' licence, from the model card. Not shipped with the product until decided.
+pub const LICENCE: &str = "CC BY-SA 4.0 (weights); the ocrs crate is MIT or Apache-2.0";
 
 pub const MODELS: [ModelFile; 2] = [
     ModelFile {
@@ -20,12 +46,20 @@ pub const MODELS: [ModelFile; 2] = [
         url: "https://ocrs-models.s3-accelerate.amazonaws.com/text-detection.onnx",
         size: 2_499_479,
         sha256: "a917b23dbd9524b465df7e922641b3ff2981623df4ded5a0234004ef2fee7cfe",
+        role: "Finds text lines and their boxes in the picture",
+        capabilities: "Printed text lines; ocrs gives no per-line confidence score",
+        version: "No version field in the name; identified by size and SHA-256. Header says rten-convert",
+        perf: "Part of the 109 to 154 ms per picture above",
     },
     ModelFile {
         name: "text-recognition.onnx",
         url: "https://ocrs-models.s3-accelerate.amazonaws.com/text-recognition.onnx",
         size: 9_713_177,
         sha256: "86c145c2edb96c8caed5b1ebb8f44d706408922211451c309c625157dd6061c5",
+        role: "Reads the characters inside each text line",
+        capabilities: "English alphabet only; Arabic measured to fail (bake-off 2026-11-22)",
+        version: "No version field in the name; identified by size and SHA-256. Header says rten-convert",
+        perf: "Part of the 109 to 154 ms per picture above",
     },
 ];
 

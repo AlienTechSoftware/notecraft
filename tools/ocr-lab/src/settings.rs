@@ -21,7 +21,9 @@ fn file() -> PathBuf {
 
 /// The saved settings, or none when there is no file or it cannot be read.
 pub fn load() -> Settings {
-    std::fs::read_to_string(file()).ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default()
+    // Files written on Windows can start with a byte-order mark, which JSON does not allow. Reading
+    // one as empty would fall back to the defaults and overwrite the person's folder on the next save.
+    std::fs::read_to_string(file()).ok().and_then(|text| serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()).unwrap_or_default()
 }
 
 /// Saves the settings. A failure only means the next start asks again, so it is not reported.

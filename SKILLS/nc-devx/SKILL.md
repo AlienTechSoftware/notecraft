@@ -206,6 +206,10 @@ member, so a bare `cargo build` and the release do not build it. `cargo xtask` g
   the downloaded models. It is git-ignored.
 - **Checks:** `cargo test -p notecraft-ocr-lab` covers scoring, label files, the grouping rules,
   the model check and the saved-run round trip.
+- **Full guide:** `tools/ocr-lab/README.md` (window layout, labels, picture sliders, runs, where
+  files live, checks). The OCR design and engine facts are in the `nc-info-ocr` skill.
+- **Open feature requests (label `OCR`):** #489 insert and draw your own test pictures under each
+  group; #490 show loaded model name, size, capabilities and source in the details pane.
 
 ### Local diagnostics paths
 

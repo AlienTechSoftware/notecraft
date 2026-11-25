@@ -150,6 +150,14 @@ Shipping them needs an owner decision. Measuring them does not.
 - Licence first: record the weights licence from the model card before any model is used in a
   release.
 
+## OCR test and label lab
+
+`tools/ocr-lab` (`notecraft-ocr-lab`) is a developer tool that runs `notecraft-ocr` on a folder of
+test pictures. It lets you check and correct boxes and text, and it is never shipped. Start it with
+`run.cmd --ocr-lab`. The full guide is `tools/ocr-lab/README.md`. The devx skill (`nc-devx`) has the
+start flags and the headless `--check` mode. Labels and runs it writes are per-machine; see the
+guide's "Where things live" table.
+
 ## Commands
 
 ```
