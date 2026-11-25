@@ -37,5 +37,5 @@ pub fn save(settings: &Settings) {
 
 /// The model folder is usable when both ONNX files are in it.
 pub fn models_present(dir: &Path) -> bool {
-    dir.join("text-detection.onnx").is_file() && dir.join("text-recognition.onnx").is_file()
+    dir.join(crate::models::DETECTION).is_file() && dir.join(crate::models::RECOGNITION).is_file()
 }

@@ -9,6 +9,7 @@
 
 mod app;
 mod case;
+mod insert;
 mod metrics;
 mod models;
 mod settings;

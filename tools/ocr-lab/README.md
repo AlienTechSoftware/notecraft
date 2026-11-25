@@ -30,7 +30,8 @@ It prints one line per picture and exits 1 if any picture fails.
   right close, maximise and minimise. The sun or moon opens the theme chooser (the same 14 themes as
   the app). The light shows the model state.
 - **Left: test cases.** The pictures grouped first by kind (the first folder, such as Handwriting) and
-  then by language (from the folder names). A pencil marks a picture that has labels.
+  then by language (from the folder names). A pencil marks a picture that has labels. Each group has
+  an **Insert…** button for adding a picture of your own (see *Your own pictures*).
 - **Middle: the picture.** Orange boxes are the engine's lines. Blue boxes are your labels. Yellow is
   the box you have selected.
 - **Right: run and labels.** Run OCR, copy the report, switch between select and draw, and see the
@@ -47,6 +48,31 @@ one is missing, red when one is wrong, and grey when no folder is set. Hover it 
 **Download models** fetches the two public files (about 12 MB) into `tools/ocr-lab/local/models`, checks
 them, and loads them. Nothing downloads until you press it. The weights are CC BY-SA 4.0; see the OCR
 skill.
+
+Open **Models** in the right panel to see what is loaded. For each of the two files it shows its
+role (detection or recognition), its size on disk against the size and SHA-256 it must have, what it
+can read, and links to its source and licence, which open in your browser. With no folder set, or a
+file missing, it says so and still lists what is expected. The facts sit beside the checksums in
+`src/models.rs`, so they change together.
+
+## Your own pictures
+
+Press **Insert…** in a group of the test cases to add a picture to it:
+
+- **Picture from a file…** takes a PNG or JPEG.
+- **Draw a picture** opens a white canvas. Draw with the mouse, a pen or a finger; **Clear the
+  drawing** starts again. The drawing is saved as a PNG.
+
+Then choose where it goes:
+
+- **Keep it on this computer only** (the default) puts it under `local/inserted/`, which is
+  git-ignored. It is listed in the same group, marked *(this computer)*, and comes back next time for
+  the same test folder.
+- **Put it in the test folder** copies it beside the group's other pictures, where git sees it. Give
+  where it comes from and its licence: both are written to that folder's `SOURCES.txt`, as for every
+  test picture. Nothing goes into the repository unless you choose this.
+
+Either way, run OCR on it and label it as on any picture: its labels and runs are kept beside it.
 
 ## Labels
 
@@ -78,6 +104,7 @@ Everything local is under `tools/ocr-lab/local/`, which is git-ignored:
 | `ocr-lab.log` | The event log |
 | `reports/` | Reports written by **Copy report** |
 | `models/` | Models downloaded by **Download models** |
+| `inserted/` | Pictures added with **Insert…** and kept on this computer, one folder per test folder |
 
 The test pictures stay in their own folder. Each case folder has a `SOURCES.txt` that records where every
 picture came from and its licence.

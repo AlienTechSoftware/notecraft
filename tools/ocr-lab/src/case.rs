@@ -70,7 +70,9 @@ pub fn group_of(folder: &Path, picture: &Path) -> (String, String) {
     let relative = picture.strip_prefix(folder).unwrap_or(picture);
     let parts: Vec<String> = relative.iter().map(|p| p.to_string_lossy().to_ascii_lowercase()).collect();
     let kind = if parts.len() > 1 { title(&parts[0]) } else { "Loose pictures".to_string() };
-    let language = parts
+    // The folders decide, not the file's own name (see `LANGUAGES`).
+    let folders = &parts[..parts.len().saturating_sub(1)];
+    let language = folders
         .iter()
         .find_map(|part| LANGUAGES.iter().find(|(key, _)| part.contains(key)).map(|(_, name)| name.to_string()))
         .unwrap_or_else(|| "Other".to_string());
@@ -204,6 +206,8 @@ mod tests {
         assert_eq!((kind.as_str(), language.as_str()), ("Handwriting", "English"));
         let (kind, language) = group_of(folder, Path::new("/cases/drawings/mermaid-diagrams/a.png"));
         assert_eq!((kind.as_str(), language.as_str()), ("Drawings", "Other"));
+        let (kind, language) = group_of(folder, Path::new("/cases/handwriting/scans/english-sample.png"));
+        assert_eq!((kind.as_str(), language.as_str()), ("Handwriting", "Other"), "a file's own name does not pick the language");
         let (kind, _) = group_of(folder, Path::new("/cases/loose.png"));
         assert_eq!(kind, "Loose pictures");
     }
