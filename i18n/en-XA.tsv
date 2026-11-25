@@ -1602,3 +1602,21 @@
 @id	ui.font_mixed_tip	$$$The selected words use more than one font or size@@@
 @id	ui.font_default_tip	$$$The page's own font and size are used@@@
 @id	ui.paragraph_row	$$$Paragraph@@@
+@id	ui.add_the_first_page	$$$Add the first page@@@
+@id	ui.the_page_title_is_hidden	$$$The page title is hidden. Turn off View > Hide page title to show it.@@@
+@id	ui.notebooks_switch	$$$Switch notebook@@@
+@id	ui.notebooks_switch_hint	$$$Up and Down to choose, Enter to open, Escape to stay.@@@
+@id	ui.copy_link_to_notebook	$$$Copy link to notebook@@@
+@id	ui.copy_link_to_section_group	$$$Copy link to section group@@@
+@id	ui.copy_link_to_section	$$$Copy link to section@@@
+@id	ui.paste_options	$$$How to paste@@@
+@id	ui.keep_source_formatting	$$$Keep source formatting@@@
+@id	ui.keep_text_only	$$$Keep text only@@@
+@id	ui.pasted_as_text	$$$Pasted as text@@@
+@id	ui.it_is_at_the_top_of_its_box	$$$It is already at the top of its box.@@@
+@id	ui.it_is_at_the_bottom_of_its_box	$$$It is already at the bottom of its box.@@@
+@id	ui.page_cut_paste_it	$$$Cut “{title}”. Paste it on a page or a section.@@@
+@id	ui.page_copied_paste_it	$$$Copied “{title}”. Paste it on a page or a section.@@@
+@id	ui.the_page_held_is_no_longer_there	$$$The page that was cut or copied is no longer there.@@@
+@id	ui.a_page_cannot_go_inside_itself	$$$A page cannot be pasted inside itself.@@@
+@id	ui.paste_page	$$$Paste page@@@

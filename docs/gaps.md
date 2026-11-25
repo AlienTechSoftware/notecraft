@@ -435,7 +435,9 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   menu also lists Print, Print Preview, Touch/Mouse Mode and More Commands. Printing is File > Print
   and Ctrl+P (with its own preview); the toolbar does not list it yet, nor the other two. Back and Forward are also Alt+Left and Alt+Right and the mouse's side buttons.
   Ctrl+Page Up and Ctrl+Page Down open the page above or below in the page list, subpages included
-  when their page is expanded, and stop at the first and last page. Undo
+  when their page is expanded, and stop at the first and last page; Alt+Home and Alt+End go to the
+  first and last. Ctrl+Tab and Ctrl+Shift+Tab go round the notebook's sections, each opened at the
+  page last open there (kept across restarts). Undo
   covers the page's words and boxes (a typing burst is one step); ink keeps its own undo and has no
   redo, so Redo never brings a stroke back. In a text box Ctrl+Z is still the text box's own. When the
   strip is hidden a small arrow stays, so it can be brought back: OneNote hides it completely.
@@ -462,7 +464,9 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   keeps them and another page is not touched. The window's own rule-lines setting stays as
   what a page with none of its own is drawn on. **Not built:** a rule line colour, and
   "always create pages with rule lines".
-- **Copy link to page** is on a page's menu in the tree, as it is in OneNote. The link
+- **Copy link to page**, **to section** and **to notebook** are on the tree's menus, as in OneNote
+  (a section's tab in the Tabs layout has its section's menu too). A section's or notebook's link
+  opens it at the page last open there, else its first page. The link
   names the page from the notebooks folder down (`notecraft:/book/section/page`), because
   a relative link would depend on the page it is pasted into, which nobody knows when the
   link is copied. It is copied as a Markdown link with the page's name, so pasting it into

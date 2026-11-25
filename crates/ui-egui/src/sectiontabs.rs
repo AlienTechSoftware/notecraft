@@ -117,7 +117,9 @@ fn tab(ui: &mut Ui, label: &str, name: &str, group: bool, colour: egui::Color32,
 /// Issue #369: a button at the end of the row lists every section and group, so a tab that has
 /// scrolled out of sight is still one click away, and the open section's tab is scrolled into
 /// view whenever the open section changes.
-pub fn show(ui: &mut Ui, tabs: &[Tab], here: Option<&Path>, t: &Tokens) -> Option<PathBuf> {
+/// `menu` draws a section's own menu, for a right click on its tab or Shift+F10 on it (issue
+/// #556): the same menu its row in the notebooks has.
+pub fn show(ui: &mut Ui, tabs: &[Tab], here: Option<&Path>, t: &Tokens, menu: &mut dyn FnMut(&mut Ui, &Path)) -> Option<PathBuf> {
     let mut chosen = None;
     let rtl = rtl_interface();
     let layout = if rtl { egui::Layout::right_to_left(egui::Align::Max) } else { egui::Layout::left_to_right(egui::Align::Max) };
@@ -152,6 +154,7 @@ pub fn show(ui: &mut Ui, tabs: &[Tab], here: Option<&Path>, t: &Tokens) -> Optio
                             if resp.clicked() {
                                 chosen = Some(t_.path.clone());
                             }
+                            crate::floating::row_menu(&resp, |ui| menu(ui, &t_.path));
                         }
                         Some(inside) => {
                             let current = here.is_some_and(|h| h.starts_with(&t_.path));
