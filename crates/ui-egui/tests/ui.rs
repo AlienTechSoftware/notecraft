@@ -17306,6 +17306,12 @@ fn a_selected_picture_and_box_open_their_menus_from_the_keyboard() {
     assert!(h.query_by_label("Save picture as...").is_some(), "the picture's menu opens from the keyboard");
     assert_eq!(h.query_all_by_label("This picture").count(), 1, "and names what it acts on");
     assert_eq!(focused_label(&h).as_deref(), Some("Save picture as..."), "with the keyboard on its first row");
+    // The arrows move through the menu; they do not move off the picture behind it.
+    h.key_press(egui::Key::ArrowDown);
+    settle(&mut h);
+    assert_eq!(focused_label(&h).as_deref(), Some("Copy Text from Picture"), "Down moves to the next row");
+    assert_eq!(look_at(&mut h).pointer("/page/selectedImage").and_then(Value::as_u64), Some(0), "and the picture stays selected");
+    assert!(h.query_by_label("Save picture as...").is_some(), "with its menu open");
     h.key_press(egui::Key::Escape);
     settle(&mut h);
     assert!(h.query_by_label("Save picture as...").is_none(), "Escape closes it");
@@ -17509,4 +17515,51 @@ fn the_styles_gallery_opens_from_the_keyboard_on_the_current_style() {
     settle(&mut h);
     assert_eq!(focused_label(&h).as_deref(), Some("More styles"), "Escape gives the keyboard back to More styles");
     assert!(h.query_by_label("Page").is_some() && h.query_by_label("Paragraph").is_some(), "the direction rows say what they change");
+}
+
+/// Review of #510: the marks act with no caret, as the font boxes do. A caret is placed at the end
+/// of the page's last words, and the next words typed there take the mark.
+#[test]
+fn bold_with_no_caret_applies_to_the_next_words_typed() {
+    let (_t, app, s) = sample_app("ui-bold-no-caret");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    assert!(look_at(&mut h).pointer("/page/caret").is_none_or(Value::is_null), "no caret to begin with");
+    h.get_by_label("Bold").click();
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "boldwords"})).expect("type");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("**boldwords**"), "the words typed after Bold are bold:\n{body}");
+}
+
+/// Review of #510: a page menu opened from the keyboard and closed by a click on another control
+/// leaves the keyboard with that control, not with the words the menu came from.
+#[test]
+fn a_click_outside_the_keyboard_page_menu_keeps_the_keyboard_where_it_landed() {
+    let (_t, app, s) = sample_app("ui-page-menu-click-away");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    settle(&mut h);
+    h.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::F10);
+    settle(&mut h);
+    assert!(h.query_by_label("This page").is_some(), "the menu is open");
+    let search = h
+        .get_all_by_role(egui::accesskit::Role::TextInput)
+        .map(|n| n.rect())
+        .min_by(|a, b| a.min.y.total_cmp(&b.min.y))
+        .expect("the search box in the title bar");
+    ask(&mut h, "ui.click", json!({"x": search.center().x, "y": search.center().y})).expect("click the search box");
+    settle(&mut h);
+    assert!(h.query_by_label("This page").is_none(), "the click closes the menu");
+    ask(&mut h, "ui.text", json!({"text": "findneedle"})).expect("type");
+    settle(&mut h);
+    assert!(!h.state().body().unwrap_or_default().contains("findneedle"), "nothing typed went into the page");
+    assert!(
+        h.get_all_by_role(egui::accesskit::Role::TextInput).any(|n| n.value().as_deref() == Some("findneedle")),
+        "the typing went to the search box the click landed on"
+    );
 }

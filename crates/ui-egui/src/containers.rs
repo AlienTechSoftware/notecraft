@@ -1160,7 +1160,9 @@ pub fn show(
     if object_sel.is_some() && (caret.is_some() || (!picture_menu_open && ui.input(|i| i.key_pressed(Key::Escape)))) {
         object_sel = None;
     }
-    if let Some((block, _)) = object_sel {
+    // With the picture's menu open the arrow keys belong to the menu's rows, not to moving off
+    // the picture.
+    if let Some(block) = object_sel.as_ref().filter(|_| !picture_menu_open).map(|(block, _)| *block) {
         let direction = ui.input(|i| {
             if i.key_pressed(Key::ArrowLeft) || i.key_pressed(Key::ArrowUp) {
                 Some(false)

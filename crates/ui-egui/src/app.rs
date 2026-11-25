@@ -5629,8 +5629,11 @@ impl NoteCraftApp {
                 pageedit::FontValue::Value(v) => Some(v.as_deref()),
                 _ => None,
             },
-            // A page open for editing. Without a caret the controls still set what the next words
-            // typed will look like, so only a locked page or no page makes them unavailable.
+            text_colour_mixed: matches!(font_selection.colour, pageedit::FontValue::Mixed),
+            text_highlight_mixed: matches!(font_selection.highlight, pageedit::FontValue::Mixed),
+            // A page open for editing. Without a caret the controls place one at the end of the
+            // page's last words and set what the next words typed there look like, so only a
+            // locked page or no page makes them unavailable.
             text_editable: self.editor.as_ref().is_some_and(|e| !e.locked),
         };
         let format = self.editor.as_ref().map(|e| e.format);
@@ -7757,6 +7760,11 @@ impl NoteCraftApp {
             };
             self.apply_across_format(format);
             return;
+        }
+        // With no caret, the marks act where the font boxes do: at the end of the last words of the
+        // page, as the format of the next words typed there.
+        if let Some(ed) = self.editor.as_mut() {
+            Self::place_caret_for_format(ed);
         }
         if matches!(mark, "underline" | "subscript" | "superscript") {
             self.apply_new_mark(mark);

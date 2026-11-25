@@ -101,10 +101,16 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens, lock
     let escaped = ui.input(|i| i.key_pressed(egui::Key::Escape));
     if picked || out || escaped {
         ui.data_mut(|d| d.remove::<egui::Rect>(id()));
-        // Opened from the keyboard: the keyboard goes back to the words it came from.
+        // Opened from the keyboard: the keyboard goes back to the words it came from. A click
+        // outside that gave the keyboard to something else leaves it there.
         if let Some(back) = ui.data(|d| d.get_temp::<egui::Id>(return_id())) {
             ui.data_mut(|d| d.remove::<egui::Id>(return_id()));
-            ui.memory_mut(|m| m.request_focus(back));
+            // (The menu's own rows let go of the keyboard on a click outside them, earlier in this
+            // pass, so a widget that has it now is the one the click landed on.)
+            let taken_elsewhere = out && ui.ctx().memory(|m| m.focused()).is_some_and(|f| f != back);
+            if !taken_elsewhere {
+                ui.memory_mut(|m| m.request_focus(back));
+            }
         }
     }
 }

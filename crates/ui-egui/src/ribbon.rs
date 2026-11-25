@@ -707,6 +707,10 @@ pub struct View<'a> {
     /// they are all the same (issue #260). `Some(None)` is Automatic or No Colour.
     pub text_colour: Option<Option<&'a str>>,
     pub text_highlight: Option<Option<&'a str>>,
+    /// The selected words use more than one font colour, or highlight: the pickers say Mixed
+    /// rather than Automatic or No colour (issue #373).
+    pub text_colour_mixed: bool,
+    pub text_highlight_mixed: bool,
     /// Whether there is a page open for editing. Without one (no page, or a locked page) Home's
     /// text controls are shown as unavailable (issue #373), rather than looking ready and doing
     /// nothing; with one and no caret they set what the next words typed look like.
@@ -1618,8 +1622,8 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     acts.push(Act::Mark("code"));
                 }
                 // The colours last in the row, so the controls before them keep their places (#260).
-                colour_palette(ui, false, view.text_colour, t, acts);
-                colour_palette(ui, true, view.text_highlight, t, acts);
+                colour_palette(ui, false, view.text_colour, view.text_colour_mixed, t, acts);
+                colour_palette(ui, true, view.text_highlight, view.text_highlight_mixed, t, acts);
             });
             ui.horizontal(|ui| {
                 if small(ui, Some(Icon::ListBullet), "", crate::tl_id!("ui.bullets"), crate::tl_id!("ui.a_bullet_list"), false, t).clicked() {
@@ -2425,7 +2429,7 @@ fn mark_row_on(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &To
 /// Home's Font Colour (`highlight` false) or Text Highlight Colour palette (issue #260): a
 /// small button with the letter or the marker and the colour now in use, which opens the
 /// palette: Automatic or No Colour first, then the colours by name.
-fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, t: &Tokens, acts: &mut Vec<Act>) {
+fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, mixed: bool, t: &Tokens, acts: &mut Vec<Act>) {
     let (label, tip) = if highlight {
         (crate::tl_id!("ui.text_highlight_colour"), crate::tl_id!("ui.text_highlight_colour_tip"))
     } else {
@@ -2492,10 +2496,14 @@ fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, t
             }
         });
         ui.add_space(2.0);
-        let caption = named.map_or_else(
-            || (if highlight { crate::tl_id!("ui.no_colour") } else { crate::tl_id!("ui.automatic_colour") }).to_owned(),
-            |n| crate::tl!(n).to_owned(),
-        );
+        // With nothing named: a colour outside the palette by its value, a selection of more than
+        // one colour as Mixed, and otherwise the default.
+        let caption = match (named, current) {
+            (Some(n), _) => crate::tl!(n).to_owned(),
+            (None, Some(Some(hex))) => hex.to_owned(),
+            (None, None) if mixed => crate::tl_id!("ui.mixed").to_owned(),
+            _ => (if highlight { crate::tl_id!("ui.no_colour") } else { crate::tl_id!("ui.automatic_colour") }).to_owned(),
+        };
         // Painted, not a label: the swatch already carries the name for a screen reader.
         let (line, _) = ui.allocate_exact_size(vec2(ui.available_width(), 16.0), Sense::hover());
         ui.painter().text(line.left_center(), Align2::LEFT_CENTER, caption, egui::FontId::proportional(12.0), t.text);
