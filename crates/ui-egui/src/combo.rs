@@ -133,7 +133,24 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
     };
     let cancelled = ui.input(|i| i.key_pressed(Key::Escape));
     let entered = ui.input(|i| i.key_pressed(Key::Enter));
-    let value_box = ui.add(egui::TextEdit::singleline(&mut typed).id(typed_id).desired_width(spec.width));
+    // Default and Mixed are not values but states (issue #373): they are written in the quiet
+    // colour, and the tip says which, so "Mixed" is never read as a font called Mixed.
+    let state_tip = if spec.shown == crate::tl_id!("ui.mixed") {
+        Some(crate::tl_id!("ui.font_mixed_tip"))
+    } else if spec.shown == crate::tl_id!("ui.default") {
+        Some(crate::tl_id!("ui.font_default_tip"))
+    } else {
+        None
+    };
+    let mut edit = egui::TextEdit::singleline(&mut typed).id(typed_id).desired_width(spec.width);
+    if (state_tip.is_some() && !was_focused) || !ui.is_enabled() {
+        edit = edit.text_color(spec.tokens.muted);
+    }
+    let value_box = ui.add(edit);
+    let value_box = match state_tip {
+        Some(tip) => value_box.on_hover_text(tip),
+        None => value_box,
+    };
     if spec.missing {
         // An amber triangle inside the box's right edge, as WordCraft draws it.
         let c = egui::pos2(value_box.rect.right() - 8.0, value_box.rect.center().y);
@@ -142,7 +159,8 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
         let warning = value_box.rect.with_min_x(value_box.rect.right() - 18.0);
         ui.interact(warning, value_box.id.with("missing"), egui::Sense::hover()).on_hover_text(crate::tl_id!("ui.font_missing"));
     }
-    value_box.widget_info(|| WidgetInfo::labeled(WidgetType::TextInput, true, spec.box_label));
+    let enabled = ui.is_enabled();
+    value_box.widget_info(|| WidgetInfo::labeled(WidgetType::TextInput, enabled, spec.box_label));
     if value_box.changed() {
         highlight = 0;
     }
@@ -251,7 +269,7 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
         ui.painter().add(Shape::convex_polygon(points, text, Stroke::NONE));
     }
     arrow.widget_info(|| {
-        let mut info = WidgetInfo::labeled(WidgetType::Button, true, spec.arrow_label);
+        let mut info = WidgetInfo::labeled(WidgetType::Button, enabled, spec.arrow_label);
         info.current_text_value = Some(spec.shown.to_owned());
         info
     });

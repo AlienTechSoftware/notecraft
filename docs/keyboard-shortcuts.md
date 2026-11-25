@@ -32,3 +32,20 @@ These act on the open page from anywhere in the window, except while a dialog is
 
 `Ctrl` with plus, minus or 0, without `Alt`, still changes the size of the whole window (its
 interface scale), not the page's zoom.
+
+## Menus
+
+A menu opens from the keyboard on whatever has the keyboard: a row in the navigator, the words with
+the caret (the page's menu, at the caret's line), or a picture or box selected on the page. It
+opens with the keyboard on its first row.
+
+| Action | Windows and Linux | macOS |
+|---|---|---|
+| Open the menu of what has the keyboard | `Shift+F10` or the Menu key | `Shift+F10` |
+| Move between rows | `Up` / `Down` | `Up` / `Down` |
+| Open a row's further menu, and come back | `Right` / `Left` | `Right` / `Left` |
+| Close the menu, giving the keyboard back to where it was | `Escape` | `Escape` |
+
+Pickers that open from the ribbon (Pictures options, Equation, Stickers, the Styles and Tags
+galleries, Symbol) work the same way: from the keyboard they open on their first choice (Styles on
+the style the caret is in), and `Escape` gives the keyboard back to the button that opened them.

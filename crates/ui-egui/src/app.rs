@@ -4556,8 +4556,9 @@ impl NoteCraftApp {
                 ui.close();
             }
             // Pages take the colour of their section, the way OneNote colours tabs.
+            // A row that opens a further menu, with its chevron in the shortcut column (issue #380).
             if node.info.kind != NodeKind::Page {
-                ui.menu_button(crate::tl_id!("ui.colour"), |ui| {
+                floating::menu_submenu_row(ui, None, crate::tl_id!("ui.colour"), t, |ui| {
                     let dark = self.effective_mode.is_dark();
                     egui::Grid::new("node-colours").spacing([4.0, 4.0]).show(ui, |ui| {
                         for (i, c) in NodeColor::ALL.into_iter().enumerate() {
@@ -5628,6 +5629,12 @@ impl NoteCraftApp {
                 pageedit::FontValue::Value(v) => Some(v.as_deref()),
                 _ => None,
             },
+            text_colour_mixed: matches!(font_selection.colour, pageedit::FontValue::Mixed),
+            text_highlight_mixed: matches!(font_selection.highlight, pageedit::FontValue::Mixed),
+            // A page open for editing. Without a caret the controls place one at the end of the
+            // page's last words and set what the next words typed there look like, so only a
+            // locked page or no page makes them unavailable.
+            text_editable: self.editor.as_ref().is_some_and(|e| !e.locked),
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
@@ -7754,6 +7761,11 @@ impl NoteCraftApp {
             self.apply_across_format(format);
             return;
         }
+        // With no caret, the marks act where the font boxes do: at the end of the last words of the
+        // page, as the format of the next words typed there.
+        if let Some(ed) = self.editor.as_mut() {
+            Self::place_caret_for_format(ed);
+        }
         if matches!(mark, "underline" | "subscript" | "superscript") {
             self.apply_new_mark(mark);
             return;
@@ -7809,11 +7821,17 @@ impl NoteCraftApp {
             Self::mark_dirty_from_blocks(ed);
             return;
         }
-        let (text, _) = pageedit::wrap_selection(&caret.text, caret.selection, marks);
+        let (text, selection) = pageedit::wrap_selection(&caret.text, caret.selection, marks);
         caret.text = text;
+        // The caret goes where the wrapped words now are: between the marks for an empty
+        // selection, so the next words typed are inside them, not after the closing mark.
+        caret.selection = selection;
+        caret.place = Some(selection.1);
+        caret.focus = true;
         if let Some(b) = ed.blocks.get_mut(caret.block) {
             caret.write(b);
         }
+        ed.restore_format_selection = Some((caret.block, selection.0, selection.1));
         ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
     }
@@ -9794,10 +9812,16 @@ impl NoteCraftApp {
     fn lock_menu_row(&self, ui: &mut Ui, acts: &mut Vec<Act>) {
         let Some(ed) = self.editor.as_ref() else { return };
         let locked = notecraft_store::page::read_only(&ed.dir).unwrap_or(false);
-        let (label, icon) =
-            if locked { (crate::tl_id!("ui.unlock_read_only"), Icon::Unlock) } else { (crate::tl_id!("ui.lock_read_only"), Icon::Lock) };
-        ui.separator();
-        if floating::menu_row(ui, Some(floating::Glyph::Icon(icon)), label, &self.tokens).clicked() {
+        // It acts on the page open in the editor, not on the blank space it was opened from, so it
+        // names that page (issue #380).
+        let title = if ed.title.trim().is_empty() { crate::tl_id!("ui.untitled_page").to_owned() } else { ed.title.trim().to_owned() };
+        let (label, icon) = if locked {
+            (crate::i18n::format_message_id("ui.unlock_page_named", &[("title", &title)]), Icon::Unlock)
+        } else {
+            (crate::i18n::format_message_id("ui.lock_page_named", &[("title", &title)]), Icon::Lock)
+        };
+        floating::menu_separator(ui, &self.tokens);
+        if floating::menu_row(ui, Some(floating::Glyph::Icon(icon)), &label, &self.tokens).clicked() {
             acts.push(Act::SetReadOnly(ed.dir.clone(), !locked));
             ui.close();
         }
@@ -9814,11 +9838,13 @@ impl NoteCraftApp {
         let _ = rect;
         let mut reveal = false;
         let mut choose = false;
+        let t = &self.tokens;
         resp.context_menu(|ui| {
             match section {
                 // Under the pages: a page at the end of this section.
+                // The same rows as every other menu (issue #380): picture column, words, dividers.
                 Some(path) => {
-                    if ui.button(crate::tl_id!("ui.new_page_2")).clicked() {
+                    if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Page)), crate::tl_id!("ui.new_page_2"), t).clicked() {
                         acts.push(Act::AddKind(path.to_path_buf(), NodeKind::Section, NodeKind::Page));
                         ui.close();
                     }
@@ -9826,16 +9852,16 @@ impl NoteCraftApp {
                 }
                 // Under the notebooks: a notebook, and the ways into the folder itself.
                 None => {
-                    if ui.button(crate::tl_id!("ui.new_notebook_2")).clicked() {
+                    if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Notebook)), crate::tl_id!("ui.new_notebook_2"), t).clicked() {
                         acts.push(Act::NewNotebook);
                         ui.close();
                     }
-                    ui.separator();
-                    if ui.button(crate::tl_id!("ui.open_a_folder")).clicked() {
+                    floating::menu_separator(ui, t);
+                    if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Folder)), crate::tl_id!("ui.open_a_folder"), t).clicked() {
                         choose = true;
                         ui.close();
                     }
-                    if ui.button(crate::tl_id!("ui.show_the_notebooks_folder")).clicked() {
+                    if floating::menu_row(ui, None, crate::tl_id!("ui.show_the_notebooks_folder"), t).clicked() {
                         reveal = true;
                         ui.close();
                     }
@@ -10725,7 +10751,7 @@ impl NoteCraftApp {
                                 // the caret, and one that does not sense clicks cannot
                                 // carry a context menu at all. So the secondary click is
                                 // watched for directly and the menu drawn where it fell.
-                                crate::imagemenu::show(ui, body, &mut page_acts, &tokens);
+                                crate::imagemenu::show(ui, body, &ed.dir, &mut page_acts, &tokens);
                                 crate::pagemenu::show(ui, body, &mut page_acts, &tokens, ed.locked);
                             }
                             if moved.changed.blocks {
@@ -13041,6 +13067,7 @@ impl NoteCraftApp {
                         modal_title(ui, &self.tokens, crate::tl_id!("ui.insert_symbol"));
                         ui.label(crate::tl_id!("ui.choose_a_symbol_to_insert_at_the_caret"));
                         ui.add_space(6.0);
+                        let mut buttons: Vec<egui::Response> = Vec::new();
                         for row in [["©", "®", "™", "§", "¶"], ["•", "→", "←", "±", "°"], ["×", "÷", "√", "€", "£"], ["¥", "¢", "∞", "≠", "≤"]]
                         {
                             ui.horizontal(|ui| {
@@ -13049,17 +13076,30 @@ impl NoteCraftApp {
                                         .min_size(vec2(46.0, 36.0))
                                         .fill(self.tokens.panel)
                                         .stroke(egui::Stroke::new(0.8, self.tokens.faint));
-                                    if ui.add(button).clicked() {
+                                    let resp = ui.add(button);
+                                    if resp.clicked() {
                                         chosen = Some(symbol);
                                     }
+                                    buttons.push(resp);
                                 }
                             });
                         }
                         ui.add_space(6.0);
-                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.close"), false).clicked() {
+                        let close = modal_button(ui, &self.tokens, crate::tl_id!("ui.close"), false);
+                        if close.clicked() {
                             keep = false;
                         }
+                        // The keyboard starts on the first symbol and stays in the picker (#374).
+                        if let Some(first) = buttons.first() {
+                            let mut inside: Vec<&egui::Response> = buttons.iter().collect();
+                            inside.push(&close);
+                            hold_modal_focus(first, &inside);
+                        }
                     });
+                // Closed with nothing picked, the keyboard goes back to the Symbol button (#374).
+                if !keep && chosen.is_none() {
+                    ribbon::return_focus_from_symbols(ctx);
+                }
                 if let Some(symbol) = chosen {
                     self.insert_in_page(symbol);
                     keep = false;

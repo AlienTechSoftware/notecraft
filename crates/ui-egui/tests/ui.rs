@@ -15815,8 +15815,10 @@ fn the_page_and_empty_space_menus_lock_a_page_read_only_and_unlock_it() {
     let blank = egui::pos2(row.center().x, row.max.y + 60.0);
     ask(&mut h, "ui.click", json!({"x": blank.x, "y": blank.y, "button": "right"})).expect("right-click the empty space");
     settle(&mut h);
-    assert_eq!(h.query_all_by_label("Unlock").count(), 1, "the empty-space menu offers the unlock");
-    h.get_by_label("Unlock").click();
+    // It acts on the open page, not on the blank space, so it names that page (issue #380).
+    let unlock = format!("Unlock “{title}”");
+    assert_eq!(h.query_all_by_label(&unlock).count(), 1, "the empty-space menu offers the unlock, naming the page");
+    h.get_by_label(&unlock).click();
     settle(&mut h);
     assert!(!notecraft_store::page::read_only(&s.md_page).expect("read"), "the unlock is written in the page file");
     assert!(writable(&mut h), "the open page takes edits again");
@@ -17234,4 +17236,346 @@ fn a_click_on_open_paper_puts_the_caret_under_the_pointer() {
         "the caret's line {line:?} is under the click at {at:?}: {}",
         state.pointer("/page/containers").cloned().unwrap_or(Value::Null)
     );
+}
+
+/// The label of the control that has the keyboard, if any.
+fn focused_label(h: &Harness<'_, NoteCraftApp>) -> Option<String> {
+    use egui_kittest::kittest::NodeT as _;
+    h.query_by(|n| n.is_focused()).and_then(|n| n.accesskit_node().label())
+}
+
+/// Issue #380: the page's own menu opens from the keyboard (Shift+F10 or the Menu key) while the
+/// caret is in the page, under the caret's line rather than wherever the pointer was left, with the
+/// keyboard on its first row; the arrows move through it; Escape closes it and the words have the
+/// keyboard again.
+#[test]
+fn the_page_menu_opens_from_the_keyboard_at_the_caret_and_escape_gives_it_back() {
+    let (_t, app, s) = sample_app("ui-page-menu-keys");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    for (modifiers, key) in [(egui::Modifiers::SHIFT, egui::Key::F10), (egui::Modifiers::NONE, egui::Key::Menu)] {
+        ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+        settle(&mut h);
+        let words = h.query_by(|n| n.is_focused()).map(|n| n.rect()).expect("the words have the keyboard");
+        // The pointer is far from the caret, so a menu at the pointer would show up there.
+        h.input_mut().events.push(egui::Event::PointerMoved(egui::pos2(1150.0, 700.0)));
+        h.key_press_modifiers(modifiers, key);
+        settle(&mut h);
+        // The menu's Paste, not the ribbon's: the lowest of the two.
+        let paste = h.query_all_by_label("Paste").map(|n| n.rect()).max_by(|a, b| a.min.y.total_cmp(&b.min.y)).expect("Paste");
+        assert!(
+            (paste.min.y - words.min.y).abs() < 80.0 && paste.min.x < words.max.x,
+            "{key:?}: the menu opens at the caret's line: {paste:?} by {words:?}"
+        );
+        assert_eq!(h.query_all_by_label("This page").count(), 1, "the menu names what it acts on");
+        assert_eq!(focused_label(&h).as_deref(), Some("Paste"), "{key:?}: the keyboard is on the first row");
+        h.key_press(egui::Key::ArrowDown);
+        settle(&mut h);
+        assert_eq!(focused_label(&h).as_deref(), Some("Cut"), "Down moves to the next row");
+        h.key_press(egui::Key::Escape);
+        settle(&mut h);
+        assert!(h.query_by_label("This page").is_none(), "Escape closes the menu");
+        let back = h.query_by(|n| n.is_focused()).map(|n| n.rect());
+        assert_eq!(back, Some(words), "{key:?}: the words have the keyboard again");
+    }
+}
+
+/// Issue #380: a picture or a box selected on the page opens its own menu from the keyboard, with
+/// the keyboard on the first row; Escape closes the menu and leaves it selected.
+#[test]
+fn a_selected_picture_and_box_open_their_menus_from_the_keyboard() {
+    let (_t, mut app, s) = sample_app("ui-object-menu-keys");
+    let md = s.md_page.to_string_lossy().to_string();
+    app.open_path(&md);
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    ask(&mut h, "engine.execute", json!({"command": "page.save", "params": {"path": md.clone(), "body": "![the koala](assets/koala.png)\n"}}))
+        .expect("write one-picture page");
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": md.clone(), "boxes": "0,0,300,1"}})).expect("arrange");
+    ask(&mut h, "ui.open", json!({"path": md})).expect("open the picture page");
+    settle(&mut h);
+    let origin = look_at(&mut h).pointer("/page/origin").and_then(Value::as_array).cloned().unwrap_or_default();
+    let ox = origin.first().and_then(Value::as_f64).unwrap_or(0.0);
+    let header = h.query_all_by_label_contains("Add emoji to block").next().expect("the header of the picture block").rect();
+    ask(&mut h, "ui.click", json!({"x": ox + 120.0, "y": header.bottom() as f64 + 16.0})).expect("click the picture");
+    settle(&mut h);
+    assert_eq!(look_at(&mut h).pointer("/page/selectedImage").and_then(Value::as_u64), Some(0), "the picture is selected");
+    h.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::F10);
+    settle(&mut h);
+    assert!(h.query_by_label("Save picture as...").is_some(), "the picture's menu opens from the keyboard");
+    assert_eq!(h.query_all_by_label("This picture").count(), 1, "and names what it acts on");
+    assert_eq!(focused_label(&h).as_deref(), Some("Save picture as..."), "with the keyboard on its first row");
+    // The arrows move through the menu; they do not move off the picture behind it.
+    h.key_press(egui::Key::ArrowDown);
+    settle(&mut h);
+    assert_eq!(focused_label(&h).as_deref(), Some("Copy Text from Picture"), "Down moves to the next row");
+    assert_eq!(look_at(&mut h).pointer("/page/selectedImage").and_then(Value::as_u64), Some(0), "and the picture stays selected");
+    assert!(h.query_by_label("Save picture as...").is_some(), "with its menu open");
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert!(h.query_by_label("Save picture as...").is_none(), "Escape closes it");
+    assert_eq!(look_at(&mut h).pointer("/page/selectedImage").and_then(Value::as_u64), Some(0), "and the picture stays selected");
+
+    // A box, picked by its handle.
+    let (_t2, mut h, _blocks, (ox, oy)) = two_boxes("ui-box-menu-keys");
+    let by = bar_y(&mut h, oy);
+    ask(&mut h, "ui.click", json!({"x": ox + 100.0, "y": by})).expect("click the handle");
+    settle(&mut h);
+    assert_eq!(look_at(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "the box is selected");
+    h.key_press(egui::Key::Menu);
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("This box").count(), 1, "the box's menu opens from the keyboard and names its target");
+    assert_eq!(focused_label(&h).as_deref(), Some("Cut"), "with the keyboard on its first row");
+    // Delete is the last row, in a section of its own.
+    let delete = h.query_all_by_label("Delete").map(|n| n.rect()).max_by(|a, b| a.min.y.total_cmp(&b.min.y)).expect("Delete");
+    let attach = h.get_by_label("Attach a file").rect();
+    assert!(delete.min.y > attach.max.y, "Delete comes after the page's entries: {delete:?} after {attach:?}");
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("This box").count(), 0, "Escape closes the menu");
+    assert_eq!(look_at(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "and the box stays selected");
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert!(look_at(&mut h).pointer("/page/selectedContainer").is_none_or(Value::is_null), "a second Escape lets go of it");
+}
+
+/// Issue #380: a menu opened near the window's right or bottom edge turns to open the other way, so
+/// its last row is inside the window.
+#[test]
+fn a_page_menu_at_the_window_edge_turns_to_stay_inside() {
+    let (_t, app, s) = sample_app("ui-page-menu-edge");
+    let size = egui::vec2(1000.0, 640.0);
+    let mut h = sized_harness(app, LIGHT, size);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    // Just above the status bar, which is not the page.
+    for (x, y) in [(size.x - 30.0, 300.0), (500.0, size.y - 60.0), (size.x - 30.0, size.y - 60.0)] {
+        ask(&mut h, "ui.click", json!({"x": x, "y": y, "button": "right"})).expect("right-click the page");
+        settle(&mut h);
+        for item in ["This page", "Equation", "Attach a file", "Lock read only"] {
+            let r = h.query_by_label(item).unwrap_or_else(|| panic!("at ({x}, {y}): {item} is in the menu")).rect();
+            assert!(r.min.x >= 0.0 && r.max.x <= size.x && r.min.y >= 0.0 && r.max.y <= size.y, "at ({x}, {y}): {item} is inside the window: {r:?}");
+        }
+        h.key_press(egui::Key::Escape);
+        settle(&mut h);
+    }
+}
+
+/// Issue #380: every menu row has one shape. The section's Colour row is a row like the others,
+/// with the others' height and width, and opens its colours from the keyboard; the blank space's
+/// menu uses the same rows and names the page its lock acts on.
+#[test]
+fn menu_rows_share_one_shape_and_a_submenu_opens_from_the_keyboard() {
+    let (_t, app, s) = sample_app("ui-menu-shape");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let section = notecraft_store::tree::read_node(s.md_page.parent().expect("section")).expect("section").title;
+    let row = h.get_all_by_label(&section).map(|n| n.rect()).min_by(|a, b| a.min.y.total_cmp(&b.min.y)).expect("section row");
+    h.get_all_by_label(&section).find(|n| n.rect() == row).expect("row").click_secondary();
+    settle(&mut h);
+    let colour = h.get_by_label("Colour").rect();
+    let rename = h.get_by_label("Rename...").rect();
+    assert!((colour.height() - rename.height()).abs() < 0.5 && (colour.width() - rename.width()).abs() < 0.5, "{colour:?} vs {rename:?}");
+    assert!((colour.min.x - rename.min.x).abs() < 0.5, "the rows start in one column");
+    h.get_by_label("Colour").focus();
+    h.step();
+    h.key_press(egui::Key::ArrowRight);
+    settle(&mut h);
+    assert!(h.query_by_label("No colour").is_some(), "Right opens the colours");
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+
+    // The navigator's blank space: the same rows, and the lock names the page it acts on.
+    let title = notecraft_store::tree::read_node(&s.md_page).expect("page").title;
+    let page_row = h.get_all_by_label(&title).map(|n| n.rect()).min_by(|a, b| a.min.y.total_cmp(&b.min.y)).expect("page row");
+    let blank = egui::pos2(page_row.center().x, page_row.max.y + 60.0);
+    ask(&mut h, "ui.click", json!({"x": blank.x, "y": blank.y, "button": "right"})).expect("right-click the empty space");
+    settle(&mut h);
+    let lock = h.get_by_label(&format!("Lock “{title}” read only")).rect();
+    let new_notebook = h.get_by_label("New notebook...").rect();
+    assert!((lock.height() - new_notebook.height()).abs() < 0.5 && (lock.min.x - new_notebook.min.x).abs() < 0.5, "{lock:?} vs {new_notebook:?}");
+}
+
+/// Issue #374: Pictures is two buttons in one, as in Office: the picture inserts from a file at
+/// once, and "Pictures options" opens the list of sources. The list opens from the keyboard with
+/// the keyboard on its first source, has a title, and Escape gives the keyboard back.
+#[test]
+fn pictures_splits_its_action_from_its_list_and_escape_returns_to_it() {
+    let (_t, app, s) = sample_app("ui-pictures-split");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("Insert").click();
+    settle(&mut h);
+    let main = h.get_by_label("Pictures").rect();
+    let options = h.get_by_label("Pictures options").rect();
+    assert!(
+        main.max.y <= options.min.y + 0.5 && (main.center().x - options.center().x).abs() < 1.0,
+        "action above, list below: {main:?} {options:?}"
+    );
+    h.get_by_label("Pictures options").focus();
+    h.step();
+    h.key_press(egui::Key::Enter);
+    settle(&mut h);
+    assert!(h.query_by_label("Insert a picture from").is_some(), "the list has a title");
+    assert_eq!(focused_label(&h).as_deref(), Some("Picture from a file"), "the keyboard is on the first source");
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert!(h.query_by_label("Picture from a file").is_none(), "Escape closes the list");
+    assert_eq!(focused_label(&h).as_deref(), Some("Pictures options"), "and gives the keyboard back to the part that opened it");
+}
+
+/// Issue #374: Equation and Symbol open from the keyboard with the keyboard on their first choice,
+/// and Escape gives it back to the button.
+#[test]
+fn equation_and_symbol_pickers_take_the_keyboard_and_escape_gives_it_back() {
+    let (_t, app, s) = sample_app("ui-insert-pickers-keys");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 760.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("Insert").click();
+    settle(&mut h);
+    h.get_by_label("Equation").focus();
+    h.step();
+    h.key_press(egui::Key::Enter);
+    settle(&mut h);
+    assert!(h.query_by_label("Start from an equation").is_some(), "the equations have a title");
+    assert!(focused_label(&h).is_some_and(|l| l.contains("Fraction")), "the keyboard is on the first equation: {:?}", focused_label(&h));
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert!(h.query_by_label("Start from an equation").is_none(), "Escape closes the list");
+    assert_eq!(focused_label(&h).as_deref(), Some("Equation"), "and the Equation button has the keyboard");
+
+    h.get_by_label("Symbol").focus();
+    h.step();
+    h.key_press(egui::Key::Enter);
+    settle(&mut h);
+    assert_eq!(focused_label(&h).as_deref(), Some("©"), "the keyboard is on the first symbol");
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert!(h.query_by_label("©").is_none(), "Escape closes the picker");
+    assert_eq!(focused_label(&h).as_deref(), Some("Symbol"), "and the Symbol button has the keyboard");
+}
+
+/// Issue #373: with nothing to format (a locked page) Home's text controls are shown as
+/// unavailable, not as ready; with the page open for editing they are live, and the font box says
+/// Default rather than a font's name when the words use the page's own.
+#[test]
+fn home_text_controls_are_unavailable_without_words_to_format() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-home-unavailable");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let disabled = |h: &Harness<'_, NoteCraftApp>, label: &str| h.get_by_label(label).accesskit_node().is_disabled();
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    settle(&mut h);
+    for label in ["Bold", "Italic", "Underline", "Bullets", "Font Family", "Font Size", "Font Colour"] {
+        assert!(!disabled(&h, label), "{label} is live with the caret in the words");
+    }
+    assert_eq!(h.get_by_label("Font Family").value().as_deref(), Some("Default"), "the page's own font reads Default");
+
+    notecraft_store::page::set_read_only(&s.md_page, true).expect("lock");
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    for label in ["Bold", "Italic", "Underline", "Bullets", "Font Family", "Font Size", "Font Colour"] {
+        assert!(disabled(&h, label), "{label} is unavailable on a locked page");
+    }
+}
+
+/// Issue #373: the Styles gallery opens from the keyboard on the style the caret is in, and
+/// Escape gives the keyboard back to its More button; Page and Paragraph name their rows.
+#[test]
+fn the_styles_gallery_opens_from_the_keyboard_on_the_current_style() {
+    let (_t, app, s) = sample_app("ui-styles-keys");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1600.0, 760.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    settle(&mut h);
+    h.get_by_label("More styles").focus();
+    h.step();
+    h.step();
+    assert_eq!(focused_label(&h).as_deref(), Some("More styles"), "the keyboard is on More styles");
+    h.key_press(egui::Key::Enter);
+    settle(&mut h);
+    let focused = focused_label(&h).expect("a style row has the keyboard");
+    let styles = ["Heading 1", "Heading 2", "Heading 3", "Heading 4", "Heading 5", "Heading 6", "Page Title", "Citation", "Quote", "Code", "Normal"];
+    assert!(styles.contains(&focused.as_str()), "a style has the keyboard: {focused}");
+    let on = |n: &egui_kittest::Node<'_>| {
+        use egui_kittest::kittest::NodeT as _;
+        n.accesskit_node().toggled() == Some(egui::accesskit::Toggled::True)
+    };
+    assert!(h.query_all_by_label(&focused).any(|n| on(&n)), "and it is the style the caret is in");
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert_eq!(focused_label(&h).as_deref(), Some("More styles"), "Escape gives the keyboard back to More styles");
+    assert!(h.query_by_label("Page").is_some() && h.query_by_label("Paragraph").is_some(), "the direction rows say what they change");
+}
+
+/// Review of #510: the marks act with no caret, as the font boxes do. A caret is placed at the end
+/// of the page's last words, and the next words typed there take the mark.
+#[test]
+fn bold_with_no_caret_applies_to_the_next_words_typed() {
+    let (_t, app, s) = sample_app("ui-bold-no-caret");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    assert!(look_at(&mut h).pointer("/page/caret").is_none_or(Value::is_null), "no caret to begin with");
+    h.get_by_label("Bold").click();
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "boldwords"})).expect("type");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("**boldwords**"), "the words typed after Bold are bold:\n{body}");
+}
+
+/// Review of #510: a page menu opened from the keyboard and closed by a click on another control
+/// leaves the keyboard with that control, not with the words the menu came from.
+#[test]
+fn a_click_outside_the_keyboard_page_menu_keeps_the_keyboard_where_it_landed() {
+    let (_t, app, s) = sample_app("ui-page-menu-click-away");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    settle(&mut h);
+    h.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::F10);
+    settle(&mut h);
+    assert!(h.query_by_label("This page").is_some(), "the menu is open");
+    let search = h
+        .get_all_by_role(egui::accesskit::Role::TextInput)
+        .map(|n| n.rect())
+        .min_by(|a, b| a.min.y.total_cmp(&b.min.y))
+        .expect("the search box in the title bar");
+    ask(&mut h, "ui.click", json!({"x": search.center().x, "y": search.center().y})).expect("click the search box");
+    settle(&mut h);
+    assert!(h.query_by_label("This page").is_none(), "the click closes the menu");
+    ask(&mut h, "ui.text", json!({"text": "findneedle"})).expect("type");
+    settle(&mut h);
+    assert!(!h.state().body().unwrap_or_default().contains("findneedle"), "nothing typed went into the page");
+    assert!(
+        h.get_all_by_role(egui::accesskit::Role::TextInput).any(|n| n.value().as_deref() == Some("findneedle")),
+        "the typing went to the search box the click landed on"
+    );
+}
+
+/// Review of #510: Code with no caret wraps nothing at the end of the page's last words, and the
+/// caret goes between the marks, so the next words typed are code.
+#[test]
+fn code_with_no_caret_puts_the_next_words_typed_inside_its_marks() {
+    let (_t, app, s) = sample_app("ui-code-no-caret");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("Code").click();
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "codewords"})).expect("type");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("`codewords`"), "the words typed after Code are code:\n{body}");
 }

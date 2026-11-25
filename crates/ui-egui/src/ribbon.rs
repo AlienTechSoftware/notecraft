@@ -707,6 +707,14 @@ pub struct View<'a> {
     /// they are all the same (issue #260). `Some(None)` is Automatic or No Colour.
     pub text_colour: Option<Option<&'a str>>,
     pub text_highlight: Option<Option<&'a str>>,
+    /// The selected words use more than one font colour, or highlight: the pickers say Mixed
+    /// rather than Automatic or No colour (issue #373).
+    pub text_colour_mixed: bool,
+    pub text_highlight_mixed: bool,
+    /// Whether there is a page open for editing. Without one (no page, or a locked page) Home's
+    /// text controls are shown as unavailable (issue #373), rather than looking ready and doing
+    /// nothing; with one and no caret they set what the next words typed look like.
+    pub text_editable: bool,
 }
 
 impl View<'_> {
@@ -1058,18 +1066,98 @@ fn big_menu(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui
     big_inner(ui, icon, label, tip, true, false, t)
 }
 
+/// A big button with two parts, as Office draws one (issue #374): the picture does the usual
+/// thing at once, and the name with its chevron opens the other ways. Each part is a button of
+/// its own, so a pointer, the keyboard and a screen reader can tell them apart: the second is
+/// named "<name> options". Hovering one part lights it and draws the line between the two.
+/// Returns the action part and the part that opens the menu.
+// i18n-ui-text: label,tip
+fn big_split(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> (egui::Response, egui::Response) {
+    let label = crate::tl!(label);
+    let tip = crate::tl!(tip);
+    let font = egui::FontId::proportional(12.0);
+    let widest = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.text).size().x;
+    let (rect, _) = ui.allocate_exact_size(vec2(BIG.max(widest + BIG_PAD), GROUP_H - 18.0), Sense::hover());
+    let split_y = rect.min.y + ICON_Y + 15.0;
+    let (top, bottom) =
+        (Rect::from_min_max(rect.min, egui::pos2(rect.max.x, split_y)), Rect::from_min_max(egui::pos2(rect.min.x, split_y), rect.max));
+    let main = ui.interact(top, ui.id().with((label, "split-main")), Sense::click());
+    let open = ui.interact(bottom, ui.id().with((label, "split-open")), Sense::click());
+    let painter = ui.painter_at(rect);
+    let enabled = ui.is_enabled();
+    let lit = |r: &egui::Response| r.hovered() || r.has_focus();
+    if lit(&main) || lit(&open) {
+        // The whole button is faintly lit, the part that will answer more strongly, and the line
+        // between them says there are two.
+        painter.rect_filled(rect, 4.0, t.row_hover.gamma_multiply(0.5));
+        painter.rect_filled(if lit(&main) { top } else { bottom }, 4.0, t.row_hover);
+        painter.hline(rect.min.x + 4.0..=rect.max.x - 4.0, split_y.round() + 0.5, egui::Stroke::new(1.0, crate::theme::mix(t.panel, t.text, 0.18)));
+    }
+    for part in [&main, &open] {
+        if part.has_focus() {
+            painter.rect_stroke(part.rect.shrink(0.5), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+        }
+    }
+    let colour = if enabled { if icon == Icon::Picture { t.ok } else { t.accent } } else { t.muted };
+    icons::paint_ribbon(ui, Rect::from_center_size(egui::pos2(rect.center().x, rect.min.y + ICON_Y), vec2(28.0, 28.0)), icon, colour);
+    painter.text(egui::pos2(rect.center().x, rect.min.y + LABEL_Y), Align2::CENTER_CENTER, label, font, t.text);
+    chevron(&painter, egui::pos2(rect.center().x, rect.min.y + LABEL_Y + LINE_H - 1.0), t.muted);
+    let (name, options) = (label.to_string(), crate::i18n::format_message_id("ui.name_options", &[("name", label)]));
+    main.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
+    let options_tip = options.clone();
+    open.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, options.clone()));
+    (main.on_hover_text(tip), open.on_hover_text(options_tip))
+}
+
+/// A picker opened from the keyboard puts the keyboard on its first choice (issue #374), so
+/// Enter or the arrows work at once. `resp` is the button that opened it.
+fn opened_by_keys(resp: &egui::Response) -> bool {
+    resp.clicked() && !resp.clicked_by(egui::PointerButton::Primary)
+}
+
+fn first_choice_id(open_id: egui::Id) -> egui::Id {
+    open_id.with("first-choice")
+}
+
+/// Gives the first choice of the picker `open_id` the keyboard, when it was opened from it.
+fn first_choice(ui: &Ui, open_id: egui::Id, choice: &egui::Response) {
+    if !ui.is_sizing_pass() && ui.data_mut(|d| d.remove_temp::<bool>(first_choice_id(open_id))).unwrap_or(false) {
+        choice.request_focus();
+    }
+}
+
+fn symbols_button_id() -> egui::Id {
+    egui::Id::new("ribbon-symbol-button")
+}
+
+/// The Symbol picker closed with nothing picked: the keyboard goes back to the Symbol button that
+/// opened it (issue #374), not to nowhere.
+pub fn return_focus_from_symbols(ctx: &egui::Context) {
+    if let Some(button) = ctx.data(|d| d.get_temp::<egui::Id>(symbols_button_id())) {
+        ctx.memory_mut(|m| m.request_focus(button));
+    }
+}
+
+/// The title along the top of a picker (issue #374): what the list is for, in the heading style.
+fn picker_title(ui: &mut Ui, title: &str, t: &Tokens) {
+    ui.add(egui::Label::new(egui::RichText::new(title).strong().color(t.text)).selectable(false));
+    ui.add_space(2.0);
+}
+
 fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) -> bool {
-    let response = big_inner(ui, Icon::Picture, crate::tl_id!("ui.pictures"), crate::tl_id!("ui.choose_how_to_insert_a_picture"), true, false, t);
-    let arrow_rect = Rect::from_min_max(egui::pos2(response.rect.left(), response.rect.bottom() - 28.0), response.rect.right_bottom());
-    let arrow = ui.interact(arrow_rect, ui.id().with("pictures-menu-arrow"), Sense::click());
-    if arrow.hovered() {
-        ui.painter().rect_filled(arrow_rect, 3.0, t.row_hover);
-        chevron(&ui.painter_at(arrow_rect), arrow_rect.center(), t.text);
+    let (main, arrow) = big_split(ui, Icon::Picture, crate::tl_id!("ui.pictures"), crate::tl_id!("ui.choose_how_to_insert_a_picture"), t);
+    let popup_id = egui::Popup::default_response_id(&arrow);
+    let was_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+    if opened_by_keys(&arrow) && !was_open {
+        ui.data_mut(|d| d.insert_temp(first_choice_id(popup_id), true));
     }
     egui::Popup::menu(&arrow).show(|ui| {
         egui::Frame::popup(ui.style()).corner_radius(8.0).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
             ui.set_min_width(228.0);
-            if picture_menu_row(ui, Icon::Picture, crate::tl_id!("ui.picture_from_a_file"), t, true).clicked() {
+            picker_title(ui, crate::tl_id!("ui.insert_a_picture_from"), t);
+            let file = picture_menu_row(ui, Icon::Picture, crate::tl_id!("ui.picture_from_a_file"), t, true);
+            first_choice(ui, popup_id, &file);
+            if file.clicked() {
                 acts.push(Act::AddPicture);
                 ui.close();
             }
@@ -1077,15 +1165,23 @@ fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) -> bool {
             let _ = picture_menu_row(ui, Icon::Link, crate::tl_id!("ui.from_online"), t, false);
         });
     });
-    response.clicked() && !arrow.clicked()
+    // Escape closes the list and gives the keyboard back to the part that opened it.
+    if was_open && !egui::Popup::is_id_open(ui.ctx(), popup_id) && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        arrow.request_focus();
+    }
+    main.clicked()
 }
 
 // i18n-ui-text: label
 fn picture_menu_row(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens, enabled: bool) -> egui::Response {
     let label = crate::tl!(label);
-    let (rect, response) = ui.allocate_exact_size(vec2(212.0, 36.0), Sense::click());
-    if response.hovered() && enabled {
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, response) = ui.allocate_exact_size(vec2(212.0, 36.0), sense);
+    if (response.hovered() || response.has_focus()) && enabled {
         ui.painter().rect_filled(rect, 6.0, crate::theme::mix(t.panel, t.accent, 0.12));
+    }
+    if response.has_focus() {
+        ui.painter().rect_stroke(rect.shrink(0.5), 6.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     let color = if !enabled {
         t.muted
@@ -1105,7 +1201,8 @@ fn picture_menu_row(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens, enabled: b
         if enabled { t.text } else { t.muted },
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
-    response
+    // A source that is not there yet says so where it is pointed at, briefly (issue #374).
+    if enabled { response } else { response.on_hover_text(crate::i18n::format_message_id("ui.label_not_built_yet", &[("label", label)])) }
 }
 
 /// The small chevron Office puts under anything that opens a menu, and under the tool in
@@ -1129,8 +1226,12 @@ fn big_inner(ui: &mut Ui, icon: Icon, label: &str, tip: &str, menu: bool, on: bo
     if on {
         painter.rect_filled(rect, 4.0, crate::theme::mix(t.panel, t.accent, 0.10));
         painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
-    } else if resp.hovered() {
+    } else if resp.hovered() || resp.has_focus() {
         painter.rect_filled(rect, 4.0, t.row_hover);
+    }
+    // The button the keyboard is on is ringed, as every other control in the ribbon is (#373).
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     let colour = if !ui.is_enabled() {
         t.muted
@@ -1163,6 +1264,26 @@ fn big_inner(ui: &mut Ui, icon: Icon, label: &str, tip: &str, menu: bool, on: bo
     resp.on_hover_text(tip)
 }
 
+/// The back of a small ribbon control (issue #373), the same for every one of them: a control
+/// that is on is filled and edged in the accent, so a pressed Bold reads at a glance and not only
+/// by a faint tint; the one under the pointer is shaded; the one the keyboard is on is ringed.
+fn small_back(painter: &egui::Painter, rect: Rect, resp: &egui::Response, on: bool, t: &Tokens) {
+    if on {
+        painter.rect_filled(rect, 4.0, t.row_selected);
+        painter.rect_stroke(
+            rect.shrink(0.5),
+            4.0,
+            egui::Stroke::new(1.0, crate::theme::mix(t.row_selected, t.accent, 0.7)),
+            egui::StrokeKind::Inside,
+        );
+    } else if resp.hovered() {
+        painter.rect_filled(rect, 4.0, t.row_hover);
+    }
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+    }
+}
+
 /// A small button: an icon, or a letter for the marks that have one.
 /// `big`, with the button shown as the one in use.
 // i18n-ui-text: label,tip
@@ -1183,13 +1304,12 @@ fn small(ui: &mut Ui, icon: Option<Icon>, letter: &str, label: &str, tip: &str, 
     };
     let (rect, resp) = ui.allocate_exact_size(vec2(width.max(SMALL_W), SMALL_H), Sense::click());
     let painter = ui.painter_at(rect);
-    if on || resp.hovered() {
-        painter.rect_filled(rect, 4.0, if on { t.row_selected } else { t.row_hover });
-    }
+    small_back(&painter, rect, &resp, on, t);
+    let live = ui.is_enabled();
     match icon {
-        Some(i) => icons::paint_ribbon(ui, Rect::from_center_size(rect.center(), vec2(17.0, 17.0)), i, t.accent),
+        Some(i) => icons::paint_ribbon(ui, Rect::from_center_size(rect.center(), vec2(16.0, 16.0)), i, if live { t.accent } else { t.muted }),
         None => {
-            painter.text(rect.center(), Align2::CENTER_CENTER, letter, egui::FontId::proportional(12.5), t.strong);
+            painter.text(rect.center(), Align2::CENTER_CENTER, letter, egui::FontId::proportional(12.5), if live { t.strong } else { t.muted });
         }
     }
     let enabled = ui.is_enabled();
@@ -1239,15 +1359,30 @@ fn small_labeled_icon(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Token
     let text = ui.painter().layout_no_wrap(label.to_string(), egui::FontId::proportional(12.0), t.text).size();
     let (rect, resp) = ui.allocate_exact_size(vec2(text.x + 34.0, SMALL_H), Sense::click());
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
-        painter.rect_filled(rect, 4.0, t.row_hover);
-    }
+    small_back(&painter, rect, &resp, false, t);
     icons::paint_ribbon(ui, Rect::from_center_size(egui::pos2(rect.min.x + 13.0, rect.center().y), vec2(18.0, 18.0)), icon, t.accent);
     painter.text(egui::pos2(rect.min.x + 27.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), t.text);
     let enabled = ui.is_enabled();
     let name = label.to_string();
     resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, false, name.clone()));
     resp.on_hover_text(tip)
+}
+
+/// The name at the start of a row of choices that act on one thing (issue #373): "Page" or
+/// "Paragraph" before the direction buttons, in a column of its own wide enough for the longer
+/// of the two, so the buttons after them line up and each row says what it changes.
+// i18n-ui-text: text
+fn scope_label(ui: &mut Ui, text: &str, t: &Tokens) {
+    let text = crate::tl!(text);
+    let font = egui::FontId::proportional(11.5);
+    let widest = [crate::tl_id!("ui.page"), crate::tl_id!("ui.paragraph_row")]
+        .iter()
+        .map(|w| ui.painter().layout_no_wrap(crate::tl!(w).to_string(), font.clone(), t.muted).size().x)
+        .fold(0.0_f32, f32::max);
+    let (rect, resp) = ui.allocate_exact_size(vec2(widest + 6.0, SMALL_H), Sense::hover());
+    ui.painter().text(egui::pos2(rect.min.x, rect.center().y), Align2::LEFT_CENTER, text, font, t.muted);
+    let name = text.to_owned();
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Label, true, name.clone()));
 }
 
 /// Rows of small buttons inside a group.
@@ -1320,7 +1455,13 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
             }
         });
     });
+    // Issue #373: the font and its size share the top row; the marks and the colours the second;
+    // lists, indentation, alignment and quote the third. Every small control is one size and
+    // takes the keyboard the same way, and with nothing to format they are all unavailable.
     group(ui, crate::tl_id!("ui.basic_text"), t, |ui| {
+        if !view.text_editable {
+            ui.disable();
+        }
         rows(ui, |ui| {
             ui.horizontal(|ui| {
                 // The font name: the same combo box as the size, listing the installed fonts.
@@ -1448,26 +1589,41 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 if let Some(size) = size_out.chosen.and_then(|typed| typed.parse::<u8>().ok()) {
                     acts.push(Act::FontSize(size));
                 }
+                if mark_button(ui, Mark::ClearFormat, crate::tl_id!("ui.clear_formatting_2"), crate::tl_id!("ui.take_the_marks_off"), false, t)
+                    .clicked()
+                {
+                    acts.push(Act::ClearFormatting);
+                }
+            });
+            ui.horizontal(|ui| {
                 if mark_button(ui, Mark::Bold, crate::tl_id!("ui.bold"), crate::tl_id!("ui.bold_ctrl_b"), view.marks.bold, t).clicked() {
                     acts.push(Act::Mark("bold"));
                 }
                 if mark_button(ui, Mark::Italic, crate::tl_id!("ui.italic"), crate::tl_id!("ui.italic_ctrl_i"), view.marks.italic, t).clicked() {
                     acts.push(Act::Mark("italic"));
                 }
+                if mark_button(ui, Mark::Underline, crate::tl_id!("ui.underline"), crate::tl_id!("ui.underline"), view.marks.underline, t).clicked() {
+                    acts.push(Act::Mark("underline"));
+                }
                 if mark_button(ui, Mark::Strike, crate::tl_id!("ui.strikethrough"), crate::tl_id!("ui.strike_through"), view.marks.strike, t)
                     .clicked()
                 {
                     acts.push(Act::Mark("strike"));
                 }
+                // i18n-exempt: x2 is the compact mathematical symbol for subscript.
+                if small(ui, None, "x2", crate::tl_id!("ui.subscript"), crate::tl_id!("ui.subscript"), view.marks.subscript, t).clicked() {
+                    acts.push(Act::Mark("subscript"));
+                }
+                // i18n-exempt: x^2 is the compact mathematical symbol for superscript.
+                if small(ui, None, "x^2", crate::tl_id!("ui.superscript"), crate::tl_id!("ui.superscript"), view.marks.superscript, t).clicked() {
+                    acts.push(Act::Mark("superscript"));
+                }
                 if small(ui, Some(Icon::Code), "", crate::tl_id!("ui.code_2"), crate::tl_id!("ui.code_in_one_line"), false, t).clicked() {
                     acts.push(Act::Mark("code"));
                 }
-                if small(ui, Some(Icon::Link), "", crate::tl_id!("ui.link"), crate::tl_id!("ui.a_link"), false, t).clicked() {
-                    acts.push(Act::Insert("link"));
-                }
-                // Last in the row, so the controls before it keep their places (#260).
-                colour_palette(ui, false, view.text_colour, t, acts);
-                colour_palette(ui, true, view.text_highlight, t, acts);
+                // The colours last in the row, so the controls before them keep their places (#260).
+                colour_palette(ui, false, view.text_colour, view.text_colour_mixed, t, acts);
+                colour_palette(ui, true, view.text_highlight, view.text_highlight_mixed, t, acts);
             });
             ui.horizontal(|ui| {
                 if small(ui, Some(Icon::ListBullet), "", crate::tl_id!("ui.bullets"), crate::tl_id!("ui.a_bullet_list"), false, t).clicked() {
@@ -1497,23 +1653,8 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 if small(ui, Some(Icon::Quote), "", crate::tl_id!("ui.quote_2"), crate::tl_id!("ui.quote_this_paragraph"), false, t).clicked() {
                     acts.push(Act::Block("quote"));
                 }
-                if mark_button(ui, Mark::ClearFormat, crate::tl_id!("ui.clear_formatting_2"), crate::tl_id!("ui.take_the_marks_off"), false, t)
-                    .clicked()
-                {
-                    acts.push(Act::ClearFormatting);
-                }
-            });
-            ui.horizontal(|ui| {
-                if mark_button(ui, Mark::Underline, crate::tl_id!("ui.underline"), crate::tl_id!("ui.underline"), view.marks.underline, t).clicked() {
-                    acts.push(Act::Mark("underline"));
-                }
-                // i18n-exempt: x2 is the compact mathematical symbol for subscript.
-                if small(ui, None, "x2", crate::tl_id!("ui.subscript"), crate::tl_id!("ui.subscript"), view.marks.subscript, t).clicked() {
-                    acts.push(Act::Mark("subscript"));
-                }
-                // i18n-exempt: x^2 is the compact mathematical symbol for superscript.
-                if small(ui, None, "x^2", crate::tl_id!("ui.superscript"), crate::tl_id!("ui.superscript"), view.marks.superscript, t).clicked() {
-                    acts.push(Act::Mark("superscript"));
+                if small(ui, Some(Icon::Link), "", crate::tl_id!("ui.link"), crate::tl_id!("ui.a_link"), false, t).clicked() {
+                    acts.push(Act::Insert("link"));
                 }
             });
         });
@@ -1526,7 +1667,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     group(ui, crate::tl_id!("ui.page_setup"), t, |ui| {
         rows(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(crate::tl_id!("ui.page")).size(11.5).color(t.muted));
+                scope_label(ui, crate::tl_id!("ui.page"), t);
                 if small(
                     ui,
                     Some(Icon::DirLtr),
@@ -1568,7 +1709,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 }
             });
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(crate::tl_id!("ui.para")).size(11.5).color(t.muted));
+                scope_label(ui, crate::tl_id!("ui.paragraph_row"), t);
                 if small(
                     ui,
                     Some(Icon::ParaLtr),
@@ -1756,15 +1897,23 @@ fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &m
         })
         .response
         .rect;
-    // The arrow that opens the whole gallery.
-    let (rect, resp) = ui.allocate_exact_size(vec2(16.0, height), Sense::click());
+    // The button that opens the whole gallery (issue #373): edged as part of the box, with
+    // Office's "more" mark (a bar over a chevron), lit under the pointer and ringed for the keyboard,
+    // so it reads as the way into the full list and not as a stray strip.
+    let (rect, resp) = ui.allocate_exact_size(vec2(18.0, height), Sense::click());
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
-        painter.rect_filled(rect, 3.0, t.row_hover);
+    painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.0, t.faint), egui::StrokeKind::Inside);
+    if resp.hovered() || resp.has_focus() {
+        painter.rect_filled(rect.shrink(1.0), 3.0, t.row_hover);
     }
-    let c = egui::pos2(rect.center().x, rect.max.y - 8.0);
-    painter.line_segment([egui::pos2(c.x - 4.0, c.y - 2.0), c], egui::Stroke::new(1.4, t.text));
-    painter.line_segment([c, egui::pos2(c.x + 4.0, c.y - 2.0)], egui::Stroke::new(1.4, t.text));
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+    }
+    let ink = if ui.is_enabled() { t.text } else { t.muted };
+    let c = egui::pos2(rect.center().x, rect.max.y - 9.0);
+    painter.line_segment([egui::pos2(c.x - 4.0, c.y - 5.0), egui::pos2(c.x + 4.0, c.y - 5.0)], egui::Stroke::new(1.4, ink));
+    painter.line_segment([egui::pos2(c.x - 4.0, c.y - 2.0), c], egui::Stroke::new(1.4, ink));
+    painter.line_segment([c, egui::pos2(c.x + 4.0, c.y - 2.0)], egui::Stroke::new(1.4, ink));
     let enabled = ui.is_enabled();
     let name = if which == crate::tl_id!("ui.styles_2") { crate::tl_id!("ui.more_styles") } else { crate::tl_id!("ui.more_tags") };
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
@@ -1775,6 +1924,11 @@ fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &m
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
     if resp.clicked() {
         open = !open;
+        // From the keyboard, the keyboard goes into the list: to the style the caret is in, or
+        // the first row.
+        if open && opened_by_keys(&resp) {
+            ui.data_mut(|d| d.insert_temp(first_choice_id(open_id), true));
+        }
     }
     if open {
         let mut picked = false;
@@ -1786,28 +1940,37 @@ fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &m
                     ui.set_min_width(box_rect.width().max(210.0));
                     ui.spacing_mut().item_spacing = vec2(2.0, 1.0);
                     if which == "styles" {
-                        for (label, kind) in STYLES {
-                            if style_row(ui, label, kind, kind == current, t).clicked() {
+                        picker_title(ui, crate::tl_id!("ui.styles"), t);
+                        let has_current = STYLES.iter().any(|(_, k)| *k == current);
+                        for (n, (label, kind)) in STYLES.into_iter().enumerate() {
+                            let row = style_row(ui, label, kind, kind == current, t);
+                            if kind == current || (!has_current && n == 0) {
+                                first_choice(ui, open_id, &row);
+                            }
+                            if row.clicked() {
                                 acts.push(Act::Block(leak(kind)));
                                 picked = true;
                             }
                         }
-                        ui.separator();
-                        if ui.button(crate::tl_id!("ui.clear_formatting_2")).clicked() {
+                        floating::menu_separator(ui, t);
+                        if floating::menu_row(ui, Some(Glyph::Mark(Mark::ClearFormat)), crate::tl_id!("ui.clear_formatting_2"), t).clicked() {
                             acts.push(Act::ClearFormatting);
                             picked = true;
                         }
                     } else {
-                        ui.label(egui::RichText::new(crate::tl_id!("ui.tags")).strong());
-                        for tag in Tag::all() {
-                            if tag_row(ui, tag, t).clicked() {
+                        picker_title(ui, crate::tl_id!("ui.tags"), t);
+                        for (n, tag) in Tag::all().into_iter().enumerate() {
+                            let row = tag_row(ui, tag, t);
+                            if n == 0 {
+                                first_choice(ui, open_id, &row);
+                            }
+                            if row.clicked() {
                                 acts.push(Act::Tag(tag));
                                 picked = true;
                             }
                         }
-                        ui.separator();
-                        if ui
-                            .button(crate::tl_id!("ui.customize_tags"))
+                        floating::menu_separator(ui, t);
+                        if floating::menu_row(ui, None, crate::tl_id!("ui.customize_tags"), t)
                             .on_hover_text(crate::tl_id!("ui.make_your_own_tags_with_a_name_symbol_and_colour"))
                             .clicked()
                         {
@@ -1855,6 +2018,9 @@ fn equation_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
     if resp.clicked() {
         open = !open;
+        if open && opened_by_keys(&resp) {
+            ui.data_mut(|d| d.insert_temp(first_choice_id(open_id), true));
+        }
     }
     if open {
         let mut picked = false;
@@ -1868,6 +2034,7 @@ fn equation_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.set_min_width(WIDTH - 20.0);
                     ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+                    picker_title(ui, crate::tl_id!("ui.start_from_an_equation"), t);
                     for (name, tex) in EQUATIONS {
                         // The row is the name and the formula; the whole of it is the button.
                         let inner = ui.horizontal(|ui| {
@@ -1877,8 +2044,17 @@ fn equation_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                             crate::mathview::inline(ui, tex, 15.0, t.text);
                         });
                         let row = ui.interact(inner.response.rect, open_id.with(("row", *name)), Sense::click());
-                        if row.hovered() {
+                        first_choice(ui, open_id, &row);
+                        if row.hovered() || row.has_focus() {
                             ui.painter().rect_filled(inner.response.rect.expand(2.0), 3.0, t.row_hover.gamma_multiply(0.6));
+                        }
+                        if row.has_focus() {
+                            ui.painter().rect_stroke(
+                                inner.response.rect.expand(2.0),
+                                3.0,
+                                egui::Stroke::new(1.5, t.accent),
+                                egui::StrokeKind::Inside,
+                            );
                         }
                         let label = crate::i18n::format_message_id("ui.equation_name", &[("name", crate::tl!(name))]);
                         let (enabled, label) = (ui.is_enabled(), label);
@@ -1906,6 +2082,9 @@ fn sticker_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
     if resp.clicked() {
         open = !open;
+        if open && opened_by_keys(&resp) {
+            ui.data_mut(|d| d.insert_temp(first_choice_id(open_id), true));
+        }
     }
     if open {
         let mut picked = false;
@@ -1918,12 +2097,16 @@ fn sticker_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
             .fixed_pos(at)
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.label(egui::RichText::new(crate::tl_id!("ui.stickers_gallery")).strong().color(t.text));
+                    picker_title(ui, crate::tl_id!("ui.stickers_gallery"), t);
                     egui::Grid::new(open_id.with("grid")).spacing(vec2(4.0, 4.0)).show(ui, |ui| {
                         for (n, sticker) in crate::stickers::ALL.iter().enumerate() {
                             let (rect, cell) = ui.allocate_exact_size(vec2(CELL, CELL), Sense::click());
-                            if cell.hovered() {
+                            first_choice(ui, open_id, &cell);
+                            if cell.hovered() || cell.has_focus() {
                                 ui.painter().rect_filled(rect, 6.0, t.row_hover);
+                            }
+                            if cell.has_focus() {
+                                ui.painter().rect_stroke(rect.shrink(0.5), 6.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
                             }
                             egui::Image::from_bytes(format!("bytes://sticker-{}.svg", sticker.id), sticker.svg)
                                 .fit_to_exact_size(vec2(CELL - 12.0, CELL - 12.0))
@@ -2086,19 +2269,32 @@ fn run_direction_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
     ui.data_mut(|d| d.insert_temp(open_id, open));
 }
 
+/// How a style's row in the gallery is drawn (issue #373): the page's own sizes for its headings
+/// and words, brought down to fit a row by one scale, so Heading 1 is the biggest, every level
+/// is smaller than the one before, and Normal is the size of ordinary words. Headings take the
+/// page's heading colour, as they do on the page.
+fn style_look(kind: &str, t: &Tokens) -> (f32, Color32, bool) {
+    let fit = |page: f32| 11.5 + (page - crate::preview::BODY_SIZE) * 0.42;
+    match kind {
+        "title" => (fit(30.0), t.strong, false),
+        "h1" => (fit(crate::preview::heading_size(1)), t.strong, false),
+        "h2" => (fit(crate::preview::heading_size(2)), t.strong, false),
+        "h3" => (fit(crate::preview::heading_size(3)), t.strong, false),
+        // The page draws levels 4 to 6 at one size; the gallery keeps them apart by a step.
+        "h4" => (fit(crate::preview::heading_size(4)), t.strong, false),
+        "h5" => (fit(crate::preview::heading_size(5)) - 0.25, t.strong, false),
+        "h6" => (fit(crate::preview::heading_size(6)) - 0.5, t.strong, false),
+        "quote" | "citation" => (fit(crate::preview::BODY_SIZE), t.muted, true),
+        "codeblock" | "codenumbers" => (fit(crate::preview::BODY_SIZE), t.text, false),
+        _ => (fit(crate::preview::BODY_SIZE), t.text, false),
+    }
+}
+
 /// One line of the Styles gallery, drawn the way the style looks.
 // i18n-ui-text: label
 fn style_row(ui: &mut Ui, label: &str, kind: &str, current: bool, t: &Tokens) -> egui::Response {
     let label = crate::tl!(label);
-    let (size, color, italics) = match kind {
-        "h1" | "title" => (17.0, t.accent, false),
-        "h2" => (15.0, t.accent, false),
-        "h3" | "h4" => (13.5, t.muted, kind == "h4"),
-        "h5" | "h6" => (12.5, t.accent, kind == "h6"),
-        "quote" | "citation" => (12.5, t.muted, true),
-        "codeblock" | "codenumbers" => (12.5, t.text, false),
-        _ => (13.0, t.text, false),
-    };
+    let (size, color, italics) = style_look(kind, t);
     let mut text = egui::RichText::new(label).size(size).color(color);
     if italics {
         text = text.italics();
@@ -2113,8 +2309,11 @@ fn style_row(ui: &mut Ui, label: &str, kind: &str, current: bool, t: &Tokens) ->
     if current {
         ui.painter().rect_filled(rect, 3.0, t.row_selected);
         ui.painter().rect_stroke(rect, 3.0, egui::Stroke::new(1.0, t.text), egui::StrokeKind::Inside);
-    } else if resp.hovered() {
+    } else if resp.hovered() || resp.has_focus() {
         ui.painter().rect_filled(rect, 3.0, t.row_hover);
+    }
+    if resp.has_focus() {
+        ui.painter().rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     let at = egui::pos2(rect.left() + 6.0, rect.center().y - galley.size().y / 2.0);
     ui.painter().galley(at, galley, color);
@@ -2129,8 +2328,11 @@ fn tag_row(ui: &mut Ui, tag: Tag, t: &Tokens) -> egui::Response {
     // A fixed width: the gallery box is as wide as its rows, not as wide as the ribbon.
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().clamp(150.0, 230.0), 24.0), Sense::click());
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
+    if resp.hovered() || resp.has_focus() {
         painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     paint_tag(&painter, Rect::from_min_size(egui::pos2(rect.min.x + 2.0, rect.center().y - 9.0), vec2(18.0, 18.0)), tag, t.text, t.accent);
     // Issue #373: icon, name and shortcut in three columns, the shortcut right-aligned in the quiet
@@ -2214,9 +2416,7 @@ fn mark_row_on(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &To
     let width = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.text).size().x + SMALL_W + 8.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(width, SMALL_H), Sense::click());
     let painter = ui.painter_at(rect);
-    if on || resp.hovered() {
-        painter.rect_filled(rect, 4.0, if on { t.row_selected } else { t.row_hover });
-    }
+    small_back(&painter, rect, &resp, on, t);
     let left = Rect::from_center_size(egui::pos2(rect.min.x + 11.0, rect.center().y), vec2(15.0, 15.0));
     ribbon_icons::paint(&painter, left, mark, mark.color(t.text, t.accent));
     painter.text(egui::pos2(rect.min.x + 23.0, rect.center().y), Align2::LEFT_CENTER, label, font, t.text);
@@ -2229,7 +2429,7 @@ fn mark_row_on(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &To
 /// Home's Font Colour (`highlight` false) or Text Highlight Colour palette (issue #260): a
 /// small button with the letter or the marker and the colour now in use, which opens the
 /// palette: Automatic or No Colour first, then the colours by name.
-fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, t: &Tokens, acts: &mut Vec<Act>) {
+fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, mixed: bool, t: &Tokens, acts: &mut Vec<Act>) {
     let (label, tip) = if highlight {
         (crate::tl_id!("ui.text_highlight_colour"), crate::tl_id!("ui.text_highlight_colour_tip"))
     } else {
@@ -2237,9 +2437,8 @@ fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, t
     };
     let (rect, resp) = ui.allocate_exact_size(vec2(SMALL_W, SMALL_H), Sense::click());
     let painter = ui.painter_at(rect);
-    if resp.hovered() || resp.has_focus() {
-        painter.rect_filled(rect, 4.0, t.row_hover);
-    }
+    small_back(&painter, rect, &resp, false, t);
+    let t = &if ui.is_enabled() { *t } else { Tokens { text: t.muted, ..*t } };
     let bar_colour = current.flatten().and_then(crate::textcolour::parse);
     let glyph = rect.center() - vec2(0.0, 3.0);
     if highlight {
@@ -2270,6 +2469,9 @@ fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, t
             ui.close();
         }
         let list = if highlight { crate::textcolour::highlights().to_vec() } else { crate::textcolour::font_colours().to_vec() };
+        // The name of the colour under the pointer or the keyboard, else of the one in use, is
+        // written under the swatches (issue #373), so a colour is picked by name as well as by look.
+        let mut named: Option<&str> = list.iter().find(|(_, hex)| current.flatten() == Some(*hex)).map(|(name, _)| *name);
         egui::Grid::new(("colour-grid", highlight)).spacing(vec2(4.0, 4.0)).show(ui, |ui| {
             for (i, (name, hex)) in list.iter().enumerate() {
                 let chosen = current.flatten() == Some(*hex);
@@ -2280,6 +2482,9 @@ fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, t
                 ui.painter().rect_stroke(r.shrink(1.0), 3.0, egui::Stroke::new(if chosen { 2.0 } else { 1.0 }, edge), egui::StrokeKind::Inside);
                 let n = (*name).to_string();
                 swatch.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, true, chosen, n.clone()));
+                if swatch.hovered() || swatch.has_focus() {
+                    named = Some(name);
+                }
                 if swatch.on_hover_text(*name).clicked() {
                     let value = Some((*hex).to_string());
                     acts.push(if highlight { Act::TextHighlight(value) } else { Act::TextColour(value) });
@@ -2290,6 +2495,18 @@ fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, t
                 }
             }
         });
+        ui.add_space(2.0);
+        // With nothing named: a colour outside the palette by its value, a selection of more than
+        // one colour as Mixed, and otherwise the default.
+        let caption = match (named, current) {
+            (Some(n), _) => crate::tl!(n).to_owned(),
+            (None, Some(Some(hex))) => hex.to_owned(),
+            (None, None) if mixed => crate::tl_id!("ui.mixed").to_owned(),
+            _ => (if highlight { crate::tl_id!("ui.no_colour") } else { crate::tl_id!("ui.automatic_colour") }).to_owned(),
+        };
+        // Painted, not a label: the swatch already carries the name for a screen reader.
+        let (line, _) = ui.allocate_exact_size(vec2(ui.available_width(), 16.0), Sense::hover());
+        ui.painter().text(line.left_center(), Align2::LEFT_CENTER, caption, egui::FontId::proportional(12.0), t.text);
     });
 }
 
@@ -2299,10 +2516,9 @@ fn mark_button(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &To
     let tip = crate::tl!(tip);
     let (rect, resp) = ui.allocate_exact_size(vec2(SMALL_W, SMALL_H), Sense::click());
     let painter = ui.painter_at(rect);
-    if on || resp.hovered() {
-        painter.rect_filled(rect, 4.0, if on { t.row_selected } else { t.row_hover });
-    }
-    ribbon_icons::paint(&painter, Rect::from_center_size(rect.center(), vec2(16.0, 16.0)), mark, mark.color(t.text, t.accent));
+    small_back(&painter, rect, &resp, on, t);
+    let colour = if ui.is_enabled() { mark.color(t.text, t.accent) } else { t.muted };
+    ribbon_icons::paint(&painter, Rect::from_center_size(rect.center(), vec2(16.0, 16.0)), mark, colour);
     let enabled = ui.is_enabled();
     let name = label.to_string();
     resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, name.clone()));
@@ -2404,13 +2620,17 @@ fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         });
     });
     group(ui, crate::tl_id!("ui.pages"), t, |ui| {
-        if big(ui, Icon::PageStack, crate::tl_id!("ui.page_templates"), crate::tl_id!("ui.page_templates_tip"), t).clicked() {
+        // It opens the list of templates beside the page, so it carries the chevron of every
+        // other button that opens a choice rather than acting at once (issue #374).
+        if big_menu(ui, Icon::PageStack, crate::tl_id!("ui.page_templates"), crate::tl_id!("ui.page_templates_tip"), t).clicked() {
             acts.push(Act::PageTemplates);
         }
     });
     group(ui, crate::tl_id!("ui.symbols"), t, |ui| {
         equation_gallery(ui, t, acts);
-        if big_menu(ui, Icon::Symbol, crate::tl_id!("ui.symbol"), crate::tl_id!("ui.insert_a_common_symbol"), t).clicked() {
+        let symbol = big_menu(ui, Icon::Symbol, crate::tl_id!("ui.symbol"), crate::tl_id!("ui.insert_a_common_symbol"), t);
+        if symbol.clicked() {
+            ui.data_mut(|d| d.insert_temp(symbols_button_id(), symbol.id));
             acts.push(Act::Symbols);
         }
     });
@@ -3169,7 +3389,12 @@ fn add_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
 fn away(ui: &Ui, area: &egui::Response, button: &egui::Response) -> bool {
     let at = ui.ctx().pointer_latest_pos().unwrap_or_default();
     let out = ui.input(|i| i.pointer.any_click()) && !area.rect.contains(at) && !button.rect.contains(at);
-    out || ui.input(|i| i.key_pressed(egui::Key::Escape))
+    // Escape closes it and gives the keyboard back to the button it came from (issue #374).
+    let escaped = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    if escaped {
+        button.request_focus();
+    }
+    out || escaped
 }
 
 /// One tool on the rack, drawn as the tool: a pen standing on its nib, the way OneNote
