@@ -180,8 +180,8 @@ pub fn section(store: &Store) -> Section {
 /// One page: its object space, with the metadata the section keeps beside it.
 fn page_of(store: &Store, root: &ObjectSpace, space_id: CompactId, meta: Option<&PropertySet>) -> Option<Page> {
     let space = space_by_compact(store, root, space_id)?;
-    // The spec makes the manifest the content root. Desktop files put a version history
-    // node (0x3C) there and keep the manifest beside it, so look for it by kind.
+    // Prefer the content root. For spaces without a usable root, look for a page
+    // manifest among the objects loaded for that revision.
     let manifest = space
         .content_root()
         .filter(|o| o.kind() == PAGE_MANIFEST_NODE)

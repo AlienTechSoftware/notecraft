@@ -1,9 +1,8 @@
 //! The revision store container: header, file node lists, object spaces, objects and file data.
 //! [MS-ONESTORE] sections 2.1 to 2.6.
 //!
-//! The reader walks what is reachable from the header and keeps the last declaration of each
-//! object, which is how a revision store says "this is the current state". It does not verify
-//! CRCs, does not follow the free chunk list, and ignores anything it cannot reach.
+//! The reader walks what is reachable from the header and applies the current revision and its
+//! dependencies in each object space. It does not verify CRCs or follow the free chunk list.
 
 use std::collections::BTreeMap;
 
@@ -495,50 +494,71 @@ impl Walk<'_> {
         self.revisions(list, space)
     }
 
-    /// A revision manifest list. Later revisions revise earlier ones, so reading the list in
-    /// order and keeping the last declaration of each object leaves the current state.
+    /// An object-space reference selects role 1 in the default context ([MS-ONESTORE]
+    /// 2.1.5). A later declaration can assign that pair to a revision whose original
+    /// role was different. Other contexts can redefine the same objects for page history.
     fn revisions(&mut self, at: ChunkRef, space: &mut ObjectSpace) -> Result<()> {
+        let nodes = self.list(at)?;
+        let mut starts = BTreeMap::new();
+        let mut current = ExtendedGuid::ZERO;
+        for (index, node) in nodes.iter().enumerate() {
+            let (role_offset, context_offset) = match node.id {
+                0x01E => (40, None),
+                0x01F => (40, Some(46)),
+                0x05C => (20, None),
+                0x05D => (20, Some(24)),
+                _ => continue,
+            };
+            let id = extended_guid(&node.data, 0)?;
+            if role_offset == 40 {
+                starts.insert(id, index);
+            }
+            let mut role = Reader::new(&node.data, "a revision role");
+            role.skip(role_offset)?;
+            if role.u32()? == 1
+                && context_offset.map(|offset| extended_guid(&node.data, offset)).transpose()?.unwrap_or(ExtendedGuid::ZERO) == ExtendedGuid::ZERO
+            {
+                current = id;
+            }
+        }
+
+        // Replay the selected revision's dependencies from oldest to newest so the current
+        // objects and roots replace inherited declarations. Dependencies must point backwards.
+        let mut chain = Vec::new();
+        while current != ExtendedGuid::ZERO {
+            let Some(start) = starts.remove(&current) else {
+                space.damaged += 1;
+                break;
+            };
+            if chain.last().is_some_and(|selected| start >= *selected) {
+                space.damaged += 1;
+                break;
+            }
+            chain.push(start);
+            current = extended_guid(&nodes[start].data, 20)?;
+        }
+        for start in chain.into_iter().rev() {
+            let encrypted = nodes[start].data.get(44..46).is_some_and(|flag| flag != [0, 0]);
+            let body = nodes.iter().skip(start + 1).take_while(|node| !matches!(node.id, 0x01C | 0x01E | 0x01F));
+            self.apply_revision(body, encrypted, space)?;
+        }
+        Ok(())
+    }
+
+    fn apply_revision<'a>(&mut self, nodes: impl Iterator<Item = &'a Node>, encrypted: bool, space: &mut ObjectSpace) -> Result<()> {
         let mut table = GlobalIds::default();
-        let mut in_revision = false;
-        let mut skip = false;
-        for node in self.list(at)? {
+        space.encrypted |= encrypted;
+        for node in nodes {
             match node.id {
-                0x014 => {} // list start
-                0x01E | 0x01F => {
-                    // A revision manifest: 20 bytes rid, 20 ridDependent, 4 role, 2 encryption.
-                    in_revision = true;
-                    let encrypted = node.data.get(44..46).map(|b| b != [0, 0]).unwrap_or(false);
-                    let role = u32::from_le_bytes([
-                        node.data.get(40).copied().unwrap_or(0),
-                        node.data.get(41).copied().unwrap_or(0),
-                        node.data.get(42).copied().unwrap_or(0),
-                        node.data.get(43).copied().unwrap_or(0),
-                    ]);
-                    // Role 1 holds the roots the app opens. In real desktop files a page's
-                    // content is declared in the role 4 revisions, one per edit, and role 1
-                    // only holds a version history node that points at them. So objects are
-                    // read from every revision, in order, and the last declaration wins; only
-                    // the roots come from role 1.
-                    skip = role != 1;
-                    space.encrypted |= encrypted && !skip;
-                }
                 0x07C => space.encrypted = true,
-                0x01C => in_revision = false,
                 0x022 => table = GlobalIds::default(),
                 0x024 => table.add(&node.data)?,
-                0x0B0 if in_revision => {
-                    let group = node.chunk;
-                    self.object_group(group, &mut table, space)?;
-                }
-                0x05A if in_revision && !skip => {
+                0x0B0 => self.object_group(node.chunk, &mut table, space)?,
+                0x05A => {
                     let oid = extended_guid(&node.data, 0)?;
-                    let role = u32::from_le_bytes([
-                        node.data.get(20).copied().unwrap_or(0),
-                        node.data.get(21).copied().unwrap_or(0),
-                        node.data.get(22).copied().unwrap_or(0),
-                        node.data.get(23).copied().unwrap_or(0),
-                    ]);
-                    space.roots.insert(role, oid);
+                    let mut role = Reader::new(&node.data, "a root role");
+                    role.skip(20)?;
+                    space.roots.insert(role.u32()?, oid);
                 }
                 _ => {}
             }
@@ -883,9 +903,61 @@ pub mod build {
                 revision_nodes.push(One::node(0x05A, 0, None, &root));
             }
             revision_nodes.push(One::node(0x01C, 0, None, &[]));
-            let revisions = self.fragment(revision_nodes);
+            self.space_from_revisions(gosid, revision_nodes)
+        }
+
+        fn space_from_revisions(&mut self, gosid: u8, nodes: Vec<Vec<u8>>) -> ChunkRef {
+            let revisions = self.fragment(nodes);
             let space_nodes = vec![One::node(0x00C, 0, None, &Self::egid(gosid)), One::node(0x010, 2, Some(revisions), &[])];
             self.fragment(space_nodes)
+        }
+
+        /// A page whose current revision inherits its content and removes the first outline
+        /// element. The last revision in the file is a snapshot from before the removal.
+        fn page_with_history(&mut self, gosid: u8, base: ChunkRef, root_oid: u32, outline_oid: u32, elements: &[u32]) -> ChunkRef {
+            let start = |id, dependency: Option<u8>, role: u32, context: Option<u8>| {
+                let mut data = Self::egid(id);
+                data.extend(dependency.map_or_else(|| vec![0; 20], Self::egid));
+                data.extend(role.to_le_bytes());
+                data.extend([0; 2]);
+                if let Some(context) = context {
+                    data.extend(Self::egid(context));
+                }
+                Self::node(if context.is_some() { 0x01F } else { 0x01E }, 0, None, &data)
+            };
+            let mut root = Self::guid((root_oid >> 8) as u8).0.to_vec();
+            root.extend((root_oid & 0xFF).to_le_bytes());
+            root.extend(1u32.to_le_bytes());
+
+            let (removed, kept) = elements.split_at(elements.len().min(1));
+            let mut outline_group = |children: &[u32]| {
+                let mut outline = Build::default();
+                outline.objects(P_ELEMENT_CHILDREN, children);
+                let indexes: Vec<_> = children.iter().map(|oid| oid >> 8).collect();
+                self.group_with_ids(&[Decl { oid: outline_oid, jcid: JCID_PROP_SET | J_OUTLINE, props: outline.finish() }], &indexes)
+            };
+            let current = outline_group(kept);
+            let historical = outline_group(removed);
+
+            let mut label = Self::egid(0x91);
+            label.extend(1u32.to_le_bytes());
+            self.space_from_revisions(
+                gosid,
+                vec![
+                    Self::node(0x014, 0, None, &Self::egid(gosid)),
+                    start(0x90, None, 1, None),
+                    Self::node(0x0B0, 2, Some(base), &Self::egid(9)),
+                    Self::node(0x05A, 0, None, &root),
+                    Self::node(0x01C, 0, None, &[]),
+                    start(0x91, Some(0x90), 4, None),
+                    Self::node(0x0B0, 2, Some(current), &Self::egid(10)),
+                    Self::node(0x01C, 0, None, &[]),
+                    start(0x92, Some(0x90), 1, Some(0x93)),
+                    Self::node(0x0B0, 2, Some(historical), &Self::egid(11)),
+                    Self::node(0x01C, 0, None, &[]),
+                    Self::node(0x05C, 0, None, &label),
+                ],
+            )
         }
 
         /// An inserted file, returning the node that the file data store list needs.
@@ -970,6 +1042,7 @@ pub mod build {
         pages: Vec<(String, u8, Vec<Line>, Vec<Attachment>)>,
         color: Option<u32>,
         identity: u8,
+        page_history: bool,
     }
 
     /// Synthetic picture or attached file on a page.
@@ -1020,7 +1093,13 @@ pub mod build {
 
     impl OneNote {
         pub fn new() -> OneNote {
-            OneNote { pages: Vec::new(), color: None, identity: 0x77 }
+            OneNote { pages: Vec::new(), color: None, identity: 0x77, page_history: false }
+        }
+
+        /// Stores a prior snapshot for each page. The first line is deleted in the current revision.
+        pub fn with_page_history(mut self) -> OneNote {
+            self.page_history = true;
+            self
         }
 
         /// Gives a synthetic section a notebook-format identity for TOC matching tests.
@@ -1158,7 +1237,12 @@ pub mod build {
                         }
                     }
                 }
-                let list = one.space_with_files(gosid, &decls, &file_decls, manifest_oid, &[]);
+                let list = if self.page_history {
+                    let base = one.group_with_files(&decls, &file_decls, &[]);
+                    one.page_with_history(gosid, base, manifest_oid, outline_oid, &element_oids)
+                } else {
+                    one.space_with_files(gosid, &decls, &file_decls, manifest_oid, &[])
+                };
                 spaces.push((gosid, list));
             }
             // The section space: the section node, one page series, and the page metadata.

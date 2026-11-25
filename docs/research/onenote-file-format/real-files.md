@@ -27,13 +27,15 @@ protected, and the rest are sections with no pages in them.
 
 ## Where real files differ from the specification, and what the reader does
 
-1. **A page's content is in role 4 revisions.** The specification makes the revision with role 1
-   the one an application opens. In real files, role 1 holds a small version history node
-   (object type 0x3C) and the page's own objects are declared in role 4 revisions, one per edit.
-   The reader takes objects from every revision in order, the last declaration winning, and takes
-   roots from role 1 only. Skipping role 4 lost most of the content.
-2. **A page manifest is not always the content root.** Because of point 1, the root object of a
-   page's space is the version history node. The reader finds the manifest (type 0x37) by kind.
+1. **Revision roles are scoped to a context.** A page may have role 1 revisions for both
+   current content and historical snapshots. The current revision has role 1 in the default
+   context. A role declaration can give this label to a revision that originally had role 4.
+   The reader selects the current revision, follows its dependencies, and applies them from
+   oldest to newest. In a desktop-exported package, a later historical snapshot redeclared
+   the same page object without its current body. Reading every revision lost that body
+   (issue #508). See [MS-ONESTORE, Object Space Object](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-onestore/ce60b62f-82e5-401a-bf2c-3255457732ad).
+2. **The content root can be missing from a damaged space.** The reader checks for a page
+   manifest (type 0x37) among the objects of the selected revision when the root is unusable.
 3. **Compact ids are scoped to the object group that declared them.** Each group has its own
    global id table, and groups reuse small indexes for different GUIDs. One merged table per
    space sent references to the wrong objects, and most pages came out empty. The reader now
@@ -65,7 +67,6 @@ protected, and the rest are sections with no pages in them.
 
 ## Not checked
 
-- What role 4 revisions mean exactly, and whether the last one is always the current page.
 - Ink, tags, page dates and authors.
 - The notebook table of contents (`.onetoc2`), which backups do not contain.
-- Files from other versions of the desktop app, and `.onepkg` packages.
+- Full re-survey of the original backup corpus after the revision selection fix.
