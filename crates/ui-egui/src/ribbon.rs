@@ -2365,16 +2365,27 @@ fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         soon(ui, Icon::Mic, "Transcribe", t);
         soon(ui, Icon::Video, "Record\nVideo", t);
     });
+    // Issue #374: three similar stamps as one compact stack rather than three large buttons, each
+    // saying on its tip exactly what it puts on the page now.
     group(ui, crate::tl_id!("ui.time_stamp"), t, |ui| {
-        if big(ui, Icon::Calendar, crate::tl_id!("ui.date"), crate::tl_id!("ui.today_s_date"), t).clicked() {
-            acts.push(Act::Insert("date"));
-        }
-        if big(ui, Icon::Clock, crate::tl_id!("ui.time"), crate::tl_id!("ui.the_time_now"), t).clicked() {
-            acts.push(Act::Insert("time"));
-        }
-        if big(ui, Icon::Calendar, crate::tl_id!("ui.date_time_2"), crate::tl_id!("ui.both_as_the_page_s_own_stamp_is_written"), t).clicked() {
-            acts.push(Act::Insert("datetime"));
-        }
+        let now = notecraft_model::time::iso_now();
+        let tip = |what: &str, example: Option<String>| {
+            crate::i18n::format_message_id("ui.stamp_tip_example", &[("what", crate::tl!(what)), ("example", &example.unwrap_or_default())])
+        };
+        rows(ui, |ui| {
+            let date_tip = tip(crate::tl_id!("ui.today_s_date"), notecraft_model::time::date_from_iso(&now));
+            if small_labeled_icon(ui, Icon::Calendar, crate::tl_id!("ui.date"), &date_tip, t).clicked() {
+                acts.push(Act::Insert("date"));
+            }
+            let time_tip = tip(crate::tl_id!("ui.the_time_now"), notecraft_model::time::clock_from_iso(&now));
+            if small_labeled_icon(ui, Icon::Clock, crate::tl_id!("ui.time"), &time_tip, t).clicked() {
+                acts.push(Act::Insert("time"));
+            }
+            let both_tip = tip(crate::tl_id!("ui.both_as_the_page_s_own_stamp_is_written"), notecraft_model::time::long_from_iso(&now));
+            if small_labeled_icon(ui, Icon::Calendar, crate::tl_id!("ui.date_and_time"), &both_tip, t).clicked() {
+                acts.push(Act::Insert("datetime"));
+            }
+        });
     });
     group(ui, crate::tl_id!("ui.pages"), t, |ui| {
         if big(ui, Icon::PageStack, crate::tl_id!("ui.page_templates"), crate::tl_id!("ui.page_templates_tip"), t).clicked() {
@@ -2594,18 +2605,48 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
 
     let resp = big_menu(ui, Icon::Table, crate::tl_id!("ui.table_3"), crate::tl_id!("ui.a_table_pick_its_size"), t);
     let open_id = egui::Id::new("ribbon-insert-table");
+    // The size the grid shows: the last square pointed at or stepped to with the arrows. It stays
+    // when the pointer leaves the grid, so the readout above it does not flick back to "Table"
+    // (issue #374).
+    let cursor_id = open_id.with("cursor");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
+    let mut cursor = ui.data(|d| d.get_temp::<(usize, usize)>(cursor_id));
+    let opening = resp.clicked() && !open;
     if resp.clicked() {
         open = !open;
     }
     if !open {
-        ui.data_mut(|d| d.insert_temp(open_id, open));
+        ui.data_mut(|d| {
+            d.insert_temp(open_id, open);
+            d.remove::<(usize, usize)>(cursor_id);
+        });
         return;
+    }
+    if opening {
+        cursor = Some((0, 0));
+    }
+    // The arrows step the size, Enter takes it, Escape goes back to the Table button.
+    let (mut down, mut right) = (0i32, 0i32);
+    ui.input_mut(|i| {
+        for (key, dr, dc) in [(egui::Key::ArrowDown, 1, 0), (egui::Key::ArrowUp, -1, 0), (egui::Key::ArrowRight, 0, 1), (egui::Key::ArrowLeft, 0, -1)] {
+            if i.consume_key(egui::Modifiers::NONE, key) {
+                down += dr;
+                right += dc;
+            }
+        }
+    });
+    let stepped = down != 0 || right != 0;
+    if stepped {
+        let (r, c) = cursor.unwrap_or((0, 0));
+        #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+        let step = |at: usize, by: i32| (at as i32 + by).clamp(0, MOST as i32 - 1) as usize;
+        cursor = Some((step(r, down), step(c, right)));
     }
     let mut picked = false;
     let area = egui::Area::new(open_id.with("area"))
         .order(egui::Order::Foreground)
         .fixed_pos(resp.rect.left_bottom())
+        .constrain(true)
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
@@ -2617,6 +2658,7 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 // Every square is its own button, named for the size it picks: the grid
                 // then answers the keyboard and a screen reader, not only the pointer.
                 let mut over = None;
+                let mut focused_now = None;
                 let mut chose = None;
                 let mut cells = Vec::with_capacity(MOST * MOST);
                 for r in 0..MOST {
@@ -2633,27 +2675,46 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         if resp.hovered() {
                             over = Some((r, c));
                         }
+                        // A square reached with Tab is the size in hand, as one stepped to is.
+                        if resp.gained_focus() && !opening && !stepped {
+                            focused_now = Some((r, c));
+                        }
+                        if (opening || stepped) && cursor == Some((r, c)) {
+                            resp.request_focus();
+                        }
+                        // The arrows are the grid's own: egui is told not to move the keyboard to
+                        // a neighbour with them as well, or each step went one square too far.
+                        if resp.has_focus() {
+                            let arrows = egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, ..Default::default() };
+                            ui.memory_mut(|m| m.set_focus_lock_filter(resp.id, arrows));
+                        }
                         if resp.clicked() {
                             chose = Some((r, c));
                         }
                         cells.push((r, c, cell));
                     }
                 }
+                if let Some(at) = over.or(focused_now) {
+                    cursor = Some(at);
+                }
                 let paint = ui.painter();
                 for (r, c, cell) in cells {
-                    let lit = over.is_some_and(|(hr, hc)| r <= hr && c <= hc);
+                    let lit = cursor.is_some_and(|(hr, hc)| r <= hr && c <= hc);
                     let (fill, line) = if lit { (t.accent.gamma_multiply(0.25), t.accent) } else { (t.editor, t.table_line) };
                     paint.rect_filled(cell, 1.0, fill);
                     paint.rect_stroke(cell, 1.0, egui::Stroke::new(1.0, line), egui::StrokeKind::Inside);
                 }
-                let title = match over {
+                let title = match cursor {
                     Some((r, c)) => crate::i18n::format_message_id(
                         "ui.columns_x_rows_table",
                         &[("columns", &(c + 1).to_string()), ("rows", &(r + 1).to_string())],
                     ),
                     None => crate::tl_id!("ui.table_3").to_string(),
                 };
-                paint.text(naming.left_top(), egui::Align2::LEFT_TOP, title, egui::FontId::proportional(13.0), t.text);
+                paint.text(naming.left_top(), egui::Align2::LEFT_TOP, &title, egui::FontId::proportional(13.0), t.text);
+                // The readout is read out too, so a screen reader hears the size as it changes.
+                let readout = ui.interact(naming, open_id.with("readout"), Sense::hover());
+                readout.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &title));
                 if let Some((r, c)) = chose {
                     acts.push(Act::InsertTable(r + 1, c + 1));
                     picked = true;
@@ -2679,10 +2740,23 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         .response;
     let clicked_away =
         ui.input(|i| i.pointer.any_click()) && !area.rect.contains(ui.ctx().pointer_latest_pos().unwrap_or_default()) && !resp.clicked();
-    if picked || clicked_away || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+    let escaped = ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+    if escaped {
+        // Back where the grid was opened from, so the keyboard carries on from there.
+        resp.request_focus();
+    }
+    if picked || clicked_away || escaped {
         open = false;
     }
-    ui.data_mut(|d| d.insert_temp(open_id, open));
+    ui.data_mut(|d| {
+        d.insert_temp(open_id, open);
+        match cursor.filter(|_| open) {
+            Some(at) => {
+                d.insert_temp(cursor_id, at);
+            }
+            None => d.remove::<(usize, usize)>(cursor_id),
+        }
+    });
 }
 
 /// OneNote's Rule Lines button: the paper now, and a gallery of every paper under it.
@@ -2837,6 +2911,7 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
         let area = egui::Area::new(open_id.with("area"))
             .order(egui::Order::Foreground)
             .fixed_pos(resp.rect.left_bottom())
+            .constrain(true)
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).corner_radius(8.0).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
                     ui.spacing_mut().item_spacing = vec2(8.0, 5.0);
@@ -3220,6 +3295,7 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
     let area = egui::Area::new(id.with("area"))
         .order(egui::Order::Foreground)
         .fixed_pos(under.left_bottom())
+        .constrain(true)
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 const POPUP_WIDTH: f32 = 196.0;

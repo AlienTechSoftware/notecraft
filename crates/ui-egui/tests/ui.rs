@@ -15439,6 +15439,97 @@ fn the_pressure_control_names_its_state_and_explains_it_on_request() {
     assert_eq!(h.query_all_by_label("Pressure sensitivity 55 of 100").count(), 1, "the right arrow turns it up");
 }
 
+/// Issue #374: Insert > Table can be driven from the keyboard: Enter opens the grid at 1 x 1, the
+/// arrows step the size with the readout above the grid following, Enter inserts exactly that
+/// table at the caret, and Escape goes back to the Table button. The readout keeps the last size
+/// pointed at when the pointer leaves the grid.
+#[test]
+fn insert_table_grid_answers_the_keyboard_and_keeps_its_readout() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-insert-table-keys");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1500.0, 820.0));
+    notecraft_store::page::save_body(&s.md_page, "Before the table\n").expect("page");
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("caret");
+    settle(&mut h);
+    h.get_by_label("Insert").click();
+    settle(&mut h);
+    let focused = |h: &Harness<'_, NoteCraftApp>| h.query_by(|n| n.is_focused()).and_then(|n| n.accesskit_node().label());
+    // Escape from the grid returns to the Table button.
+    h.get_by_label("Table").focus();
+    h.step();
+    h.key_press(egui::Key::Enter);
+    settle(&mut h);
+    assert_eq!(focused(&h).as_deref(), Some("1 x 1 Table"), "the grid opens with its first square in hand");
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert!(h.query_by_label("Insert Table...").is_none(), "Escape closes the grid");
+    assert_eq!(focused(&h).as_deref(), Some("Table"), "and the keyboard is back on the Table button");
+    // A 3 x 4 table: three columns, four rows.
+    h.key_press(egui::Key::Enter);
+    settle(&mut h);
+    for key in [egui::Key::ArrowRight, egui::Key::ArrowRight, egui::Key::ArrowDown, egui::Key::ArrowDown, egui::Key::ArrowDown] {
+        h.key_press(key);
+        h.step();
+    }
+    settle(&mut h);
+    assert!(h.query_all_by_label("3 x 4 Table").count() >= 1, "the readout names the size stepped to");
+    assert_eq!(focused(&h).as_deref(), Some("3 x 4 Table"));
+    // The pointer over a square and away again: the readout stays on the last size pointed at.
+    let square = h.get_by_label("2 x 2 Table").rect().center();
+    h.input_mut().events.push(egui::Event::PointerMoved(square));
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerMoved(egui::pos2(5.0, 700.0)));
+    h.step();
+    h.step();
+    assert!(h.query_all_by_label("2 x 2 Table").count() >= 2, "the readout keeps 2 x 2, as well as the square of that name");
+    h.get_by_label("3 x 4 Table").focus();
+    h.step();
+    h.key_press(egui::Key::Enter);
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    let rows: Vec<&str> = body.lines().filter(|l| l.trim_start().starts_with('|')).collect();
+    // A header row, its rule, and the three rows under it.
+    assert_eq!(rows.len(), 5, "four rows of table and the rule under the first: {body}");
+    assert_eq!(rows[0].matches('|').count(), 4, "three columns: {body}");
+    assert!(body.find("Before the table").unwrap_or(usize::MAX) < body.find('|').unwrap_or(0), "inserted after the caret's line: {body}");
+}
+
+/// Issue #374: the stamps are one compact stack, and at a narrow width every Insert command, the
+/// stamps among them, can be reached with Tab.
+#[test]
+fn insert_time_stamps_are_one_stack_and_reachable_when_narrow() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-insert-stamps-narrow");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1000.0, 820.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("Insert").click();
+    settle(&mut h);
+    let x = |h: &Harness<'_, NoteCraftApp>, label: &str| h.get_by_label(label).rect();
+    let (date, time, both) = (x(&h, "Date"), x(&h, "Time"), x(&h, "Date & Time"));
+    assert!((date.min.x - time.min.x).abs() < 1.0 && (time.min.x - both.min.x).abs() < 1.0, "one column: {date:?} {time:?} {both:?}");
+    assert!(date.max.y <= time.min.y && time.max.y <= both.min.y, "stacked in order");
+    let focused = |h: &Harness<'_, NoteCraftApp>| h.query_by(|n| n.is_focused()).and_then(|n| n.accesskit_node().label());
+    h.get_by_label("Insert Space").focus();
+    h.step();
+    let mut seen = std::collections::BTreeSet::new();
+    for _ in 0..60 {
+        h.key_press(egui::Key::Tab);
+        h.step();
+        if let Some(name) = focused(&h) {
+            seen.insert(name);
+        }
+        if seen.contains("Stickers") {
+            break;
+        }
+    }
+    for needed in ["Table", "File Attachment", "Pictures", "Link", "Date", "Time", "Date & Time", "Stickers"] {
+        assert!(seen.contains(needed), "{needed} is reached with Tab at 1000 points: {seen:?}");
+    }
+}
+
 /// Issue #380: the tree's menu keeps the shortcut out of the label.
 #[test]
 fn the_page_menu_names_new_page_without_its_shortcut() {
