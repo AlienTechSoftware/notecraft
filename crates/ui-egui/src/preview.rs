@@ -674,16 +674,25 @@ fn text_of(spans: &[Span]) -> String {
     spans.iter().filter(|s| s.image.is_none()).map(|s| s.text.as_str()).collect()
 }
 
+/// The size of the ordinary words of a page, at 100%.
+pub const BODY_SIZE: f32 = 14.5;
+
+/// The size a heading of `level` is drawn at on the page, at 100%. The Styles gallery draws its
+/// rows to the same scale (issue #373), so the list shows the levels as the page will.
+pub fn heading_size(level: u8) -> f32 {
+    match level {
+        1 => 28.0,
+        2 => 22.0,
+        3 => 18.0,
+        _ => 16.0,
+    }
+}
+
 /// The type size a block's words are drawn at here.
 fn size_of_block(block: &Block) -> f32 {
     match block {
-        Block::Heading { level, .. } => match level {
-            1 => 28.0,
-            2 => 22.0,
-            3 => 18.0,
-            _ => 16.0,
-        },
-        _ => 14.5,
+        Block::Heading { level, .. } => heading_size(*level),
+        _ => BODY_SIZE,
     }
 }
 
@@ -969,12 +978,7 @@ pub(crate) fn show_block_zoomed(
     {
         match block {
             Block::Heading { level, spans, .. } => {
-                let size = match level {
-                    1 => 28.0,
-                    2 => 22.0,
-                    3 => 18.0,
-                    _ => 16.0,
-                } * zoom;
+                let size = heading_size(*level) * zoom;
                 ui.add_space(6.0 * zoom);
                 match tagged(spans) {
                     // A heading is aligned as a paragraph is, but never justified.

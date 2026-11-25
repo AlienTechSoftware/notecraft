@@ -16,56 +16,75 @@ use crate::ribbon_icons::Mark;
 use crate::theme::Tokens;
 use egui::Ui;
 
-/// Where the menu is open, if it is. Kept in the ui's own store so it survives frames
-/// without the window having to hold it.
-fn state(ui: &Ui) -> Option<egui::Pos2> {
-    ui.data(|d| d.get_temp::<egui::Pos2>(id()))
+/// Where the menu is open, if it is: the point or the block it was opened over. Kept in the
+/// ui's own store so it survives frames without the window having to hold it.
+fn state(ui: &Ui) -> Option<egui::Rect> {
+    ui.data(|d| d.get_temp::<egui::Rect>(id()))
 }
 
 fn id() -> egui::Id {
     egui::Id::new("page-menu")
 }
 
-/// Draws the page's menu when the page has been right-clicked, and puts what was picked
-/// into `acts`.
+/// The widget that had the keyboard when the menu was opened from it, to give it back.
+fn return_id() -> egui::Id {
+    id().with("return-focus")
+}
+
+/// Draws the page's menu when the page has been right-clicked, or asked for its menu from the
+/// keyboard (Shift+F10 or the Menu key while the caret is in the page, issue #380), and puts
+/// what was picked into `acts`.
 pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens, locked: bool) {
     // A right click on a container belongs to the container's own menu. Close this one if it
     // was open, and leave the click alone.
     if crate::containers::took_right_click(ui.ctx()) {
-        ui.data_mut(|d| d.remove::<egui::Pos2>(id()));
+        ui.data_mut(|d| d.remove::<egui::Rect>(id()));
         return;
     }
     let pointer = ui.ctx().pointer_latest_pos();
     let opened_now = ui.input(|i| i.pointer.secondary_clicked());
     if opened_now && let Some(at) = pointer.filter(|p| body.contains(*p)) {
         log::debug!("context menu: right-clicked at {:?}", at);
-        ui.data_mut(|d| d.insert_temp(id(), at));
+        ui.data_mut(|d| d.insert_temp(id(), egui::Rect::from_pos(at)));
+    }
+    // From the keyboard: the words with the caret have it. The menu opens under the line the
+    // caret is on, where the words are, not wherever the pointer was left.
+    // `read_response` is only asked on the frame the key is down: on another frame it would let go
+    // of the keyboard after a click on the ribbon, as a widget drawn again would.
+    if state(ui).is_none()
+        && floating::menu_keys_down(ui.ctx())
+        && let Some((focused, rect)) =
+            ui.ctx().memory(|m| m.focused()).and_then(|f| ui.ctx().read_response(f).map(|r| (f, r.rect))).filter(|(_, r)| body.intersects(*r))
+        && floating::menu_keys_pressed(ui.ctx())
+    {
+        let line = egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x, rect.min.y + rect.height().min(22.0)));
+        ui.data_mut(|d| {
+            d.insert_temp(id(), line);
+            d.insert_temp(return_id(), focused);
+        });
+        floating::focus_first_row(ui.ctx(), id());
     }
     let Some(at) = state(ui) else { return };
 
     let mut picked = false;
-    let area = egui::Area::new(id().with("area"))
-        .order(egui::Order::Foreground)
-        .fixed_pos(at)
-        .show(ui.ctx(), |ui| {
-            egui::Frame::popup(ui.style()).inner_margin(egui::Margin::same(4)).show(ui, |ui| {
-                ui.set_width(floating::MENU_W);
-                ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-                // A locked page's menu offers only Unlock for now (issue #441).
-                if !locked {
-                    picked = items_with(ui, acts, true, t, true);
-                }
-                // The page's lock, as the navigator's menus offer it (issue #441).
-                let (label, icon) =
-                    if locked { (crate::tl_id!("ui.unlock_read_only"), Icon::Unlock) } else { (crate::tl_id!("ui.lock_read_only"), Icon::Lock) };
-                floating::menu_separator(ui, t);
-                if floating::menu_row(ui, Some(Glyph::Icon(icon)), label, t).clicked() {
-                    acts.push(Act::SetReadOnly(!locked));
-                    picked = true;
-                }
-            });
-        })
-        .response;
+    let Some(menu) = floating::point_menu(ui.ctx(), id(), at, |ui| {
+        floating::menu_heading(ui, crate::tl_id!("ui.this_page"), t);
+        // A locked page's menu offers only Unlock for now (issue #441).
+        if !locked {
+            picked = items_with(ui, acts, true, t, true);
+        }
+        // The page's lock, as the navigator's menus offer it (issue #441).
+        let (label, icon) =
+            if locked { (crate::tl_id!("ui.unlock_read_only"), Icon::Unlock) } else { (crate::tl_id!("ui.lock_read_only"), Icon::Lock) };
+        floating::menu_separator(ui, t);
+        if floating::menu_row(ui, Some(Glyph::Icon(icon)), label, t).clicked() {
+            acts.push(Act::SetReadOnly(!locked));
+            picked = true;
+        }
+    }) else {
+        return;
+    };
+    let area = menu.response;
     // The mini toolbar floats over the menu, as it does in OneNote.
     let fonts = ui.ctx().data(|d| d.get_temp::<floating::FontBoxes>(egui::Id::new(floating::FONT_BOXES_KEY))).unwrap_or_default();
     // A locked page has no formatting bar: its buttons are edits (issue #441).
@@ -79,8 +98,14 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens, lock
 
     let away = |p: egui::Pos2| !area.rect.contains(p) && !bar_rect.contains(p);
     let out = ui.input(|i| i.pointer.any_click()) && !opened_now && away(pointer.unwrap_or_default());
-    if picked || out || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        ui.data_mut(|d| d.remove::<egui::Pos2>(id()));
+    let escaped = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    if picked || out || escaped {
+        ui.data_mut(|d| d.remove::<egui::Rect>(id()));
+        // Opened from the keyboard: the keyboard goes back to the words it came from.
+        if let Some(back) = ui.data(|d| d.get_temp::<egui::Id>(return_id())) {
+            ui.data_mut(|d| d.remove::<egui::Id>(return_id()));
+            ui.memory_mut(|m| m.request_focus(back));
+        }
     }
 }
 
