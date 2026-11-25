@@ -2884,11 +2884,22 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
 /// either way, so a stroke drawn at one setting can be re-weighted later.
 fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts: &mut Vec<Act>) {
     rows(ui, |ui| {
-        ui.add_space(4.0);
-        let label = if pressure_available { "Sensitivity" } else { "Pressure off" };
-        // Issue #375: no pressure readings is a fact about the device, not an error, so it is
-        // shown in the quiet colour rather than the warning one. The reason is on the hover.
-        ui.label(egui::RichText::new(crate::tl!(label)).size(10.0).color(t.muted));
+        ui.add_space(2.0);
+        // Issue #375: one named control. Its heading says whether pressure is on, which depends on
+        // the pen, not on a setting: "Pressure off" until a pen's force readings arrive. Why it is
+        // off, for this system, is a button away rather than only on a hover.
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let (label, colour) = if pressure_available { (crate::tl_id!("ui.pressure_on"), t.text) } else { (crate::tl_id!("ui.pressure_off"), t.muted) };
+            ui.label(egui::RichText::new(label).size(10.5).color(colour));
+            if !pressure_available {
+                let why = ui.add(egui::Button::new(egui::RichText::new(crate::tl_id!("ui.pressure_why")).size(10.5).color(t.accent)).frame(false).small());
+                egui::Popup::menu(&why).id(ui.id().with("pressure-why")).show(|ui| {
+                    ui.set_max_width(280.0);
+                    ui.label(pressure_unavailable_tip());
+                });
+            }
+        });
         let (rect, resp) = ui.allocate_exact_size(vec2(96.0, 20.0), Sense::click_and_drag());
         let share = f32::from(now.min(100)) / 100.0;
         let painter = ui.painter_at(rect);
@@ -2906,6 +2917,9 @@ fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts:
             egui::Stroke::NONE,
         ));
         painter.circle(egui::pos2(x, rect.center().y), 5.0, t.panel, egui::Stroke::new(1.4, accent));
+        if resp.has_focus() {
+            painter.rect_stroke(rect.shrink(0.5), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+        }
 
         if pressure_available
             && (resp.dragged() || resp.clicked())
@@ -2914,6 +2928,15 @@ fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts:
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let picked = (((at.x - track.min.x) / track.width().max(1.0)).clamp(0.0, 1.0) * 100.0).round() as u8;
             if picked != now {
+                acts.push(Act::InkSensitivity(picked));
+            }
+        }
+        // The arrow keys move it five at a time, as a slider does, once it has the keyboard.
+        if pressure_available && resp.has_focus() {
+            let step = ui.input(|i| i32::from(i.key_pressed(egui::Key::ArrowRight)) - i32::from(i.key_pressed(egui::Key::ArrowLeft)));
+            if step != 0 {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let picked = (i32::from(now) + step * 5).clamp(0, 100) as u8;
                 acts.push(Act::InkSensitivity(picked));
             }
         }
@@ -3054,16 +3077,24 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
     paint_tool(&painter, stand, nib.tool, nib.colour, drop);
     let dark = crate::theme::luminance(t.panel) < crate::inkpad::DARK_PAGE;
     crate::inkpad::paint_stroke(&painter, band.min, &rack_swatch(nib, band, dark));
+    if chosen {
+        chosen_badge(&painter, rect, t);
+    }
 
     // The chevron on the tool in hand opens its editor, as OneNote's does; a right click
-    // opens the same editor and the rest of the rack's own menu.
+    // opens the same editor and the rest of the rack's own menu. It is a control of its own,
+    // named for the tool, so picking the tool up and opening its properties can each be done
+    // from the keyboard (issue #375).
     let mut picked_up = resp.clicked();
     let chev = egui::Rect::from_center_size(egui::pos2(rect.center().x, rect.max.y - 5.0), vec2(14.0, 11.0));
     let mut modify = false;
     if chosen {
         let hit = ui.interact(chev, resp.id.with("chevron"), Sense::click());
-        chevron(&painter, chev.center(), if hit.hovered() { t.accent } else { t.muted });
-        if hit.clicked() {
+        chevron(&painter, chev.center(), if hit.hovered() || hit.has_focus() { t.accent } else { t.muted });
+        let said = crate::i18n::format_message_id("ui.modify_named_tool", &[("tool", &name)]);
+        let tip = said.clone();
+        hit.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &said));
+        if hit.on_hover_text(tip).clicked() {
             modify = true;
             picked_up = false;
         }
@@ -3115,6 +3146,15 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
     let name = if i < 9 { format!("{name} (Alt+{})", i + 1) } else { name };
     resp.on_hover_text(name);
     picked_up
+}
+
+/// The tick in the corner of the tool in hand (issue #375): with the outline, it marks the chosen
+/// tool by shape as well as by colour, so two tools of one colour, or a colour close to the
+/// accent, still read apart.
+fn chosen_badge(painter: &egui::Painter, slot: Rect, t: &Tokens) {
+    let c = egui::pos2(slot.max.x - 5.5, slot.min.y + 5.5);
+    painter.circle_filled(c, 4.6, t.accent);
+    painter.add(egui::Shape::line(vec![c + vec2(-2.2, 0.1), c + vec2(-0.6, 1.8), c + vec2(2.3, -1.6)], egui::Stroke::new(1.3, t.panel)));
 }
 
 /// How tall the strip under a pen on the rack is, where the stroke it makes is drawn.
@@ -3194,7 +3234,10 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                 crate::inkpad::paint_stroke(&ui.painter_at(sample), sample.min, &stroke);
                 ui.separator();
 
-                ui.label(egui::RichText::new(crate::tl_id!("ui.thickness")).size(11.5).color(t.muted));
+                // Each heading says what is chosen now, so the dots and swatches need not be read by
+                // their ring alone (issue #375).
+                let size_now = crate::i18n::format_message_id("ui.size_pt", &[("size", &format!("{:.1}", nib.width()))]);
+                ui.label(egui::RichText::new(crate::i18n::format_message_id("ui.thickness_now", &[("size", &size_now)])).size(11.5).color(t.muted));
                 ui.horizontal(|ui| {
                     for tenths in rack::THICKNESSES {
                         let here = nib.tenths == tenths;
@@ -3220,7 +3263,11 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                 });
 
                 ui.add_space(2.0);
-                ui.label(egui::RichText::new(crate::tl_id!("ui.colours")).size(11.5).color(t.muted));
+                ui.label(
+                    egui::RichText::new(crate::i18n::format_message_id("ui.colour_now", &[("colour", crate::tl!(swatch_name(nib.colour)))]))
+                        .size(11.5)
+                        .color(t.muted),
+                );
                 for row in rack::PALETTE {
                     ui.horizontal(|ui| {
                         for colour in row {
@@ -3240,8 +3287,9 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                                 "ui.colour_hex",
                                 &[("colour", crate::tl!(swatch_name(colour))), ("hex", &colour.hex())],
                             );
+                            let tip = name.clone();
                             resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::RadioButton, enabled, here, name.clone()));
-                            if resp.on_hover_text(colour.hex()).clicked() {
+                            if resp.on_hover_text(tip).clicked() {
                                 acts.push(Act::InkRack(RackEdit::Set(i, Nib::new(nib.tool, colour, nib.tenths))));
                             }
                         }
@@ -3269,11 +3317,42 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                     acts.push(Act::InkPointer(Pointer::Eyedropper(i)));
                     done = true;
                 }
-                if popup_action_button(ui, crate::tl_id!("ui.delete_tool"), rack_len > 1, t.warn, crate::tl_id!("ui.remove_this_tool_from_the_rack"))
+                // The rack's own actions, together and apart from the tool's look: move it, add another
+                // like it, and, behind a second step, take it off the rack (issue #375).
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(i > 0, egui::Button::new(crate::tl_id!("ui.move_left")).small()).clicked() {
+                        acts.push(Act::InkRack(RackEdit::Move(i, true)));
+                    }
+                    if ui.add_enabled(i + 1 < rack_len, egui::Button::new(crate::tl_id!("ui.move_right")).small()).clicked() {
+                        acts.push(Act::InkRack(RackEdit::Move(i, false)));
+                    }
+                    let another = crate::i18n::format_message_id("ui.add_another_tool", &[("tool", crate::tl!(nib.tool.label()))]);
+                    if ui.add(egui::Button::new(another).small()).clicked() {
+                        acts.push(Act::InkRack(RackEdit::Add(nib.tool)));
+                        done = true;
+                    }
+                });
+                let confirm_id = id.with("confirm-delete");
+                let confirming = ui.data(|d| d.get_temp::<bool>(confirm_id)).unwrap_or(false);
+                if confirming {
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.delete_tool_confirm")).size(11.5).color(t.text));
+                    ui.horizontal(|ui| {
+                        if popup_action_button(ui, crate::tl_id!("ui.delete_tool"), rack_len > 1, t.warn, crate::tl_id!("ui.remove_this_tool_from_the_rack"))
+                            .clicked()
+                        {
+                            acts.push(Act::InkRack(RackEdit::Remove(i)));
+                            ui.data_mut(|d| d.remove::<bool>(confirm_id));
+                            done = true;
+                        }
+                        if popup_action_button(ui, crate::tl_id!("ui.keep_tool"), true, t.accent, crate::tl_id!("ui.keep_tool_tip")).clicked() {
+                            ui.data_mut(|d| d.remove::<bool>(confirm_id));
+                        }
+                    });
+                } else if popup_action_button(ui, crate::tl_id!("ui.delete_tool_ellipsis"), rack_len > 1, t.muted, crate::tl_id!("ui.remove_this_tool_from_the_rack"))
                     .clicked()
                 {
-                    acts.push(Act::InkRack(RackEdit::Remove(i)));
-                    done = true;
+                    ui.data_mut(|d| d.insert_temp(confirm_id, true));
                 }
             });
         })
@@ -3281,7 +3360,11 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
     ui.data_mut(|d| d.insert_temp(more_colours_id, more_colours));
     let at = ui.ctx().pointer_latest_pos().unwrap_or_default();
     let outside = ui.input(|i| i.pointer.any_click()) && !area.rect.contains(at) && !under.contains(at);
-    done || outside || ui.input(|i| i.key_pressed(egui::Key::Escape))
+    let close = done || outside || ui.input(|i| i.key_pressed(egui::Key::Escape));
+    if close {
+        ui.data_mut(|d| d.remove::<bool>(id.with("confirm-delete")));
+    }
+    close
 }
 
 /// The eraser, racked beside the pens because that is where a hand reaches for it, and
@@ -3294,6 +3377,7 @@ fn eraser_on_rack(ui: &mut Ui, chosen: bool, t: &Tokens) -> egui::Response {
     if chosen {
         painter.rect_filled(rect, 4.0, crate::theme::mix(t.panel, t.accent, 0.10));
         painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+        chosen_badge(&painter, rect, t);
     } else if resp.hovered() {
         painter.rect_filled(rect, 4.0, t.row_hover);
     }
@@ -3451,7 +3535,7 @@ fn paint_tool(painter: &egui::Painter, rect: Rect, tool: Tool, colour: Rgb, drop
 }
 
 /// A plain name for a colour, so a pen can be told from its neighbour by a screen reader
-/// and by a test. Only the colours on the rack need one.
+/// and by a test.
 fn swatch_name(colour: Rgb) -> &'static str {
     match (colour.0, colour.1, colour.2) {
         (0x20, 0x20, 0x20) => "black",
@@ -3461,6 +3545,31 @@ fn swatch_name(colour: Rgb) -> &'static str {
         (0x55, 0x55, 0x55) => "grey",
         (0xff, 0xdd, 0x33) => "yellow",
         (0x6f, 0xe3, 0x9a) => "mint",
+        // The rest of the palette, so every swatch is read out by a name (issue #375).
+        (0x5a, 0x5a, 0x5a) => "dark grey",
+        (0x8c, 0x8c, 0x8c) => "mid grey",
+        (0xbd, 0xbd, 0xbd) => "light grey",
+        (0xe4, 0xe4, 0xe4) => "pale grey",
+        (0xff, 0xff, 0xff) => "white",
+        (0x8c, 0x12, 0x12) => "dark red",
+        (0xe8, 0x62, 0x1f) => "orange",
+        (0xf2, 0x9d, 0x12) => "amber",
+        (0xfa, 0xf0, 0x8a) => "pale yellow",
+        (0x0d, 0x4c, 0x27) => "dark green",
+        (0x3f, 0xb5, 0x50) => "light green",
+        (0x19, 0x8f, 0x8f) => "teal",
+        (0x66, 0xd9, 0xd9) => "aqua",
+        (0x10, 0x2a, 0x6b) => "navy",
+        (0x3b, 0x8d, 0xf0) => "sky blue",
+        (0x86, 0xc5, 0xff) => "light blue",
+        (0x4a, 0x2a, 0x8f) => "purple",
+        (0x8b, 0x63, 0xd6) => "violet",
+        (0x6b, 0x1b, 0x4a) => "plum",
+        (0xb0, 0x2b, 0x7a) => "magenta",
+        (0xe8, 0x5a, 0xa8) => "pink",
+        (0xf7, 0xa8, 0xcd) => "light pink",
+        (0x6a, 0x45, 0x2a) => "brown",
+        (0xa9, 0x7c, 0x50) => "tan",
         _ => "custom",
     }
 }

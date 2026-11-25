@@ -15167,6 +15167,120 @@ fn no_ribbon_control_runs_into_its_group_name() {
     }
 }
 
+/// Issue #375: the tool in hand is marked (selected state as well as colour), its properties open
+/// from its own named control, the thickness and colour picked there are what the rack then holds,
+/// and Escape closes them with the page untouched. A pen, a pencil and a highlighter alike.
+#[test]
+fn draw_presets_are_picked_and_edited_from_their_properties() {
+    let (_t, app, s) = sample_app("ui-draw-presets");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1500.0, 820.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    for (tool, slot, thickness, colour, hex) in [
+        ("Pen red", 1, "2.0 pt", "navy #102a6b", "102a6b"),
+        ("Pencil grey", 4, "1.0 pt", "dark green #0d4c27", "0d4c27"),
+        ("Highlighter yellow", 5, "6.0 pt", "pale yellow #faf08a", "faf08a"),
+    ] {
+        h.get_by_label(tool).click();
+        settle(&mut h);
+        assert_eq!(is_on(&h, tool), Some(true), "{tool} is the tool in hand");
+        assert_eq!(is_on(&h, "Pen black"), Some(false), "and the others are not");
+        h.get_by_label(&format!("Modify {tool}")).click();
+        settle(&mut h);
+        assert!(h.query_all_by_label_contains("Thickness: ").count() == 1, "the thickness now is written out");
+        h.get_by_label(thickness).click();
+        settle(&mut h);
+        h.get_by_label(colour).click();
+        settle(&mut h);
+        let rack = ask(&mut h, "ui.inspect", json!({})).expect("inspect")["ink"]["rack"].as_str().unwrap_or_default().to_string();
+        let nib = rack.split('|').nth(slot).unwrap_or_default().to_string();
+        assert!(nib.contains(hex), "{tool} now draws in {colour}: {nib} ({rack})");
+        assert_eq!(is_on(&h, colour), Some(true), "the colour picked is marked in the properties");
+        h.key_press(egui::Key::Escape);
+        settle(&mut h);
+        assert_eq!(h.query_all_by_label_contains("Thickness: ").count(), 0, "Escape closes the properties");
+    }
+    assert_eq!(h.state().body().unwrap_or_default(), body, "editing tools leaves the page as it was");
+}
+
+/// Issue #375: taking a tool off the rack is a second step, and the properties open from the
+/// keyboard as well as by pointer.
+#[test]
+fn deleting_a_tool_asks_first_and_its_properties_open_from_the_keyboard() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-draw-delete-tool");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1500.0, 820.0));
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    settle(&mut h);
+    h.get_by_label("Pen blue").click();
+    settle(&mut h);
+    let count = |h: &mut Harness<'_, NoteCraftApp>| {
+        ask(h, "ui.inspect", json!({})).expect("inspect")["ink"]["rack"].as_str().unwrap_or_default().split('|').count()
+    };
+    let before = count(&mut h);
+    // From the keyboard: the pen, then Tab to its properties, then Enter.
+    h.get_by_label("Pen blue").focus();
+    h.step();
+    h.key_press(egui::Key::Tab);
+    h.step();
+    let focused = h.query_by(|n| n.is_focused()).and_then(|n| n.accesskit_node().label());
+    assert_eq!(focused.as_deref(), Some("Modify Pen blue"), "Tab from the pen reaches its properties");
+    h.key_press(egui::Key::Enter);
+    settle(&mut h);
+    h.get_by_label("Delete Tool...").click();
+    settle(&mut h);
+    assert_eq!(count(&mut h), before, "the first click only asks");
+    h.get_by_label("Keep Tool").click();
+    settle(&mut h);
+    assert_eq!(count(&mut h), before, "Keep tool keeps it");
+    h.get_by_label("Delete Tool...").click();
+    settle(&mut h);
+    h.get_by_label("Delete Tool").click();
+    settle(&mut h);
+    assert_eq!(count(&mut h), before - 1, "the second step takes it off the rack");
+    assert_eq!(h.query_all_by_label("Pen blue").count(), 0);
+}
+
+/// Issue #375: pressure is one named control. Without a pen's readings it says "Pressure off" and
+/// why on request; once they arrive it says "Pressure on" and its sensitivity moves with the arrow
+/// keys as well as the pointer.
+#[test]
+fn the_pressure_control_names_its_state_and_explains_it_on_request() {
+    let t = TempDir::new("ui-pressure-control");
+    let mut s = pressure_session(&t);
+    let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+    let mut app = NoteCraftApp::new(s);
+    app.open_path(&sample.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1500.0, 820.0));
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    h.run();
+    assert_eq!(h.query_all_by_label("Pressure off").count(), 1);
+    h.get_by_label("Why?").click();
+    h.run();
+    let why = if cfg!(target_os = "linux") { "Wayland" } else { "pressure" };
+    assert!(h.query_all_by_label_contains(why).count() > 0, "Why? explains, for this system");
+    h.key_press(egui::Key::Escape);
+    h.run();
+    h.input_mut().events.push(touch_event(egui::TouchPhase::Start, Some(0.4)));
+    h.step();
+    h.input_mut().events.push(touch_event(egui::TouchPhase::End, Some(0.4)));
+    h.step();
+    assert_eq!(h.query_all_by_label("Pressure on").count(), 1, "the readings turn it on");
+    assert_eq!(h.query_all_by_label("Why?").count(), 0);
+    h.get_by_label("Pressure sensitivity 50 of 100").focus();
+    h.step();
+    h.key_press(egui::Key::ArrowRight);
+    h.step();
+    h.step();
+    assert_eq!(h.query_all_by_label("Pressure sensitivity 55 of 100").count(), 1, "the right arrow turns it up");
+}
+
 /// Issue #380: the tree's menu keeps the shortcut out of the label.
 #[test]
 fn the_page_menu_names_new_page_without_its_shortcut() {
