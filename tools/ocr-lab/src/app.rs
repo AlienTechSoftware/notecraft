@@ -132,6 +132,28 @@ pub struct Lab {
     show_engine: bool,
     log: Log,
     status: String,
+    /// The Insert dialog, while it is open (issue #489).
+    insert: Option<InsertDialog>,
+}
+
+/// The canvas a picture is drawn on, in pixels, and how many of them one point on screen covers.
+const CANVAS: [u32; 2] = [1200, 600];
+const CANVAS_SCALE: f32 = 2.0;
+
+/// Adding a picture to one group of the test cases: from a file, or drawn.
+struct InsertDialog {
+    kind: String,
+    language: String,
+    /// The group's folder in the test folder, when the group has pictures there.
+    tests_dir: Option<PathBuf>,
+    file: Option<PathBuf>,
+    sketch: Option<crate::insert::Sketch>,
+    name: String,
+    /// Put it into the test folder (tracked by git) rather than keep it on this computer.
+    into_tests: bool,
+    source: String,
+    licence: String,
+    error: Option<String>,
 }
 
 impl Lab {
@@ -161,7 +183,9 @@ impl Lab {
             show_engine: true,
             log,
             status: String::new(),
+            insert: None,
         };
+        lab.pictures = lab.discover();
         if let Some(dir) = models {
             lab.load_reader(&dir);
         }
@@ -176,7 +200,7 @@ impl Lab {
     /// Loads the two ONNX models from a folder. Failure leaves the lab usable for browsing.
     pub fn load_reader(&mut self, dir: &Path) {
         self.health = crate::models::check(Some(dir));
-        let (det, rec) = (dir.join("text-detection.onnx"), dir.join("text-recognition.onnx"));
+        let (det, rec) = (dir.join(crate::models::DETECTION), dir.join(crate::models::RECOGNITION));
         let mut timings = Vec::new();
         let loaded = telemetry::timed("model load", &mut timings, || OcrsReader::from_model_files(&det, &rec));
         self.model_load_ms = timings.last().map(|t| t.ms);
@@ -199,8 +223,9 @@ impl Lab {
 
     /// Points the lab at another test folder and forgets the picture that was open.
     pub fn set_folder(&mut self, folder: PathBuf) {
-        self.pictures = case::discover(&folder);
         self.folder = folder;
+        self.pictures = self.discover();
+        self.insert = None;
         self.loaded = None;
         self.selected = None;
         self.drag = None;
@@ -258,6 +283,154 @@ impl Lab {
                 self.status = e.clone();
                 self.log.event(&format!("labels did not load for {name}: {e}"));
             }
+        }
+    }
+
+    /// Where pictures inserted for this computer only are kept for this test folder.
+    fn local_pictures(&self) -> PathBuf {
+        crate::insert::local_folder(&crate::lab_root().join("local").join("inserted"), &self.folder)
+    }
+
+    /// The test folder's pictures, then those inserted on this computer for it.
+    fn discover(&self) -> Vec<PathBuf> {
+        let mut pictures = case::discover(&self.folder);
+        pictures.extend(case::discover(&self.local_pictures()));
+        pictures
+    }
+
+    /// The group a picture is listed under: by its folders under the test folder, or under the
+    /// local folder for a picture kept on this computer.
+    fn group(&self, path: &Path) -> (String, String) {
+        let local = self.local_pictures();
+        if !path.starts_with(&local) {
+            return case::group_of(&self.folder, path);
+        }
+        // Folder names have no spaces (see `insert::local_group_folder`); this kind is the lab's own.
+        let (kind, language) = case::group_of(&local, path);
+        (if kind == "Loose-pictures" { "Loose pictures".to_string() } else { kind }, language)
+    }
+
+    fn open_insert(&mut self, kind: &str, language: &str, tests_dir: Option<PathBuf>) {
+        self.insert = Some(InsertDialog {
+            kind: kind.to_string(),
+            language: language.to_string(),
+            tests_dir,
+            file: None,
+            sketch: None,
+            name: String::new(),
+            into_tests: false,
+            source: String::new(),
+            licence: String::new(),
+            error: None,
+        });
+    }
+
+    /// The Insert dialog: a picture from a file or a drawing, where to keep it, and for the test
+    /// folder its source and licence.
+    fn insert_dialog(&mut self, ctx: &egui::Context) {
+        let Some(dialog) = self.insert.as_mut() else { return };
+        let mut open = true;
+        let mut done = false;
+        egui::Window::new(format!("Insert into {} / {}", dialog.kind, dialog.language))
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.content_rect().center())
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("Picture from a file…").clicked()
+                        && let Some(file) = rfd::FileDialog::new().add_filter("Pictures", &crate::insert::EXTENSIONS).pick_file()
+                    {
+                        if dialog.name.trim().is_empty() || dialog.sketch.is_some() {
+                            dialog.name = file.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                        }
+                        dialog.file = Some(file);
+                        dialog.sketch = None;
+                        dialog.error = None;
+                    }
+                    if ui.button("Draw a picture").clicked() {
+                        dialog.sketch = Some(crate::insert::Sketch::new(CANVAS));
+                        dialog.file = None;
+                        if dialog.name.trim().is_empty() {
+                            dialog.name = "drawing".to_string();
+                        }
+                        dialog.error = None;
+                    }
+                });
+                if let Some(file) = &dialog.file {
+                    ui.label(format!("File: {}", file.display()));
+                }
+                if let Some(sketch) = dialog.sketch.as_mut() {
+                    ui.label("Draw with the mouse, a pen or a finger.");
+                    sketch_canvas(ui, sketch);
+                    if ui.button("Clear the drawing").clicked() {
+                        sketch.strokes.clear();
+                    }
+                }
+                ui.horizontal(|ui| {
+                    let label = ui.label("Name");
+                    ui.text_edit_singleline(&mut dialog.name).labelled_by(label.id);
+                });
+                ui.radio_value(&mut dialog.into_tests, false, "Keep it on this computer only (local/inserted, not in git)");
+                ui.add_enabled_ui(dialog.tests_dir.is_some(), |ui| {
+                    ui.radio_value(&mut dialog.into_tests, true, "Put it in the test folder, beside this group's pictures (tracked by git)");
+                });
+                if dialog.into_tests {
+                    ui.horizontal(|ui| {
+                        let label = ui.label("Where it comes from");
+                        ui.text_edit_singleline(&mut dialog.source).labelled_by(label.id);
+                    });
+                    ui.horizontal(|ui| {
+                        let label = ui.label("Licence");
+                        ui.add(egui::TextEdit::singleline(&mut dialog.licence).hint_text("such as CC0, or the project's own (MIT)"))
+                            .labelled_by(label.id);
+                    });
+                    ui.small("Both are written to SOURCES.txt in that folder, as for every test picture.");
+                }
+                if let Some(e) = &dialog.error {
+                    ui.colored_label(Color32::from_rgb(200, 60, 40), e);
+                }
+                let ready = dialog.file.is_some() || dialog.sketch.as_ref().is_some_and(|s| !s.is_empty());
+                if ui.add_enabled(ready, egui::Button::new("Insert")).clicked() {
+                    done = true;
+                }
+            });
+        if !open {
+            self.insert = None;
+            return;
+        }
+        if done {
+            self.finish_insert(ctx);
+        }
+    }
+
+    fn finish_insert(&mut self, ctx: &egui::Context) {
+        let local = self.local_pictures();
+        let Some(dialog) = self.insert.as_mut() else { return };
+        let picture = match (&dialog.file, &dialog.sketch) {
+            (Some(file), _) => crate::insert::Picture::File(file.clone()),
+            (None, Some(sketch)) => crate::insert::Picture::Drawn(sketch.raster()),
+            (None, None) => return,
+        };
+        let record = crate::insert::Record { source: dialog.source.clone(), licence: dialog.licence.clone() };
+        let (dir, record) = match (&dialog.tests_dir, dialog.into_tests) {
+            (Some(dir), true) => (dir.clone(), Some(&record)),
+            _ => (crate::insert::local_group_folder(&local, &dialog.kind, &dialog.language), None),
+        };
+        let name = if dialog.name.trim().is_empty() { "picture".to_string() } else { dialog.name.clone() };
+        match crate::insert::insert(&dir, &name, &picture, record) {
+            Ok(path) => {
+                self.insert = None;
+                self.pictures = self.discover();
+                let name = self.relative_name(&path);
+                self.log.event(&format!("inserted {name}"));
+                if let Some(index) = self.pictures.iter().position(|p| *p == path) {
+                    self.select(ctx, index);
+                }
+                self.status = format!("Inserted {name}.");
+            }
+            Err(e) => dialog.error = Some(e),
         }
     }
 
@@ -521,6 +694,7 @@ impl Lab {
         egui::Panel::right("details").resizable(true).default_size(340.0).show(ui, |ui| self.details(ui));
         egui::Panel::bottom("status").show(ui, |ui| ui.label(&self.status));
         egui::CentralPanel::default().show(ui, |ui| self.picture_area(ui));
+        self.insert_dialog(&ctx);
         if self.selected.is_some() && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Delete)) {
             self.delete_selected();
         }
@@ -682,9 +856,11 @@ impl Lab {
         // Kind (handwriting, drawings, ...) first, then language, then the pictures.
         let mut tree: std::collections::BTreeMap<String, std::collections::BTreeMap<String, Vec<usize>>> = std::collections::BTreeMap::new();
         for (i, path) in self.pictures.iter().enumerate() {
-            let (kind, language) = case::group_of(&self.folder, path);
+            let (kind, language) = self.group(path);
             tree.entry(kind).or_default().entry(language).or_default().push(i);
         }
+        let local = self.local_pictures();
+        let mut insert_into = None;
         egui::ScrollArea::vertical().show(ui, |ui| {
             for (kind, languages) in &tree {
                 let count: usize = languages.values().map(Vec::len).sum();
@@ -693,11 +869,25 @@ impl Lab {
                         egui::CollapsingHeader::new(format!("{language} ({})", indexes.len())).id_salt((kind, language)).default_open(true).show(
                             ui,
                             |ui| {
+                                if ui.small_button("Insert…").on_hover_text("Add a picture from a file, or draw one, to this group").clicked() {
+                                    let tests_dir = indexes
+                                        .iter()
+                                        .map(|&i| &self.pictures[i])
+                                        .find(|p| !p.starts_with(&local))
+                                        .and_then(|p| p.parent())
+                                        .map(Path::to_path_buf);
+                                    insert_into = Some((kind.clone(), language.clone(), tests_dir));
+                                }
                                 for &i in indexes {
                                     let path = &self.pictures[i];
                                     let current = self.loaded.as_ref().is_some_and(|l| l.index == i);
                                     let labelled = case::label_path(path).is_file();
-                                    let mark = if labelled { "  ✎" } else { "" };
+                                    let mark = match (labelled, path.starts_with(&local)) {
+                                        (true, true) => "  ✎ (this computer)",
+                                        (false, true) => "  (this computer)",
+                                        (true, false) => "  ✎",
+                                        (false, false) => "",
+                                    };
                                     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                                     if ui.selectable_label(current, format!("{name}{mark}")).clicked() {
                                         pick = Some(i);
@@ -711,6 +901,9 @@ impl Lab {
         });
         if let Some(i) = pick {
             self.select(ctx, i);
+        }
+        if let Some((kind, language, tests_dir)) = insert_into {
+            self.open_insert(&kind, &language, tests_dir);
         }
     }
 
@@ -778,6 +971,7 @@ impl Lab {
             ui.selectable_value(&mut self.mode, Mode::Draw, "Draw a label");
         });
         ui.checkbox(&mut self.show_engine, "Show the engine's lines (orange)");
+        egui::CollapsingHeader::new("Models").default_open(false).show(ui, |ui| self.models_section(ui));
         egui::CollapsingHeader::new("Metrics").default_open(false).show(ui, |ui| self.metrics.show(ui));
         egui::CollapsingHeader::new("Picture").default_open(false).show(ui, |ui| {
             ui.add(egui::Slider::new(&mut self.adjust.hue, -180.0..=180.0).text("Hue"));
@@ -857,6 +1051,38 @@ impl Lab {
                 }
             });
         }
+    }
+
+    /// The Models section: for each model file, its role, its size on disk against the size and
+    /// checksum expected, what it can read, and where it comes from. With no folder set, or a file
+    /// missing, it says so and still shows what is expected (issue #490).
+    fn models_section(&mut self, ui: &mut egui::Ui) {
+        match (&self.models, &self.health) {
+            (None, _) => ui.label("No model folder is set. These are the files the lab expects:"),
+            (Some(_), crate::models::Health::Ok) if self.reader.is_some() => ui.label("Loaded:"),
+            (Some(_), health) => ui.label(format!("Not loaded. {}", health.describe())),
+        };
+        for row in crate::models::shown(self.models.as_deref()) {
+            let model = row.model;
+            ui.add_space(4.0);
+            ui.strong(model.name);
+            ui.label(model.role);
+            let on_disk = match row.on_disk {
+                Some(bytes) if bytes == model.size => format!("{} on disk", crate::models::megabytes(bytes)),
+                Some(bytes) => format!("{} on disk, expected {}", crate::models::megabytes(bytes), crate::models::megabytes(model.size)),
+                None => format!("Not on disk. Expected {}", crate::models::megabytes(model.size)),
+            };
+            ui.label(on_disk);
+            ui.small(format!("SHA-256 {}", model.sha256)).on_hover_text("The checksum the file must have.");
+            ui.label(model.capabilities);
+            ui.horizontal_wrapped(|ui| {
+                ui.hyperlink_to("Source", model.source).on_hover_text(model.source);
+                ui.label("·");
+                ui.hyperlink_to(format!("Licence: {}", model.licence), model.licence_url).on_hover_text(model.licence_url);
+            });
+        }
+        ui.add_space(4.0);
+        ui.hyperlink_to("Model card (training data and licence)", crate::models::MODEL_CARD);
     }
 
     fn picture_area(&mut self, ui: &mut egui::Ui) {
@@ -1014,6 +1240,37 @@ impl Lab {
             let Some(pos) = response.interact_pointer_pos() else { return };
             let p = Self::to_pixels(origin, scale, pos);
             self.selected = self.loaded.as_ref().and_then(|l| Self::label_at(&l.file.labels, p));
+        }
+    }
+}
+
+/// The drawing canvas of the Insert dialog: white paper, black pen, drawn with any pointer.
+fn sketch_canvas(ui: &mut egui::Ui, sketch: &mut crate::insert::Sketch) {
+    let size = Vec2::new(sketch.size[0] as f32 / CANVAS_SCALE, sketch.size[1] as f32 / CANVAS_SCALE);
+    let (response, painter) = ui.allocate_painter(size, Sense::drag());
+    let rect = response.rect;
+    painter.rect_filled(rect, CornerRadius::ZERO, Color32::WHITE);
+    painter.rect_stroke(rect, CornerRadius::ZERO, Stroke::new(1.0, Color32::GRAY), StrokeKind::Outside);
+    let to_canvas = |p: Pos2| [(p.x - rect.min.x) * CANVAS_SCALE, (p.y - rect.min.y) * CANVAS_SCALE];
+    if response.drag_started() {
+        sketch.strokes.push(Vec::new());
+    }
+    if (response.drag_started() || response.dragged())
+        && let Some(pos) = response.interact_pointer_pos()
+        && let Some(stroke) = sketch.strokes.last_mut()
+    {
+        let p = to_canvas(pos.clamp(rect.min, rect.max));
+        if stroke.last() != Some(&p) {
+            stroke.push(p);
+        }
+    }
+    let width = sketch.width / CANVAS_SCALE;
+    for stroke in &sketch.strokes {
+        let points: Vec<Pos2> = stroke.iter().map(|p| rect.min + Vec2::new(p[0], p[1]) / CANVAS_SCALE).collect();
+        if let [only] = points.as_slice() {
+            painter.circle_filled(*only, width / 2.0, Color32::BLACK);
+        } else {
+            painter.add(egui::Shape::line(points, Stroke::new(width, Color32::BLACK)));
         }
     }
 }
