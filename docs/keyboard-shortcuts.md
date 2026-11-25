@@ -18,3 +18,17 @@ Promoting a subpage moves it up one level, placing it immediately after its form
 content, attachments, and child pages move together. The action is available only for a subpage.
 
 Page order is preserved when either action changes the hierarchy.
+
+## Page view
+
+These act on the open page from anywhere in the window, except while a dialog is open.
+
+| Action | Windows and Linux | macOS |
+|---|---|---|
+| Zoom the page in | `Ctrl+Alt+=` | `Option+Cmd+=` |
+| Zoom the page out | `Ctrl+Alt+-` | `Option+Cmd+-` |
+| Show the page at 100% | `Ctrl+Alt+0` | `Option+Cmd+0` |
+| Full Page View on or off | `F11` | `F11` |
+
+`Ctrl` with plus, minus or 0, without `Alt`, still changes the size of the whole window (its
+interface scale), not the page's zoom.

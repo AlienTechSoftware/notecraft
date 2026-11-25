@@ -1537,3 +1537,12 @@
 @id	ui.print_could_not_save_pdf	$$$The PDF could not be saved: {error}@@@
 @id	ui.print_save_first	$$$The page could not be saved, so it was not printed.@@@
 @id	ui.print_opened_in_viewer	$$$The sheets are open in your PDF viewer. Print them from there.@@@
+@id	ui.zoom_out_tip	$$$Make the page smaller (Ctrl+Alt+-)@@@
+@id	ui.zoom_in_tip	$$$Make the page larger (Ctrl+Alt+=)@@@
+@id	ui.zoom_percent_tip	$$$The page's zoom now; pick another@@@
+@id	ui.page_colour_tip	$$$The colour behind this page@@@
+@id	ui.rule_lines	$$$Rule lines@@@
+@id	ui.custom_paper_mm	$$$Custom, {w} x {h} mm@@@
+@id	ui.full_page_off_tip	$$$Give the page the whole window (F11). The page is the same; only the notebooks and pages are hidden.@@@
+@id	ui.full_page_on_tip	$$$Bring the notebooks and pages back (F11)@@@
+@id	ui.zoom_level	$$$Zoom level@@@

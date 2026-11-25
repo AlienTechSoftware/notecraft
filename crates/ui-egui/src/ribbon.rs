@@ -2686,6 +2686,137 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
 }
 
 /// OneNote's Rule Lines button: the paper now, and a gallery of every paper under it.
+/// A small row that names a setting, shows what it is set to and opens its choices (issue #376):
+/// a little picture of the value, the setting's name, the value in the quiet colour, and the
+/// chevron a menu button has. A screen reader hears the name and then the value.
+// i18n-ui-text: label,tip
+fn value_row(ui: &mut Ui, label: &str, value: &str, tip: &str, open: bool, t: &Tokens, preview: impl FnOnce(&egui::Painter, Rect)) -> egui::Response {
+    let label = crate::tl!(label);
+    let tip = crate::tl!(tip);
+    let font = egui::FontId::proportional(12.0);
+    let quiet = egui::FontId::proportional(11.5);
+    let name_w = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.text).size().x;
+    let value_w = ui.painter().layout_no_wrap(value.to_string(), quiet.clone(), t.muted).size().x;
+    let (rect, resp) = ui.allocate_exact_size(vec2(26.0 + name_w + 6.0 + value_w + 16.0, SMALL_H), Sense::click());
+    let painter = ui.painter_at(rect);
+    if open {
+        painter.rect_filled(rect, 4.0, t.row_selected);
+    } else if resp.hovered() {
+        painter.rect_filled(rect, 4.0, t.row_hover);
+    }
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+    }
+    preview(&painter, Rect::from_center_size(egui::pos2(rect.min.x + 11.0, rect.center().y), vec2(16.0, 14.0)));
+    let (text, quiet_colour) = if ui.is_enabled() { (t.text, t.muted) } else { (t.muted, t.faint) };
+    painter.text(egui::pos2(rect.min.x + 24.0, rect.center().y), Align2::LEFT_CENTER, label, font, text);
+    painter.text(egui::pos2(rect.min.x + 24.0 + name_w + 6.0, rect.center().y), Align2::LEFT_CENTER, value, quiet, quiet_colour);
+    chevron(&painter, egui::pos2(rect.max.x - 7.0, rect.center().y - 1.0), quiet_colour);
+    let enabled = ui.is_enabled();
+    let (name, said) = (label.to_string(), value.to_string());
+    resp.widget_info(move || {
+        let mut info = egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &name);
+        info.current_text_value = Some(said.clone());
+        info
+    });
+    resp.on_hover_text(tip)
+}
+
+/// View > Page Setup > Page colour, showing the colour the page has.
+fn page_colour_row(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
+    let value = view.page_colour.map_or_else(|| crate::tl_id!("ui.no_colour").to_string(), |c| crate::tl!(c.label()).to_string());
+    let popup_id = ui.id().with("page-colour-row");
+    let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+    let dark = t.editor.r() < 128;
+    let resp = value_row(ui, crate::tl_id!("ui.page_colour"), &value, crate::tl_id!("ui.page_colour_tip"), open, t, |painter, area| {
+        let fill = view.page_colour.map_or(t.editor, |c| {
+            let (r, g, b) = c.rgb(dark);
+            egui::Color32::from_rgb(r, g, b)
+        });
+        painter.rect_filled(area, 2.0, fill);
+        painter.rect_stroke(area, 2.0, egui::Stroke::new(1.0, t.muted), egui::StrokeKind::Inside);
+        if view.page_colour.is_none() {
+            painter.line_segment([area.left_bottom() + vec2(3.0, -3.0), area.right_top() + vec2(-3.0, 3.0)], egui::Stroke::new(1.0, t.muted));
+        }
+    });
+    egui::Popup::menu(&resp).id(popup_id).show(|ui| {
+        if page_colour_palette(ui, view, t, acts) {
+            ui.close();
+        }
+    });
+}
+
+/// View > Page Setup > Rule lines, showing the paper the page is on.
+fn rule_lines_row(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
+    let popup_id = ui.id().with("rule-lines-row");
+    let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+    let rules = view.rules;
+    let resp = value_row(ui, crate::tl_id!("ui.rule_lines"), rules.translated_label(), crate::tl_id!("ui.lines_or_squares_behind_the_page_as_on_paper"), open, t, |painter, area| {
+        painter.rect_filled(area, 1.0, t.editor);
+        paint_paper(&painter.with_clip_rect(area), area, rules, 0.3, t.rule_line_strong, t.rule_line_strong);
+        painter.rect_stroke(area, 1.0, egui::Stroke::new(1.0, t.muted), egui::StrokeKind::Inside);
+    });
+    egui::Popup::menu(&resp).id(popup_id).show(|ui| {
+        let mut picked = false;
+        for papers in [&[RuleLines::None][..], &RuleLines::RULED[..], &RuleLines::GRIDS[..], &RuleLines::CRAFT[..]] {
+            ui.horizontal(|ui| {
+                for r in papers {
+                    if paper_swatch(ui, *r, view.rules == *r, t).clicked() {
+                        acts.push(Act::RuleLines(*r));
+                        picked = true;
+                    }
+                }
+            });
+        }
+        ui.separator();
+        picked |= rule_colour_palette(ui, view, t, acts);
+        if picked {
+            ui.close();
+        }
+    });
+}
+
+/// What a page's paper size is called on its row: Auto, the sheet and which way up, or a custom
+/// size in millimetres.
+pub fn paper_value(paper: Option<notecraft_model::paper::Paper>) -> String {
+    use notecraft_model::paper::Size;
+    match paper {
+        None => crate::tl_id!("ui.auto").to_string(),
+        Some(p) => match p.size {
+            Size::Custom(w, h) => crate::i18n::format_message_id("ui.custom_paper_mm", &[("w", &format!("{w:.0}")), ("h", &format!("{h:.0}"))]),
+            size => {
+                let turn = if p.landscape { crate::tl_id!("ui.landscape") } else { crate::tl_id!("ui.portrait") };
+                format!("{}, {turn}", crate::tl!(size.label()))
+            }
+        },
+    }
+}
+
+/// View > Page Setup > Paper size, showing the sheet the page is written for.
+fn paper_size_row(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
+    let popup_id = ui.id().with("paper-size-row");
+    let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+    let paper = view.paper_size;
+    let resp = value_row(ui, crate::tl_id!("ui.paper_size"), &paper_value(paper), crate::tl_id!("ui.the_sheet_this_page_is_written_for_its_size_turn_and_margins"), open, t, |painter, area| {
+        // A sheet the shape of the paper, or a dashed edge for Auto, which has none.
+        let sheet = paper.map_or(area.shrink2(vec2(3.0, 1.0)), |p| {
+            let (w, h) = p.sheet_mm();
+            let scale = (area.width() / w).min(area.height() / h);
+            Rect::from_center_size(area.center(), vec2(w * scale, h * scale))
+        });
+        painter.rect_filled(sheet, 1.0, t.editor);
+        if paper.is_some() {
+            painter.rect_stroke(sheet, 1.0, egui::Stroke::new(1.0, t.muted), egui::StrokeKind::Inside);
+        } else {
+            for side in [[sheet.left_top(), sheet.right_top()], [sheet.right_top(), sheet.right_bottom()], [sheet.right_bottom(), sheet.left_bottom()], [sheet.left_bottom(), sheet.left_top()]] {
+                painter.add(egui::Shape::dashed_line(&side, egui::Stroke::new(1.0, t.muted), 2.0, 2.0));
+            }
+        }
+    });
+    // It stays open while sizes are tried and margins dragged; a click away closes it.
+    egui::Popup::menu(&resp).id(popup_id).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| paper_size_menu(ui, paper, t, acts));
+}
+
 fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     let open_id = egui::Id::new("ribbon-rule-lines");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
@@ -3758,7 +3889,7 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             ui,
             if view.full_page { Icon::ExitFullPage } else { Icon::FullPage },
             crate::tl_id!("ui.full_page_view_2"),
-            crate::tl_id!("ui.give_the_page_the_whole_window"),
+            if view.full_page { crate::tl_id!("ui.full_page_on_tip") } else { crate::tl_id!("ui.full_page_off_tip") },
             view.full_page,
             t,
         )
@@ -3795,17 +3926,10 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
     });
     group(ui, crate::tl_id!("ui.tools"), t, |ui| {
         rows(ui, |ui| {
-            if small(
-                ui,
-                None,
-                crate::tl_id!("ui.immersive_reader"),
-                crate::tl_id!("ui.immersive_reader"),
-                crate::tl_id!("ui.immersive_reader_tip"),
-                false,
-                t,
-            )
-            .clicked()
-            {
+            // Issue #376: a command with an icon and its name, like the others, and a tip that says
+            // how it differs from Full Page View: the page as plain large type to read, not the
+            // page itself with more room.
+            if small_labeled_icon(ui, Icon::AlignLeft, crate::tl_id!("ui.immersive_reader"), crate::tl_id!("ui.immersive_reader_tip"), t).clicked() {
                 acts.push(Act::ImmersiveReader);
             }
             not_built(ui, crate::tl_id!("ui.live_captions"), t);
@@ -3813,6 +3937,13 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
     });
     group(ui, crate::tl_id!("ui.page_setup"), t, |ui| {
         rule_lines_menu(ui, view, t, acts);
+        // Issue #376: each part of the paper says what it is set to, with a small picture of it,
+        // and opens its own choices. Three rows, so nothing runs into the group's name.
+        rows(ui, |ui| {
+            ui.add_enabled_ui(view.has_page, |ui| page_colour_row(ui, view, t, acts));
+            ui.add_enabled_ui(view.has_page, |ui| rule_lines_row(ui, view, t, acts));
+            ui.add_enabled_ui(view.has_page, |ui| paper_size_row(ui, view, t, acts));
+        });
         rows(ui, |ui| {
             if small_check(ui, crate::tl_id!("ui.hide_page_title"), crate::tl_id!("ui.hide_the_page_title"), view.hide_title, t).clicked() {
                 acts.push(Act::ToggleTitle);
@@ -3828,42 +3959,38 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             {
                 acts.push(Act::ToggleSnap);
             }
-            ui.add_enabled_ui(view.has_page, |ui| {
-                ui.menu_button(crate::tl_id!("ui.page_colour"), |ui| {
-                    if page_colour_palette(ui, view, t, acts) {
-                        ui.close();
-                    }
-                });
-            });
-            ui.add_enabled_ui(view.has_page, |ui| {
-                // It stays open while sizes are tried and margins dragged; a click away closes it.
-                let config = egui::containers::menu::MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
-                egui::containers::menu::MenuButton::new(crate::tl_id!("ui.paper_size"))
-                    .config(config)
-                    .ui(ui, |ui| paper_size_menu(ui, view.paper_size, t, acts))
-                    .0
-                    .on_hover_text(crate::tl_id!("ui.the_sheet_this_page_is_written_for_its_size_turn_and_margins"));
-            });
         });
     });
+    // Issue #376: one cluster, in the order the issue names it: Zoom Out, the zoom now (pick
+    // another), Zoom In, then Reset zoom and Page Width under the percentage.
     group(ui, crate::tl_id!("ui.zoom"), t, |ui| {
         ui.horizontal(|ui| {
-            if big(ui, Icon::ZoomOut, crate::tl_id!("ui.zoom_out"), crate::tl_id!("ui.make_the_page_smaller"), t).clicked() {
+            if big(ui, Icon::ZoomOut, crate::tl_id!("ui.zoom_out"), crate::tl_id!("ui.zoom_out_tip"), t).clicked() {
                 acts.push(Act::Zoom(-1));
             }
-            if big(ui, Icon::ZoomIn, crate::tl_id!("ui.zoom_in"), crate::tl_id!("ui.make_the_page_larger"), t).clicked() {
-                acts.push(Act::Zoom(1));
-            }
             rows(ui, |ui| {
-                egui::ComboBox::from_label(crate::tl_id!("ui.zoom")).width(76.0).selected_text(format!("{}%", view.zoom_percent)).show_ui(ui, |ui| {
-                    for percent in [50, 60, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250] {
-                        if ui.selectable_label(view.zoom_percent == percent, format!("{percent}%")).clicked() {
-                            acts.push(Act::ZoomTo(percent));
+                let combo = egui::ComboBox::from_id_salt("ribbon-zoom-percent")
+                    .width(76.0)
+                    .selected_text(format!("{}%", view.zoom_percent))
+                    .show_ui(ui, |ui| {
+                        for percent in [50, 60, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250] {
+                            if ui.selectable_label(view.zoom_percent == percent, format!("{percent}%")).clicked() {
+                                acts.push(Act::ZoomTo(percent));
+                            }
                         }
-                    }
+                    })
+                    .response;
+                // The percentage box is named for a screen reader, and says its value; on screen the
+                // group's name under it already says what it is.
+                let (enabled, now) = (ui.is_enabled(), format!("{}%", view.zoom_percent));
+                combo.widget_info(move || {
+                    let mut info = egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, enabled, crate::tl_id!("ui.zoom_level"));
+                    info.current_text_value = Some(now.clone());
+                    info
                 });
-                // Issue #376: a reset reads as a reset, not as a second "100%" beside the
-                // percentage box; there is nothing to reset at 100%.
+                combo.on_hover_text(crate::tl_id!("ui.zoom_percent_tip"));
+                // A reset reads as a reset, not as a second "100%" beside the percentage box;
+                // there is nothing to reset at 100%.
                 let reset = ui
                     .add_enabled_ui(view.zoom_percent != 100, |ui| {
                         small_labeled_icon(ui, Icon::Undo, crate::tl_id!("ui.reset_zoom"), crate::tl_id!("ui.show_the_page_at_100"), t)
@@ -3878,6 +4005,9 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
                     acts.push(Act::PageWidth);
                 }
             });
+            if big(ui, Icon::ZoomIn, crate::tl_id!("ui.zoom_in"), crate::tl_id!("ui.zoom_in_tip"), t).clicked() {
+                acts.push(Act::Zoom(1));
+            }
         });
     });
     group(ui, crate::tl_id!("ui.window"), t, |ui| {

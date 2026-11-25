@@ -14994,6 +14994,179 @@ fn view_toggles_show_their_state_and_reset_zoom_resets() {
     assert_eq!(is_on(&h, "Tabs layout"), Some(true));
 }
 
+/// Issue #376: View > Page Setup names each part of the paper with what it is set to, and each
+/// row changes it: page colour, rule lines and paper size.
+#[test]
+fn view_page_setup_rows_show_and_change_their_values() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-view-paper-values");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 800.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    let value = |h: &Harness<'_, NoteCraftApp>, label: &str| h.get_by_label(label).accesskit_node().value();
+    assert_eq!(value(&h, "Page colour").as_deref(), Some("No colour"));
+    assert_eq!(value(&h, "Rule lines").as_deref(), Some("None"));
+    assert_eq!(value(&h, "Paper size").as_deref(), Some("Auto"));
+    h.get_by_label("Page colour").click();
+    settle(&mut h);
+    h.get_all_by_label("Blue").last().expect("the blue swatch").click();
+    settle(&mut h);
+    assert_eq!(value(&h, "Page colour").as_deref(), Some("Blue"));
+    h.get_by_label("Rule lines").click();
+    settle(&mut h);
+    h.get_all_by_label("College ruled").last().expect("college ruled paper").click();
+    settle(&mut h);
+    assert_eq!(value(&h, "Rule lines").as_deref(), Some("College ruled"));
+    h.get_by_label("Paper size").click();
+    settle(&mut h);
+    h.get_by_label("A5").click();
+    settle(&mut h);
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert_eq!(value(&h, "Paper size").as_deref(), Some("A5, Portrait"));
+    review(&mut h, "view_page_setup_values");
+    let text = std::fs::read_to_string(s.md_page.join("index.md")).expect("page");
+    assert!(text.contains("blue") && text.contains("college") && text.contains("a5"), "the page keeps what was picked: {text}");
+}
+
+/// Issue #376: zoom is one cluster that keeps its percentage in step with the page, from the
+/// ribbon, the list of sizes and the keyboard (Ctrl+Alt with plus, minus or 0), and F11 gives the
+/// page the whole window and takes it back.
+#[test]
+fn view_zoom_cluster_and_full_page_follow_the_page() {
+    use egui_kittest::kittest::NodeT as _;
+    let (_t, app, s) = sample_app("ui-view-zoom-cluster");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 800.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    let shown = |h: &Harness<'_, NoteCraftApp>| h.get_by_label("Zoom level").accesskit_node().value();
+    assert_eq!(shown(&h).as_deref(), Some("100%"));
+    // Zoom Out, the percentage and Zoom In read left to right, in that order.
+    let x = |h: &Harness<'_, NoteCraftApp>, label: &str| h.get_by_label(label).rect().center().x;
+    assert!(x(&h, "Zoom Out") < x(&h, "Zoom level") && x(&h, "Zoom level") < x(&h, "Zoom In"), "Zoom Out, the zoom now, Zoom In");
+    h.get_by_label("Zoom In").click();
+    settle(&mut h);
+    assert_eq!((h.state().zoom_percent(), shown(&h).as_deref()), (110, Some("110%")));
+    h.get_by_label("Zoom level").click();
+    settle(&mut h);
+    h.get_by_label("150%").click();
+    settle(&mut h);
+    assert_eq!((h.state().zoom_percent(), shown(&h).as_deref()), (150, Some("150%")));
+    let keys = egui::Modifiers::COMMAND | egui::Modifiers::ALT;
+    h.key_press_modifiers(keys, egui::Key::Minus);
+    settle(&mut h);
+    assert_eq!((h.state().zoom_percent(), shown(&h).as_deref()), (140, Some("140%")), "Ctrl+Alt+- zooms the page out");
+    h.key_press_modifiers(keys, egui::Key::Equals);
+    settle(&mut h);
+    assert_eq!(h.state().zoom_percent(), 150, "Ctrl+Alt+= zooms it in");
+    h.key_press_modifiers(keys, egui::Key::Num0);
+    settle(&mut h);
+    assert_eq!((h.state().zoom_percent(), shown(&h).as_deref()), (100, Some("100%")), "Ctrl+Alt+0 is Reset zoom");
+    // Page Width fits the page, and Reset zoom goes back to 100% from it.
+    h.get_by_label("Page Width").click();
+    settle(&mut h);
+    let fitted = h.state().zoom_percent();
+    let after_fit = shown(&h);
+    assert_eq!(after_fit, Some(format!("{fitted}%")), "the box shows the fitted zoom");
+    // F11 takes the notebooks away and brings them back; the button says which.
+    assert_eq!(is_on(&h, "Full Page View"), Some(false));
+    h.key_press(egui::Key::F11);
+    settle(&mut h);
+    assert!(h.state().is_full_page(), "F11 gives the page the whole window");
+    assert_eq!(is_on(&h, "Full Page View"), Some(true));
+    h.key_press(egui::Key::F11);
+    settle(&mut h);
+    assert!(!h.state().is_full_page(), "and F11 brings the notebooks back");
+    h.get_by_label("Full Page View").click();
+    settle(&mut h);
+    assert!(h.state().is_full_page(), "the button does the same");
+    h.get_by_label("Normal view").click();
+    settle(&mut h);
+    assert!(!h.state().is_full_page());
+}
+
+/// Issue #376: at a narrow width, in the long pseudo-locale, the paper and zoom controls can still
+/// be reached with Tab and opened with Enter, even where the ribbon has to scroll to show them.
+#[test]
+fn view_paper_and_zoom_are_reachable_by_keyboard_when_narrow_and_long() {
+    use egui_kittest::kittest::NodeT as _;
+    let t = TempDir::new("ui-view-keyboard-narrow");
+    let mut s = session(&t);
+    s.settings.set("ui_language", "en-XA").expect("pseudo-locale");
+    let sample = create_sample(&mut s, Some(LOGO_PNG)).expect("sample");
+    let mut h = sized_harness(NoteCraftApp::new(s), LIGHT, egui::vec2(1000.0, 820.0));
+    h.state_mut().open_path(&sample.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("$$$View@@@").click();
+    settle(&mut h);
+    let focused = |h: &Harness<'_, NoteCraftApp>| h.query_by(|n| n.is_focused()).and_then(|n| n.accesskit_node().label());
+    for target in ["$$$Paper size@@@", "$$$Zoom level@@@"] {
+        h.get_by_label_contains("Normal").focus();
+        settle(&mut h);
+        let mut reached = false;
+        for _ in 0..80 {
+            h.key_press(egui::Key::Tab);
+            h.step();
+            if focused(&h).as_deref() == Some(target) {
+                reached = true;
+                break;
+            }
+        }
+        assert!(reached, "{target} is reached with Tab");
+        h.key_press(egui::Key::Enter);
+        settle(&mut h);
+        let opened = if target.contains("Paper") { "A5" } else { "150%" };
+        assert!(h.query_all_by_label_contains(opened).count() > 0, "Enter on {target} opens its choices");
+        h.key_press(egui::Key::Escape);
+        settle(&mut h);
+    }
+}
+
+/// Issues #372 and #376: on every tab, at a laptop width and a wide one, no control runs into the
+/// name of its group under it (View's Paper size used to sit on "Page Setup").
+#[test]
+fn no_ribbon_control_runs_into_its_group_name() {
+    use egui_kittest::kittest::NodeT as _;
+    let anchors = [("Home", "Clipboard"), ("Insert", "Tables"), ("Draw", "Selection"), ("History", "Unread"), ("View", "Views")];
+    for width in [1100.0, 1600.0, 2200.0] {
+        let (_t, app, s) = sample_app("ui-ribbon-captions");
+        let mut h = sized_harness(app, LIGHT, egui::vec2(width, 820.0));
+        h.state_mut().open_path(&s.md_page.to_string_lossy());
+        settle(&mut h);
+        for (tab, group) in anchors {
+            h.get_by_label(tab).click();
+            settle(&mut h);
+            let top = h.get_by_label(group).rect().min.y;
+            // The group names sit on one line 82 points below the top of the groups (GROUP_H 92 less
+            // GROUP_NAME_Y 10), about 7 points either side of it.
+            let name_top = top + 75.0;
+            let controls = [
+                egui::accesskit::Role::Button,
+                egui::accesskit::Role::CheckBox,
+                egui::accesskit::Role::ComboBox,
+                egui::accesskit::Role::Slider,
+                egui::accesskit::Role::TextInput,
+            ];
+            let mut over = Vec::new();
+            for role in controls {
+                for node in h.query_all_by_role(role) {
+                    let r = node.rect();
+                    // The arrows that scroll the ribbon run its full height on purpose, at its edges.
+                    let edge_arrow = r.height() > 80.0;
+                    if !edge_arrow && r.min.y >= top - 1.0 && r.min.y < name_top && r.max.y > name_top + 0.5 && r.width() > 0.0 {
+                        over.push(format!("{:?} {:?} {:?}", node.accesskit_node().label(), role, r));
+                    }
+                }
+            }
+            assert!(over.is_empty(), "{tab} at {width}: controls run into the group names: {over:#?}");
+        }
+    }
+}
+
 /// Issue #380: the tree's menu keeps the shortcut out of the label.
 #[test]
 fn the_page_menu_names_new_page_without_its_shortcut() {

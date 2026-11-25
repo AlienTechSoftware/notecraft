@@ -2623,6 +2623,11 @@ impl NoteCraftApp {
     }
 
     /// The page's zoom, in percent, as the View tab shows it.
+    /// Whether the page has the whole window (Full Page View).
+    pub fn is_full_page(&self) -> bool {
+        self.full_page
+    }
+
     pub fn zoom_percent(&self) -> u32 {
         self.zoom_percent
     }
@@ -13587,6 +13592,32 @@ impl NoteCraftApp {
         // Ctrl+P prints the open page, as it does everywhere (issue #168).
         if self.dialog.is_none() && !self.own_modal_open() && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::P)) {
             self.open_print();
+        }
+        // The page's own zoom from the keyboard, as OneNote has it: Ctrl+Alt with plus, minus or 0
+        // (issue #376). Ctrl alone with them stays egui's size for the whole window (issue #377
+        // keeps the two apart).
+        if self.dialog.is_none() && !self.own_modal_open() {
+            let keys = Modifiers::COMMAND | Modifiers::ALT;
+            let step = ctx.input_mut(|i| {
+                if i.consume_key(keys, Key::Equals) || i.consume_key(keys, Key::Plus) {
+                    Some(1)
+                } else if i.consume_key(keys, Key::Minus) {
+                    Some(-1)
+                } else if i.consume_key(keys, Key::Num0) {
+                    Some(0)
+                } else {
+                    None
+                }
+            });
+            if let Some(step) = step {
+                self.ribbon_act(ribbon::Act::Zoom(step));
+            }
+        }
+        // F11 gives the page the whole window and brings the notebooks back, as in OneNote, so Full
+        // Page View can be left from the keyboard as well as from its button (issue #376).
+        if self.dialog.is_none() && !self.own_modal_open() && self.editor.is_some() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F11)) {
+            self.full_page = !self.full_page;
+            self.compact_full_page = false;
         }
         if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::S)) {
             if let Some(ed) = self.editor.as_mut() {
