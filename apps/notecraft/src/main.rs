@@ -666,7 +666,7 @@ mod tests {
         let missing = t.path().join("missing");
 
         assert_eq!(choose_demo_payload(&[installed.clone(), missing.clone()], &fallback), installed);
-        assert_eq!(choose_demo_payload(&[missing.clone()], &fallback), fallback);
+        assert_eq!(choose_demo_payload(std::slice::from_ref(&missing), &fallback), fallback);
         assert_eq!(choose_demo_payload(&[], &missing), missing);
     }
 
