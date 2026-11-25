@@ -64,27 +64,86 @@ const LANGUAGES: [(&str, &str); 9] = [
     ("hindi", "Hindi"),
 ];
 
-/// Where a picture sits in the navigator: its kind (the first folder under the test folder, such as
-/// handwriting, drawings or scans) and its language (from the folder names, see `LANGUAGES`).
-pub fn group_of(folder: &Path, picture: &Path) -> (String, String) {
-    let relative = picture.strip_prefix(folder).unwrap_or(picture);
-    let parts: Vec<String> = relative.iter().map(|p| p.to_string_lossy().to_ascii_lowercase()).collect();
-    let kind = if parts.len() > 1 { title(&parts[0]) } else { "Loose pictures".to_string() };
-    // The folders decide, not the file's own name (see `LANGUAGES`).
-    let folders = &parts[..parts.len().saturating_sub(1)];
-    let language = folders
-        .iter()
-        .find_map(|part| LANGUAGES.iter().find(|(key, _)| part.contains(key)).map(|(_, name)| name.to_string()))
-        .unwrap_or_else(|| "Other".to_string());
-    (kind, language)
+/// How a sample was made: the first level under a language. A photo or a scan is a picture. A drawing
+/// made with the pen in the app, or a vector drawing, is a digital drawing.
+pub const SOURCES: [(&str, &str); 2] = [("picture", "Picture (photo or scan)"), ("drawing", "Digital drawing (pen or vector)")];
+
+/// What a sample contains: the second level. A sample can have several, and then it appears under each.
+pub const CONTENTS: [(&str, &str); 3] =
+    [("handwriting-text", "Handwriting (text)"), ("handwriting-math", "Handwriting (math)"), ("shapes", "Shapes")];
+
+/// The content node for a sample with no content tag.
+pub const UNTAGGED: (&str, &str) = ("untagged", "Other");
+
+/// The label the navigator shows for a source or content id, or None when the id is not known.
+pub fn label_for<'a>(table: &[(&'a str, &'a str)], id: &str) -> Option<&'a str> {
+    table.iter().find(|(key, _)| *key == id).map(|(_, label)| *label)
 }
 
-fn title(word: &str) -> String {
-    let mut chars = word.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
+/// What a sample is: its source and its content tags. Kept in `<picture>.tags.json` beside it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Tags {
+    /// `picture` or `drawing`, from `SOURCES`.
+    pub source: String,
+    /// Ids from `CONTENTS`. Empty means untagged.
+    #[serde(default)]
+    pub content: Vec<String>,
+}
+
+impl Default for Tags {
+    fn default() -> Tags {
+        Tags { source: "picture".to_string(), content: Vec::new() }
     }
+}
+
+impl Tags {
+    pub fn new(source: &str, content: &[&str]) -> Tags {
+        Tags { source: source.to_string(), content: content.iter().map(|c| c.to_string()).collect() }
+    }
+
+    /// The navigator nodes this sample sits under: one (source, content) pair for each content tag,
+    /// or one pair with the untagged node when it has none. Unknown ids are left out.
+    pub fn nodes(&self) -> Vec<(String, String)> {
+        let source = if label_for(&SOURCES, &self.source).is_some() { self.source.clone() } else { "picture".to_string() };
+        let known: Vec<String> = self.content.iter().filter(|c| label_for(&CONTENTS, c).is_some()).cloned().collect();
+        if known.is_empty() { vec![(source, UNTAGGED.0.to_string())] } else { known.into_iter().map(|c| (source.clone(), c)).collect() }
+    }
+}
+
+pub fn tags_path(picture: &Path) -> PathBuf {
+    let name = picture.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    picture.with_file_name(format!("{name}.tags.json"))
+}
+
+/// Loads a sample's tags. A sample with no tags file, or one that cannot be read, is a plain picture
+/// with no content tags.
+pub fn load_tags(picture: &Path) -> Tags {
+    let text = std::fs::read_to_string(tags_path(picture)).unwrap_or_default();
+    serde_json::from_str(text.trim_start_matches('\u{feff}')).unwrap_or_default()
+}
+
+/// Saves a sample's tags through a temporary file.
+pub fn save_tags(picture: &Path, tags: &Tags) -> Result<(), String> {
+    let path = tags_path(picture);
+    let tmp = path.with_extension("json.tmp");
+    let text = serde_json::to_string_pretty(tags).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, format!("{text}\n")).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// The language a picture belongs to, from the folder names (see `LANGUAGES`). "Other" when none match.
+pub fn language_of(folder: &Path, picture: &Path) -> String {
+    let relative = picture.strip_prefix(folder).unwrap_or(picture);
+    relative
+        .iter()
+        .map(|p| p.to_string_lossy().to_ascii_lowercase())
+        .find_map(|part| LANGUAGES.iter().find(|(key, _)| part.contains(key)).map(|(_, name)| name.to_string()))
+        .unwrap_or_else(|| "Other".to_string())
+}
+
+/// The folder a new sample goes into for a language: `<folder>/<Language>`.
+pub fn language_folder(folder: &Path, language: &str) -> PathBuf {
+    folder.join(language)
 }
 
 pub fn label_path(picture: &Path) -> PathBuf {
@@ -92,10 +151,36 @@ pub fn label_path(picture: &Path) -> PathBuf {
     picture.with_file_name(format!("{name}.label.json"))
 }
 
-/// The saved OCR run beside a picture: `<picture>.ocr-run.json`.
-pub fn run_path(picture: &Path) -> PathBuf {
-    let name = picture.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    picture.with_file_name(format!("{name}.ocr-run.json"))
+/// The signed area of a polygon with corners `[x, y]` in order. Used by the tests until a writer needs it.
+#[cfg(test)]
+/// The signed area of a polygon with corners `[x, y]` in order. Positive is clockwise on the screen (y
+/// runs down), negative anticlockwise. In `.ocr.json` the sign says which ring is outer and which inner.
+pub fn signed_area(polygon: &[[f32; 2]]) -> f32 {
+    let n = polygon.len();
+    (0..n)
+        .map(|i| {
+            let (a, b) = (polygon[i], polygon[(i + 1) % n]);
+            a[0] * b[1] - b[0] * a[1]
+        })
+        .sum::<f32>()
+        / 2.0
+}
+
+/// Whether two edges cross or touch. Shared endpoints count as touching.
+fn edges_cross(a: [[f32; 2]; 2], b: [[f32; 2]; 2]) -> bool {
+    let side = |p: [f32; 2], q: [f32; 2], r: [f32; 2]| (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    let (d1, d2) = (side(b[0], b[1], a[0]), side(b[0], b[1], a[1]));
+    let (d3, d4) = (side(a[0], a[1], b[0]), side(a[0], a[1], b[1]));
+    d1 * d2 <= 0.0 && d3 * d4 <= 0.0
+}
+
+/// Whether two polygons' outlines cross or touch. Nesting is not a crossing: a ring inside another, as
+/// circular text is written, is allowed. This is the rule the schema states for `polygon` and `bounds`.
+pub fn outlines_cross(a: &[[f32; 2]], b: &[[f32; 2]]) -> bool {
+    (0..a.len()).any(|i| {
+        let ea = [a[i], a[(i + 1) % a.len()]];
+        (0..b.len()).any(|j| edges_cross(ea, [b[j], b[(j + 1) % b.len()]]))
+    })
 }
 
 /// The SHA-256 of a picture's bytes, so a saved run can tell it still belongs to the picture.
@@ -200,16 +285,41 @@ mod tests {
     }
 
     #[test]
-    fn a_picture_is_grouped_by_its_folder_kind_and_language() {
+    fn a_sample_is_grouped_by_language_and_appears_under_each_content_tag() {
         let folder = Path::new("/cases");
-        let (kind, language) = group_of(folder, Path::new("/cases/handwriting/english-gnhk/p1.png"));
-        assert_eq!((kind.as_str(), language.as_str()), ("Handwriting", "English"));
-        let (kind, language) = group_of(folder, Path::new("/cases/drawings/mermaid-diagrams/a.png"));
-        assert_eq!((kind.as_str(), language.as_str()), ("Drawings", "Other"));
-        let (kind, language) = group_of(folder, Path::new("/cases/handwriting/scans/english-sample.png"));
-        assert_eq!((kind.as_str(), language.as_str()), ("Handwriting", "Other"), "a file's own name does not pick the language");
-        let (kind, _) = group_of(folder, Path::new("/cases/loose.png"));
-        assert_eq!(kind, "Loose pictures");
+        assert_eq!(language_of(folder, Path::new("/cases/English/english-gnhk/p1.png")), "English");
+        assert_eq!(language_of(folder, Path::new("/cases/loose.png")), "Other");
+        let both = Tags::new("picture", &["handwriting-math", "handwriting-text"]);
+        assert_eq!(
+            both.nodes(),
+            vec![("picture".to_string(), "handwriting-math".to_string()), ("picture".to_string(), "handwriting-text".to_string())]
+        );
+        assert_eq!(Tags::default().nodes(), vec![("picture".to_string(), "untagged".to_string())]);
+        assert_eq!(Tags::new("drawing", &["bogus"]).nodes(), vec![("drawing".to_string(), "untagged".to_string())]);
+    }
+
+    #[test]
+    fn tags_round_trip_beside_their_picture_and_a_missing_file_is_a_plain_picture() {
+        let dir = std::env::temp_dir().join(format!("ocr-lab-tags-{}", crate::unique_suffix()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let picture = dir.join("t.png");
+        assert_eq!(load_tags(&picture), Tags::default());
+        let tags = Tags::new("drawing", &["shapes"]);
+        save_tags(&picture, &tags).expect("save");
+        assert_eq!(load_tags(&picture), tags);
+        std::fs::remove_dir_all(&dir).expect("clean up");
+    }
+
+    #[test]
+    fn concentric_rings_nest_but_crossing_outlines_are_refused() {
+        let outer = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
+        let inner = [[3.0, 3.0], [7.0, 3.0], [7.0, 7.0], [3.0, 7.0]];
+        let crossing = [[5.0, -2.0], [12.0, 5.0], [5.0, 12.0], [-2.0, 5.0]];
+        assert!(!outlines_cross(&outer, &inner), "a ring inside another is allowed");
+        assert!(outlines_cross(&outer, &crossing), "outlines that cross are refused");
+        assert!(signed_area(&outer) > 0.0, "clockwise on screen is positive");
+        let reversed: Vec<[f32; 2]> = inner.iter().rev().copied().collect();
+        assert!(signed_area(&reversed) < 0.0, "a hole runs the other way");
     }
 
     #[test]

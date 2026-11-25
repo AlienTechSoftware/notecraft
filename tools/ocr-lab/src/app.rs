@@ -6,15 +6,33 @@ use crate::settings;
 use crate::telemetry::{self, Log, Timing};
 use eframe::egui;
 use egui::{Color32, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
+use notecraft_ink::{Dab, Drawing, Stroke as InkStroke, svg};
 use notecraft_ocr::{Line, OcrsReader};
 use notecraft_ui_egui::theme::Theme;
+use notecraft_ui_egui::{pageedit, ribbon};
 use std::path::{Path, PathBuf};
 
 const HANDLE_PX: f32 = 8.0;
 const LABEL_COLOUR: Color32 = Color32::from_rgb(40, 160, 255);
 const LABEL_DEFAULT_RGB: [u8; 3] = [40, 160, 255];
 const SELECTED_COLOUR: Color32 = Color32::from_rgb(255, 200, 0);
-const ENGINE_COLOUR: Color32 = Color32::from_rgb(255, 90, 60);
+/// The colours the recognised lines are given, in order, so neighbouring lines differ. A line can be
+/// given another colour from its swatch in the list.
+const LINE_PALETTE: [Color32; 8] = [
+    Color32::from_rgb(255, 90, 60),
+    Color32::from_rgb(40, 150, 255),
+    Color32::from_rgb(60, 190, 90),
+    Color32::from_rgb(230, 170, 30),
+    Color32::from_rgb(170, 90, 230),
+    Color32::from_rgb(20, 200, 200),
+    Color32::from_rgb(240, 80, 170),
+    Color32::from_rgb(120, 120, 120),
+];
+
+/// The colour of a recognised line: the one chosen for it, or its place in the palette.
+fn line_colour(loaded: &Loaded, index: usize) -> Color32 {
+    loaded.line_colours.get(&index).copied().unwrap_or(LINE_PALETTE[index % LINE_PALETTE.len()])
+}
 
 /// How the picture is shown: hue turns the colours round the colour wheel, contrast and brightness
 /// are applied after it. Neutral is no change at all.
@@ -86,7 +104,17 @@ pub fn rotate_hue(rgb: [u8; 3], degrees: f32) -> [u8; 3] {
 pub enum Mode {
     Select,
     Draw,
+    /// Pen on the open picture. The strokes change the picture, so save them to keep them.
+    Ink,
+    /// Eraser on the open picture: rubs out pixels and strokes under it.
+    Erase,
 }
+
+/// Radius of the eraser, in picture pixels.
+const ERASER_RADIUS: f32 = 10.0;
+
+/// Size of a new blank drawing, in picture pixels.
+const BLANK_SIZE: [u32; 2] = [1200, 800];
 
 /// A gesture in progress, in picture pixels.
 #[derive(Debug, Clone, Copy)]
@@ -108,11 +136,23 @@ struct Loaded {
     lines: Vec<Line>,
     timings: Vec<Timing>,
     score: Option<Score>,
+    /// True when the pen has changed the picture and it is not saved yet.
+    dirty: bool,
+    /// Where the pen was last, in picture pixels, so a stroke has no gaps.
+    last_ink: Option<[f32; 2]>,
+    /// The drawing's strokes with the pen's readings, kept as `<picture>.svg` beside the PNG.
+    ink: Drawing,
+    /// The stroke being drawn now, added to `ink` when the pen lifts.
+    current: Option<InkStroke>,
+    /// Colours the person chose for recognised lines, by line index. Empty means the palette.
+    line_colours: std::collections::HashMap<usize, Color32>,
 }
 
 pub struct Lab {
     folder: PathBuf,
     pictures: Vec<PathBuf>,
+    /// The tags of each picture, in the same order as `pictures`.
+    tags: Vec<case::Tags>,
     loaded: Option<Loaded>,
     reader: Option<OcrsReader>,
     reader_error: Option<String>,
@@ -127,45 +167,48 @@ pub struct Lab {
     /// The theme last applied to the window, so the visuals are set only when it changes.
     applied_theme: Option<Theme>,
     mode: Mode,
+    /// The pens for digital drawings, from the app's rack.
+    pen: crate::pen::Pen,
+    /// The picture waiting for the person to confirm its deletion.
+    pending_delete: Option<usize>,
+    /// The folder and tags for a blank drawing waiting for its size to be chosen, and that size.
+    pending_new: Option<(PathBuf, case::Tags)>,
+    new_size: [u32; 2],
+    /// How readily the pen answers pressure, 0 to 100, from the ribbon's slider.
+    sensitivity: u8,
+    /// The pen's pressure, from the window's touch events. A mouse reads as full pressure.
+    stylus: notecraft_ui_egui::stylus::Stylus,
+    /// The ruled lines or squares shown over the picture, from the ribbon's View tab. A view only: the
+    /// file is not changed, so OCR reads the picture as it is.
+    rules: ribbon::RuleLines,
+    /// A text file shown in the main area instead of the picture: its path and its text.
+    viewing_json: Option<(PathBuf, String)>,
+    /// What the ribbon's pointer is set to: Type to select, or Draw to write with the pen in hand.
+    pointer: ribbon::Pointer,
+    /// The ribbon's chosen tab, and whether the ribbon is folded to its tab names.
+    ribbon_tab: String,
+    ribbon_folded: bool,
+    /// Whether a drawing was open last frame, so the ribbon opens and folds only when that changes.
+    ribbon_was_drawing: bool,
+    /// The open path in the navigator: the open language, then its open source, then its open content.
+    /// Each level holds one open node, so opening a node closes its siblings. Empty means all closed.
+    open_path: Vec<String>,
     selected: Option<usize>,
     drag: Option<Drag>,
     show_engine: bool,
     log: Log,
     status: String,
-    /// The Insert dialog, while it is open (issue #489).
-    insert: Option<InsertDialog>,
-    /// Where this test folder's pictures kept on this computer are (`local_pictures`).
-    local: PathBuf,
-}
-
-/// The canvas a picture is drawn on, in pixels, and how many of them one point on screen covers.
-const CANVAS: [u32; 2] = [1200, 600];
-const CANVAS_SCALE: f32 = 2.0;
-
-/// Adding a picture to one group of the test cases: from a file, or drawn.
-struct InsertDialog {
-    kind: String,
-    language: String,
-    /// The group's folder in the test folder, when the group has pictures there.
-    tests_dir: Option<PathBuf>,
-    file: Option<PathBuf>,
-    sketch: Option<crate::insert::Sketch>,
-    name: String,
-    /// Put it into the test folder (tracked by git) rather than keep it on this computer.
-    into_tests: bool,
-    source: String,
-    licence: String,
-    error: Option<String>,
 }
 
 impl Lab {
     pub fn new(folder: PathBuf, models: Option<PathBuf>, saved_theme: Option<String>, saved_follow: bool, mut log: Log) -> Lab {
         let pictures = case::discover(&folder);
+        let tags = pictures.iter().map(|p| case::load_tags(p)).collect();
         log.event(&format!("lab opened: {} pictures in {}", pictures.len(), folder_name(&folder)));
         let mut lab = Lab {
-            local: Lab::local_for(&folder),
             folder,
             pictures,
+            tags,
             loaded: None,
             reader: None,
             reader_error: Some(
@@ -181,14 +224,26 @@ impl Lab {
             applied_adjust: None,
             applied_theme: None,
             mode: Mode::Select,
+            pen: crate::pen::Pen::new(),
+            open_path: Vec::new(),
+            pointer: ribbon::Pointer::default(),
+            viewing_json: None,
+            rules: ribbon::RuleLines::default(),
+            stylus: Default::default(),
+            sensitivity: 50,
+            ribbon_tab: "Draw".to_string(),
+            // Folded until a drawing opens. See `ui`.
+            ribbon_folded: true,
+            ribbon_was_drawing: false,
+            pending_delete: None,
+            pending_new: None,
+            new_size: BLANK_SIZE,
             selected: None,
             drag: None,
             show_engine: true,
             log,
             status: String::new(),
-            insert: None,
         };
-        lab.pictures = lab.discover();
         if let Some(dir) = models {
             lab.load_reader(&dir);
         }
@@ -203,7 +258,7 @@ impl Lab {
     /// Loads the two ONNX models from a folder. Failure leaves the lab usable for browsing.
     pub fn load_reader(&mut self, dir: &Path) {
         self.health = crate::models::check(Some(dir));
-        let (det, rec) = (dir.join(crate::models::DETECTION), dir.join(crate::models::RECOGNITION));
+        let (det, rec) = (dir.join("text-detection.onnx"), dir.join("text-recognition.onnx"));
         let mut timings = Vec::new();
         let loaded = telemetry::timed("model load", &mut timings, || OcrsReader::from_model_files(&det, &rec));
         self.model_load_ms = timings.last().map(|t| t.ms);
@@ -226,10 +281,8 @@ impl Lab {
 
     /// Points the lab at another test folder and forgets the picture that was open.
     pub fn set_folder(&mut self, folder: PathBuf) {
-        self.local = Lab::local_for(&folder);
         self.folder = folder;
-        self.pictures = self.discover();
-        self.insert = None;
+        self.reload_pictures();
         self.loaded = None;
         self.selected = None;
         self.drag = None;
@@ -244,10 +297,32 @@ impl Lab {
             models: self.models.clone(),
             theme: Some(self.theme.id()),
             follow_system: self.follow_system,
+            // Tree and ribbon state are not saved for now. To turn saving back on, uncomment these
+            // three lines and the restore calls in main.rs.
+            // open_path: self.open_path.clone(),
+            // ribbon_tab: Some(self.ribbon_tab.clone()),
+            // ribbon_folded: self.ribbon_folded,
+            ..Default::default()
         });
     }
 
+    // Restoring the tree and ribbon state from the last session, paused with the saving above.
+    // /// Restores the ribbon's tab and folded state from the last session.
+    // pub fn restore_ribbon(&mut self, tab: Option<String>, folded: bool) {
+    //     if let Some(tab) = tab {
+    //         self.ribbon_tab = tab;
+    //     }
+    //     self.ribbon_folded = folded;
+    // }
+    //
+    // /// Restores the navigator's open path from the last session.
+    // pub fn restore_open_path(&mut self, path: Vec<String>) {
+    //     self.open_path = path;
+    // }
+
     fn select(&mut self, ctx: &egui::Context, index: usize) {
+        // Picking a sample shows the picture again, so the OCR file is hidden.
+        self.viewing_json = None;
         let path = self.pictures[index].clone();
         // The new picture's texture has no adjustments yet, so the sliders must be applied to it again.
         self.applied_adjust = None;
@@ -271,7 +346,22 @@ impl Lab {
             Ok(file) => {
                 self.log.event(&format!("opened {name} {}x{} with {} labels", size[0], size[1], file.labels.len()));
                 let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-                let mut loaded = Loaded { index, texture, original: rgba, size, bytes, file, lines: Vec::new(), timings: Vec::new(), score: None };
+                let mut loaded = Loaded {
+                    index,
+                    texture,
+                    original: rgba,
+                    size,
+                    bytes,
+                    file,
+                    lines: Vec::new(),
+                    timings: Vec::new(),
+                    score: None,
+                    dirty: false,
+                    last_ink: None,
+                    ink: load_ink(&path, size),
+                    current: None,
+                    line_colours: Default::default(),
+                };
                 if let Some((lines, timings)) = load_run(&path) {
                     loaded.score = Some(case::score(&loaded.file.labels, &lines));
                     loaded.lines = lines;
@@ -281,6 +371,9 @@ impl Lab {
                 self.loaded = Some(loaded);
                 self.selected = None;
                 self.drag = None;
+                // A drawing opens with the pen in hand; a picture opens with the Type pointer.
+                let pointer = if self.open_is_drawing() { ribbon::Pointer::Draw } else { ribbon::Pointer::Write };
+                self.set_pointer(pointer);
                 self.status = format!("{name}: {} labels", self.loaded.as_ref().map_or(0, |l| l.file.labels.len()));
             }
             Err(e) => {
@@ -290,172 +383,449 @@ impl Lab {
         }
     }
 
-    /// Where pictures inserted for this computer only are kept for this test folder. Worked out
-    /// once per folder: the list asks for every picture on every frame.
-    fn local_pictures(&self) -> PathBuf {
-        self.local.clone()
-    }
-
-    fn local_for(folder: &Path) -> PathBuf {
-        crate::insert::local_folder(&crate::lab_root().join("local").join("inserted"), folder)
-    }
-
-    /// The test folder's pictures, then those inserted on this computer for it.
-    fn discover(&self) -> Vec<PathBuf> {
-        let mut pictures = case::discover(&self.folder);
-        pictures.extend(case::discover(&self.local_pictures()));
-        pictures
-    }
-
-    /// The group a picture is listed under: by its folders under the test folder, or under the
-    /// local folder for a picture kept on this computer.
-    fn group(&self, path: &Path) -> (String, String) {
-        if !path.starts_with(&self.local) {
-            return case::group_of(&self.folder, path);
-        }
-        // Folder names have no spaces (see `insert::local_group_folder`); this kind is the lab's own.
-        let (kind, language) = case::group_of(&self.local, path);
-        (if kind == "Loose-pictures" { "Loose pictures".to_string() } else { kind }, language)
-    }
-
-    fn open_insert(&mut self, kind: &str, language: &str, tests_dir: Option<PathBuf>) {
-        self.insert = Some(InsertDialog {
-            kind: kind.to_string(),
-            language: language.to_string(),
-            tests_dir,
-            file: None,
-            sketch: None,
-            name: String::new(),
-            into_tests: false,
-            source: String::new(),
-            licence: String::new(),
-            error: None,
-        });
-    }
-
-    /// The Insert dialog: a picture from a file or a drawing, where to keep it, and for the test
-    /// folder its source and licence.
-    fn insert_dialog(&mut self, ctx: &egui::Context) {
-        let Some(dialog) = self.insert.as_mut() else { return };
-        let mut open = true;
-        let mut done = false;
-        egui::Window::new(format!("Insert into {} / {}", dialog.kind, dialog.language))
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .pivot(egui::Align2::CENTER_CENTER)
-            .default_pos(ctx.content_rect().center())
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    if ui.button("Picture from a file…").clicked()
-                        && let Some(file) = rfd::FileDialog::new().add_filter("Pictures", &crate::insert::EXTENSIONS).pick_file()
-                    {
-                        if dialog.name.trim().is_empty() || dialog.sketch.is_some() {
-                            dialog.name = file.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-                        }
-                        dialog.file = Some(file);
-                        dialog.sketch = None;
-                        dialog.error = None;
-                    }
-                    if ui.button("Draw a picture").clicked() {
-                        dialog.sketch = Some(crate::insert::Sketch::new(CANVAS));
-                        dialog.file = None;
-                        if dialog.name.trim().is_empty() {
-                            dialog.name = "drawing".to_string();
-                        }
-                        dialog.error = None;
-                    }
-                });
-                if let Some(file) = &dialog.file {
-                    ui.label(format!("File: {}", file.display()));
+    /// Asks for the size of a new blank drawing, then makes it.
+    fn confirm_new_drawing(&mut self, ctx: &egui::Context) {
+        let Some((dir, tags)) = self.pending_new.clone() else { return };
+        let mut decided = None;
+        egui::Window::new("New blank drawing").collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Width");
+                ui.add(egui::DragValue::new(&mut self.new_size[0]).range(16..=8000).suffix(" px"));
+                ui.label("Height");
+                ui.add(egui::DragValue::new(&mut self.new_size[1]).range(16..=8000).suffix(" px"));
+            });
+            ui.horizontal_wrapped(|ui| {
+                if ui.small_button("A4 at 150 dpi").clicked() {
+                    self.new_size = [1240, 1754];
                 }
-                if let Some(sketch) = dialog.sketch.as_mut() {
-                    ui.label("Draw with the mouse, a pen or a finger.");
-                    sketch_canvas(ui, sketch);
-                    if ui.button("Clear the drawing").clicked() {
-                        sketch.strokes.clear();
-                    }
+                if ui.small_button("Whiteboard 1920 × 1080").clicked() {
+                    self.new_size = [1920, 1080];
                 }
-                ui.horizontal(|ui| {
-                    let label = ui.label("Name");
-                    ui.text_edit_singleline(&mut dialog.name).labelled_by(label.id);
-                });
-                ui.radio_value(&mut dialog.into_tests, false, "Keep it on this computer only (local/inserted, not in git)");
-                ui.add_enabled_ui(dialog.tests_dir.is_some(), |ui| {
-                    ui.radio_value(&mut dialog.into_tests, true, "Put it in the test folder, beside this group's pictures (tracked by git)");
-                });
-                if dialog.into_tests {
-                    ui.horizontal(|ui| {
-                        let label = ui.label("Where it comes from");
-                        ui.text_edit_singleline(&mut dialog.source).labelled_by(label.id);
-                    });
-                    ui.horizontal(|ui| {
-                        let label = ui.label("Licence");
-                        ui.add(egui::TextEdit::singleline(&mut dialog.licence).hint_text("such as CC0, or the project's own (MIT)"))
-                            .labelled_by(label.id);
-                    });
-                    ui.small("Both are written to SOURCES.txt in that folder, as for every test picture.");
-                }
-                if let Some(e) = &dialog.error {
-                    ui.colored_label(Color32::from_rgb(200, 60, 40), e);
-                }
-                let ready = dialog.file.is_some() || dialog.sketch.as_ref().is_some_and(|s| !s.is_empty());
-                if ui.add_enabled(ready, egui::Button::new("Insert")).clicked() {
-                    done = true;
+                if ui.small_button("Square 1000 × 1000").clicked() {
+                    self.new_size = [1000, 1000];
                 }
             });
-        if !open {
-            self.insert = None;
-            return;
-        }
-        if done {
-            self.finish_insert(ctx);
+            ui.horizontal(|ui| {
+                if ui.button("Create").clicked() {
+                    decided = Some(true);
+                }
+                if ui.button("Cancel").clicked() {
+                    decided = Some(false);
+                }
+            });
+        });
+        match decided {
+            Some(true) => {
+                self.pending_new = None;
+                let size = self.new_size;
+                self.new_drawing(ctx, &dir, tags, size);
+            }
+            Some(false) => self.pending_new = None,
+            None => {}
         }
     }
 
-    fn finish_insert(&mut self, ctx: &egui::Context) {
-        let local = self.local_pictures();
-        let Some(dialog) = self.insert.as_mut() else { return };
-        let picture = match (&dialog.file, &dialog.sketch) {
-            (Some(file), _) => crate::insert::Picture::File(file.clone()),
-            (None, Some(sketch)) => crate::insert::Picture::Drawn(sketch.raster()),
-            (None, None) => return,
+    /// Asks before deleting a picture, and deletes it when the person confirms.
+    fn confirm_delete(&mut self, ctx: &egui::Context) {
+        let Some(index) = self.pending_delete else { return };
+        let Some(path) = self.pictures.get(index).cloned() else {
+            self.pending_delete = None;
+            return;
         };
-        let record = crate::insert::Record { source: dialog.source.clone(), licence: dialog.licence.clone() };
-        let (dir, record) = match (&dialog.tests_dir, dialog.into_tests) {
-            (Some(dir), true) => (dir.clone(), Some(&record)),
-            _ => (crate::insert::local_group_folder(&local, &dialog.kind, &dialog.language), None),
-        };
-        let name = if dialog.name.trim().is_empty() { "picture".to_string() } else { dialog.name.clone() };
-        match crate::insert::insert(&dir, &name, &picture, record) {
-            Ok(path) => {
-                self.insert = None;
-                // The open picture's place in the list changes with the new one: it is closed, and
-                // the new one opened, so nothing is saved by an old position.
+        let name = self.relative_name(&path);
+        let mut decided = None;
+        egui::Window::new("Delete this picture?").collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(
+            ctx,
+            |ui| {
+                ui.strong(name.as_str());
+                ui.small("Its label, OCR run and tags go with it. The files are moved to local\\deleted, not erased.");
+                ui.horizontal(|ui| {
+                    if ui.button("Delete").clicked() {
+                        decided = Some(true);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        decided = Some(false);
+                    }
+                });
+            },
+        );
+        match decided {
+            Some(true) => {
+                self.delete_picture(index);
+                self.pending_delete = None;
+            }
+            Some(false) => self.pending_delete = None,
+            None => {}
+        }
+    }
+
+    /// Moves a picture and its companion files into `local\deleted\<stamp>\`, then rescans. The open
+    /// picture is closed if it was the one removed, and otherwise kept open under its new index.
+    fn delete_picture(&mut self, index: usize) {
+        let path = self.pictures[index].clone();
+        let name = self.relative_name(&path);
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+        let dir = crate::lab_root().join("local").join("deleted").join(stamp.to_string());
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            self.status = format!("Could not make {}: {e}", dir.display());
+            return;
+        }
+        let open_path = self.loaded.as_ref().map(|l| self.pictures[l.index].clone());
+        for file in [path.clone(), case::label_path(&path), ocr_json_path(&path), case::tags_path(&path), ink_path(&path)] {
+            if !file.is_file() {
+                continue;
+            }
+            let Some(file_name) = file.file_name() else { continue };
+            if let Err(e) = std::fs::rename(&file, dir.join(file_name)) {
+                self.status = format!("Could not move {}: {e}", file.display());
+                self.log.event(&format!("could not move {}: {e}", file.display()));
+                return;
+            }
+        }
+        self.log.event(&format!("picture deleted: {name}"));
+        self.reload_pictures();
+        match open_path {
+            Some(open) if open == path => {
                 self.loaded = None;
                 self.selected = None;
                 self.drag = None;
-                self.pictures = self.discover();
-                let name = self.relative_name(&path);
-                self.log.event(&format!("inserted {name}"));
-                if let Some(index) = self.pictures.iter().position(|p| *p == path) {
-                    self.select(ctx, index);
-                }
-                self.status = format!("Inserted {name}.");
             }
-            Err(e) => dialog.error = Some(e),
+            Some(open) => {
+                if let Some(loaded) = self.loaded.as_mut()
+                    && let Some(new_index) = self.pictures.iter().position(|p| *p == open)
+                {
+                    loaded.index = new_index;
+                }
+            }
+            None => {}
+        }
+        self.status = format!("Deleted {name}. Moved to local\\deleted.");
+    }
+
+    /// Rescans the test folder and loads each picture's tags, in the same order.
+    fn reload_pictures(&mut self) {
+        self.pictures = case::discover(&self.folder);
+        self.tags = self.pictures.iter().map(|p| case::load_tags(p)).collect();
+    }
+
+    /// Makes a new white drawing in `dir`, saves it as a PNG with `tags`, and opens it with the pen
+    /// ready. The file is named drawing-1.png, drawing-2.png, ... so an existing drawing is never
+    /// overwritten.
+    fn new_drawing(&mut self, ctx: &egui::Context, dir: &Path, tags: case::Tags, size: [u32; 2]) {
+        if self.loaded.as_ref().is_some_and(|l| l.dirty) {
+            self.status = "Save the drawing you are working on first.".to_string();
+            return;
+        }
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            self.status = format!("Could not create {}: {e}", dir.display());
+            return;
+        }
+        let path = (1..).map(|n| dir.join(format!("drawing-{n}.png"))).find(|p| !p.exists()).expect("an unused drawing name");
+        let blank = image::RgbaImage::from_pixel(size[0], size[1], image::Rgba([255, 255, 255, 255]));
+        if let Err(e) = blank.save(&path) {
+            self.status = format!("Could not create the drawing: {e}");
+            self.log.event(&format!("could not create a drawing: {e}"));
+            return;
+        }
+        // An empty sheet of strokes beside it, so the drawing is editable from the start.
+        let empty = Drawing::new(size[0] as f32, size[1] as f32);
+        if let Err(e) = std::fs::write(ink_path(&path), svg::write(&empty, svg::Flavour::Editable)) {
+            self.status = format!("Could not create the drawing's strokes: {e}");
+            return;
+        }
+        // A blank sheet is a digital drawing whatever node it was added under, so the pens are there.
+        let tags = case::Tags { source: "drawing".to_string(), ..tags };
+        if let Err(e) = case::save_tags(&path, &tags) {
+            self.status = e;
+        }
+        self.reload_pictures();
+        self.log.event(&format!("blank drawing created: {}", self.relative_name(&path)));
+        if let Some(index) = self.pictures.iter().position(|p| *p == path) {
+            self.select(ctx, index);
+            self.set_pointer(ribbon::Pointer::Draw);
+            self.status = format!("{} is blank. Draw on it, then press Save drawing.", self.relative_name(&path));
         }
     }
 
-    /// A picture's name as the lab shows and reports it: its path under the test folder, or under
-    /// this computer's own folder for a picture kept there, never the whole path on disk.
-    fn relative_name(&self, path: &Path) -> String {
-        let name = |relative: &Path| relative.to_string_lossy().replace('\\', "/");
-        match (path.strip_prefix(&self.folder), path.strip_prefix(&self.local)) {
-            (Ok(relative), _) => name(relative),
-            (_, Ok(relative)) => format!("this computer/{}", name(relative)),
-            _ => name(path),
+    /// Copies a picture the person picks into `dir` with `tags`, and opens it. A name already in use
+    /// gets a number, so nothing is overwritten.
+    fn import_picture(&mut self, ctx: &egui::Context, dir: &Path, tags: case::Tags) {
+        if self.loaded.as_ref().is_some_and(|l| l.dirty) {
+            self.status = "Save the drawing you are working on first.".to_string();
+            return;
         }
+        let Some(source) = rfd::FileDialog::new().add_filter("Pictures", &["png", "jpg", "jpeg", "webp", "gif", "bmp"]).pick_file() else {
+            return;
+        };
+        let stem = source.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "picture".to_string());
+        let ext = source.extension().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "png".to_string());
+        let result = std::fs::create_dir_all(dir).and_then(|_| {
+            let target = (1..)
+                .map(|n| if n == 1 { dir.join(format!("{stem}.{ext}")) } else { dir.join(format!("{stem}-{n}.{ext}")) })
+                .find(|p| !p.exists())
+                .expect("an unused name");
+            std::fs::copy(&source, &target).map(|_| target)
+        });
+        match result {
+            Ok(target) => {
+                if let Err(e) = case::save_tags(&target, &tags) {
+                    self.status = e;
+                }
+                self.reload_pictures();
+                self.log.event(&format!("picture imported: {}", self.relative_name(&target)));
+                if let Some(index) = self.pictures.iter().position(|p| *p == target) {
+                    self.select(ctx, index);
+                }
+            }
+            Err(e) => {
+                self.status = format!("Could not import the picture: {e}");
+                self.log.event(&format!("could not import a picture: {e}"));
+            }
+        }
+    }
+
+    /// True when the open sample is a digital drawing, which is the only kind the pen can write on.
+    fn open_is_drawing(&self) -> bool {
+        self.loaded.as_ref().is_some_and(|l| self.tags.get(l.index).is_some_and(|t| t.source == "drawing"))
+    }
+
+    /// The app's Draw ribbon, built from the lab's state. Only the pen and its rack are live here; the
+    /// page-only parts of the ribbon are switched off, since there is no page to act on.
+    fn ribbon_view(&self) -> ribbon::View<'_> {
+        ribbon::View {
+            split_panes: false,
+            always_on_top: false,
+            docked: false,
+            full_page: false,
+            rules: self.rules,
+            hide_title: false,
+            snap: false,
+            zoom_percent: 100,
+            pointer: self.pointer,
+            rack: &self.pen.rack,
+            nib: self.pen.selected,
+            space_tool: false,
+            ruler: false,
+            auto_shapes: false,
+            replaying: false,
+            tabs_layout: false,
+            in_table: false,
+            table_borders: false,
+            table_align: None,
+            table_shade: None,
+            gridcraft: false,
+            page_colour: None,
+            rule_colour: None,
+            paper_size: None,
+            can_undo: false,
+            can_redo: false,
+            can_ink_redo: false,
+            sensitivity: self.sensitivity,
+            pressure_available: self.stylus.sample().pen,
+            has_page: false,
+            has_recycle_notebook: false,
+            page_marked_unread: false,
+            hide_authors: false,
+            painting: false,
+            style: "",
+            font_family: None,
+            marks: pageedit::Marks::default(),
+            font_size: None,
+            text_colour: None,
+            text_highlight: None,
+        }
+    }
+
+    /// Carries out what the ribbon asked for. Choosing a pen puts the lab in pen mode; rack edits change
+    /// the rack. Anything else needs a page, so the status line says it is not in the lab yet.
+    fn apply_ribbon(&mut self, acts: Vec<ribbon::Act>) {
+        for act in acts {
+            match act {
+                ribbon::Act::InkPen(i) => {
+                    self.pen.selected = i.min(self.pen.rack.len().saturating_sub(1));
+                    self.set_pointer(ribbon::Pointer::Draw);
+                }
+                // Only the pointers the lab can do: Type (write, select) and Draw (the pen). The rest need a page.
+                ribbon::Act::InkPointer(p @ (ribbon::Pointer::Write | ribbon::Pointer::Draw | ribbon::Pointer::Erase)) => self.set_pointer(p),
+                // The ribbon's Save picture saves the open drawing, as Ctrl+S does.
+                ribbon::Act::SavePictureAs(_) => self.save_if_dirty(),
+                // Choosing a size for a pen also puts that pen in hand, so the next stroke has the size shown.
+                ribbon::Act::InkRack(edit @ ribbon::RackEdit::Set(i, _)) => {
+                    self.edit_rack(edit);
+                    self.pen.selected = i.min(self.pen.rack.len().saturating_sub(1));
+                    self.set_pointer(ribbon::Pointer::Draw);
+                }
+                ribbon::Act::InkRack(edit) => self.edit_rack(edit),
+                ribbon::Act::RuleLines(rules) => self.rules = rules,
+                ribbon::Act::InkSensitivity(value) => self.sensitivity = value,
+                ribbon::Act::Tab(name) => {
+                    self.ribbon_tab = name;
+                    self.remember();
+                }
+                ribbon::Act::ToggleRibbon => {
+                    self.ribbon_folded = !self.ribbon_folded;
+                    self.remember();
+                }
+                _ => self.status = "That drawing command is not in the lab yet.".to_string(),
+            }
+        }
+    }
+
+    /// Sets the ribbon's pointer and the lab's mode together: the Draw pointer is pen mode, and the Type
+    /// pointer is select mode. The ribbon highlights the pointer, so it always shows what is in hand.
+    fn set_pointer(&mut self, pointer: ribbon::Pointer) {
+        self.pointer = pointer;
+        self.mode = match pointer {
+            ribbon::Pointer::Draw => Mode::Ink,
+            ribbon::Pointer::Erase => Mode::Erase,
+            _ => Mode::Select,
+        };
+    }
+
+    /// Saves the open drawing, from the ribbon's Save picture or Ctrl+S. Does nothing when nothing has changed.
+    fn save_if_dirty(&mut self) {
+        if self.loaded.as_ref().is_some_and(|l| l.dirty) {
+            self.save_drawing();
+        }
+    }
+
+    /// Rubs out the open drawing under the eraser at `p`: the pixels go back to white, and the strokes
+    /// under it are taken out of the SVG.
+    fn erase_ink(&mut self, ctx: &egui::Context, p: [f32; 2]) {
+        let Some(loaded) = self.loaded.as_mut() else { return };
+        let from = loaded.last_ink.unwrap_or(p);
+        crate::pen::erase_line(&mut loaded.original, from, p, ERASER_RADIUS);
+        let steps = (p[0] - from[0]).abs().max((p[1] - from[1]).abs()).ceil().max(1.0) as i32;
+        for s in 0..=steps {
+            let t = s as f32 / steps as f32;
+            let _ = loaded.ink.erase_at(from[0] + (p[0] - from[0]) * t, from[1] + (p[1] - from[1]) * t, ERASER_RADIUS);
+        }
+        loaded.last_ink = Some(p);
+        loaded.dirty = true;
+        let shown = self.adjust.apply(&loaded.original);
+        loaded.texture.set(shown, egui::TextureOptions::LINEAR);
+        ctx.request_repaint();
+    }
+
+    /// Adds, removes, moves or changes a pen on the rack, with the same rules as the app.
+    fn edit_rack(&mut self, edit: ribbon::RackEdit) {
+        let rack = &mut self.pen.rack;
+        match edit {
+            ribbon::RackEdit::Add(tool) => {
+                if rack.len() < notecraft_ink::rack::MAX_NIBS {
+                    rack.push(notecraft_ink::rack::new_nib(tool));
+                }
+            }
+            ribbon::RackEdit::Remove(i) => {
+                notecraft_ink::rack::remove(rack, i);
+            }
+            ribbon::RackEdit::Move(i, left) => {
+                notecraft_ink::rack::shift(rack, i, left);
+            }
+            ribbon::RackEdit::Set(i, nib) => {
+                if let Some(slot) = rack.get_mut(i) {
+                    *slot = nib;
+                }
+            }
+        }
+        self.pen.selected = self.pen.selected.min(self.pen.rack.len().saturating_sub(1));
+    }
+
+    /// Paints one pen dab, or a line from the last dab, into the open picture. Only the picture on
+    /// screen and in memory changes until the drawing is saved.
+    fn paint_ink(&mut self, ctx: &egui::Context, p: [f32; 2]) {
+        // The stroke takes the ribbon's sensitivity as the app does: a wider nib, and a gain on pressure.
+        // The picture is painted at the width the app would draw at this pressure.
+        let base = self.pen.nib();
+        let pressure = self.stylus.sample().pressure;
+        let sensitivity = self.sensitivity;
+        let Some(loaded) = self.loaded.as_mut() else { return };
+        let from = loaded.last_ink.unwrap_or(p);
+        let stroke = crate::pen::stroke(base, sensitivity);
+        crate::pen::line(&mut loaded.original, from, p, crate::pen::drawn_nib(&stroke, pressure));
+        if loaded.last_ink.is_none() {
+            loaded.current = Some(crate::pen::stroke(base, sensitivity));
+        }
+        if let Some(stroke) = loaded.current.as_mut() {
+            stroke.add(Dab::new(p[0], p[1], pressure));
+        }
+        loaded.last_ink = Some(p);
+        loaded.dirty = true;
+        let shown = self.adjust.apply(&loaded.original);
+        loaded.texture.set(shown, egui::TextureOptions::LINEAR);
+        ctx.request_repaint();
+    }
+
+    /// Writes the drawing to its picture file. The old OCR run no longer matches the picture, so
+    /// it is removed and the next run reads the new drawing.
+    fn save_drawing(&mut self) {
+        let Some(loaded) = self.loaded.as_mut() else { return };
+        let path = self.pictures[loaded.index].clone();
+        if let Err(e) = loaded.original.save(&path) {
+            self.status = format!("Could not save the drawing: {e}");
+            self.log.event(&format!("could not save a drawing: {e}"));
+            return;
+        }
+        // The strokes go beside the PNG, with the pen's readings, so the drawing can be edited later.
+        let text = svg::write(&loaded.ink, svg::Flavour::Editable);
+        if let Err(e) = std::fs::write(ink_path(&path), text) {
+            self.status = format!("Could not save the drawing's strokes: {e}");
+            self.log.event(&format!("could not save the strokes: {e}"));
+            return;
+        }
+        loaded.dirty = false;
+        loaded.bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        loaded.lines.clear();
+        loaded.timings.clear();
+        loaded.score = None;
+        let _ = remove_run_file(&path);
+        let name = self.relative_name(&path);
+        self.log.event(&format!("drawing saved: {name}"));
+        self.status = format!("Saved {name}. Run OCR to read it.");
+    }
+
+    /// The models section of the details pane: the engine and its sources, the licence, and each
+    /// model's size, role and capabilities. It shows what is expected even when no files are there.
+    fn models_info(&mut self, ui: &mut egui::Ui) {
+        use crate::models;
+        ui.label(format!("Engine: {}", models::ENGINE_NAME));
+        ui.label(format!("Model format: ONNX. Family: {}", models::MODEL_FAMILY));
+        ui.label(format!("Inference runtime: {}", models::INFERENCE_RUNTIME));
+        ui.label(format!("Versions: {}", models::ENGINE_VERSION));
+        ui.label("Runs on: CPU");
+        // Greyed out on purpose: the lab runs on the CPU only. The control is kept for a later GPU path.
+        let mut gpu = false;
+        ui.add_enabled(false, egui::Checkbox::new(&mut gpu, "Use GPU (not built)"))
+            .on_disabled_hover_text("GPU inference is not built. The lab and the app run on the CPU.");
+        ui.label(format!("Performance: {}", models::PERF_SUMMARY));
+        ui.horizontal_wrapped(|ui| {
+            ui.hyperlink_to("Runtime source", models::INFERENCE_SOURCE);
+            ui.hyperlink_to("Engine source", models::ENGINE_SOURCE);
+            ui.hyperlink_to("Model repository", models::MODEL_REPO);
+            ui.hyperlink_to("Model card", models::MODEL_CARD);
+        });
+        ui.small(format!("Licence: {}", models::LICENCE));
+        let state = if self.reader.is_some() {
+            "loaded"
+        } else if self.reader_error.is_some() {
+            "not loaded"
+        } else {
+            "not loaded yet"
+        };
+        ui.label(format!("State: {state}. Files: {}", self.health.describe()));
+        for model in &models::MODELS {
+            ui.add_space(4.0);
+            ui.strong(model.name);
+            ui.label(format!("Size: {:.1} MB (expected)", model.size as f64 / 1_000_000.0));
+            ui.label(format!("Role: {}", model.role));
+            ui.label(format!("Capabilities: {}", model.capabilities));
+            ui.label(format!("Version: {}", model.version));
+            ui.label(format!("Performance: {}", model.perf));
+        }
+    }
+
+    fn relative_name(&self, path: &Path) -> String {
+        path.strip_prefix(&self.folder).unwrap_or(path).to_string_lossy().replace('\\', "/")
     }
 
     /// Redraws the shown picture when the sliders have moved. The pixels OCR reads do not change.
@@ -709,12 +1079,46 @@ impl Lab {
         egui::Panel::top("header").frame(egui::Frame::new().fill(band)).show_separator_line(false).show(ui, |ui| {
             self.title_row(ui);
         });
+        // The ribbon opens when a drawing opens, and folds again when the drawing closes.
+        let events = ctx.input(|i| i.events.clone());
+        self.stylus.update(&events);
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
+            self.save_if_dirty();
+        }
+        let drawing = self.open_is_drawing();
+        if drawing != self.ribbon_was_drawing {
+            self.ribbon_was_drawing = drawing;
+            self.ribbon_folded = !drawing;
+        }
+        {
+            // The tab bar is always there. Without a drawing it is folded, so only the tab names show.
+            let tokens = self.theme.tokens();
+            let mut acts = Vec::new();
+            let folded = !drawing || self.ribbon_folded;
+            // The tab names sit on the title band, as in the app. The groups sit on the ribbon below.
+            egui::Panel::top("drawing-ribbon-tabs")
+                .exact_size(ribbon::TAB_STRIP_H)
+                .frame(egui::Frame::new().fill(tokens.band).inner_margin(egui::Margin::symmetric(4, 0)))
+                .show_separator_line(false)
+                .show(ui, |ui| {
+                    ribbon::tab_strip(ui, &self.ribbon_tab, false, false, folded, ribbon::Mic::default(), &tokens, &mut acts);
+                });
+            if !folded {
+                egui::Panel::top("drawing-ribbon")
+                    .exact_size(ribbon::GROUP_H + 8.0)
+                    .frame(egui::Frame::new().fill(tokens.panel).inner_margin(egui::Margin::symmetric(4, 0)))
+                    .show_separator_line(false)
+                    .show(ui, |ui| {
+                        acts.extend(ribbon::show(ui, &self.ribbon_tab, false, &self.ribbon_view(), None, &tokens));
+                    });
+            }
+            self.apply_ribbon(acts);
+        }
         self.frame_edges(&ctx);
         egui::Panel::left("cases").resizable(true).default_size(260.0).show(ui, |ui| self.case_list(&ctx, ui));
         egui::Panel::right("details").resizable(true).default_size(340.0).show(ui, |ui| self.details(ui));
         egui::Panel::bottom("status").show(ui, |ui| ui.label(&self.status));
         egui::CentralPanel::default().show(ui, |ui| self.picture_area(ui));
-        self.insert_dialog(&ctx);
         if self.selected.is_some() && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Delete)) {
             self.delete_selected();
         }
@@ -873,57 +1277,172 @@ impl Lab {
         });
         ui.separator();
         let mut pick = None;
-        // Kind (handwriting, drawings, ...) first, then language, then the pictures.
-        let mut tree: std::collections::BTreeMap<String, std::collections::BTreeMap<String, Vec<usize>>> = std::collections::BTreeMap::new();
+        let mut delete_req: Option<usize> = None;
+        let mut save_now = false;
+        let mut view_json: Option<PathBuf> = None;
+        // Language, then how the sample was made, then what it contains. A sample with several content
+        // tags appears under each of them.
+        type Contents = std::collections::BTreeMap<String, Vec<usize>>;
+        type Sources = std::collections::BTreeMap<String, Contents>;
+        let mut tree: std::collections::BTreeMap<String, Sources> = std::collections::BTreeMap::new();
         for (i, path) in self.pictures.iter().enumerate() {
-            let (kind, language) = self.group(path);
-            tree.entry(kind).or_default().entry(language).or_default().push(i);
+            let language = case::language_of(&self.folder, path);
+            for (source, content) in self.tags[i].nodes() {
+                tree.entry(language.clone()).or_default().entry(source).or_default().entry(content).or_default().push(i);
+            }
         }
-        let local = self.local_pictures();
-        let mut insert_into = None;
+        // Every language shows every source and every content node, so a new picture can go into an empty one.
+        for sources in tree.values_mut() {
+            for (source, _) in case::SOURCES {
+                let contents = sources.entry(source.to_string()).or_default();
+                for (content, _) in case::CONTENTS.iter().chain(std::iter::once(&case::UNTAGGED)) {
+                    contents.entry(content.to_string()).or_default();
+                }
+            }
+        }
+        let mut blank_in: Option<(PathBuf, case::Tags)> = None;
+        let mut import_in: Option<(PathBuf, case::Tags)> = None;
+        // A node opened or closed in the tree, as (its depth, the id it opens to, or None to close it).
+        // It is applied after the scroll area, so the tree is drawn from one state.
+        let mut toggled: Option<(usize, Option<String>)> = None;
         egui::ScrollArea::vertical().show(ui, |ui| {
-            for (kind, languages) in &tree {
-                let count: usize = languages.values().map(Vec::len).sum();
-                egui::CollapsingHeader::new(format!("{kind} ({count})")).id_salt(kind).default_open(true).show(ui, |ui| {
-                    for (language, indexes) in languages {
-                        egui::CollapsingHeader::new(format!("{language} ({})", indexes.len())).id_salt((kind, language)).default_open(true).show(
-                            ui,
-                            |ui| {
-                                if ui.small_button("Insert…").on_hover_text("Add a picture from a file, or draw one, to this group").clicked() {
-                                    let tests_dir = indexes
-                                        .iter()
-                                        .map(|&i| &self.pictures[i])
-                                        .find(|p| !p.starts_with(&local))
-                                        .and_then(|p| p.parent())
-                                        .map(Path::to_path_buf);
-                                    insert_into = Some((kind.clone(), language.clone(), tests_dir));
-                                }
-                                for &i in indexes {
-                                    let path = &self.pictures[i];
-                                    let current = self.loaded.as_ref().is_some_and(|l| l.index == i);
-                                    let labelled = case::label_path(path).is_file();
-                                    let mark = match (labelled, path.starts_with(&local)) {
-                                        (true, true) => "  ✎ (this computer)",
-                                        (false, true) => "  (this computer)",
-                                        (true, false) => "  ✎",
-                                        (false, false) => "",
+            for (language, sources) in &tree {
+                let count = self.pictures.iter().filter(|p| case::language_of(&self.folder, p) == *language).count();
+                let is_open = self.open_path.first().map(String::as_str) == Some(language.as_str());
+                let header = egui::CollapsingHeader::new(format!("{language} ({count})")).id_salt(language).open(Some(is_open)).show(ui, |ui| {
+                    for (source, contents) in sources {
+                        let source_label = case::label_for(&case::SOURCES, source).unwrap_or("Other");
+                        let source_open = self.open_path.get(1).map(String::as_str) == Some(source.as_str());
+                        let source_header =
+                            egui::CollapsingHeader::new(source_label).id_salt((language, source)).open(Some(source_open)).show(ui, |ui| {
+                                for (content, indexes) in contents {
+                                    let content_label = if content == case::UNTAGGED.0 {
+                                        case::UNTAGGED.1
+                                    } else {
+                                        case::label_for(&case::CONTENTS, content).unwrap_or("Other")
                                     };
-                                    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                                    if ui.selectable_label(current, format!("{name}{mark}")).clicked() {
-                                        pick = Some(i);
+                                    let content_open = self.open_path.get(2).map(String::as_str) == Some(content.as_str());
+                                    let content_header = egui::CollapsingHeader::new(format!("{content_label} ({})", indexes.len()))
+                                        .id_salt((language, source, content))
+                                        .open(Some(content_open))
+                                        .show(ui, |ui| {
+                                            // Insert, like the main app's "A page here": the new sample gets this node's tags.
+                                            let content_ids: Vec<&str> =
+                                                if content == case::UNTAGGED.0 { Vec::new() } else { vec![content.as_str()] };
+                                            let tags = case::Tags::new(source, &content_ids);
+                                            let dir = case::language_folder(&self.folder, language);
+                                            ui.menu_button("+ A page here", |ui| {
+                                                if ui.button("New blank drawing").clicked() {
+                                                    blank_in = Some((dir.clone(), tags.clone()));
+                                                    ui.close();
+                                                }
+                                                if ui.button("Import picture…").clicked() {
+                                                    import_in = Some((dir.clone(), tags.clone()));
+                                                    ui.close();
+                                                }
+                                            });
+                                            for &i in indexes {
+                                                let path = &self.pictures[i];
+                                                // One row is lit at a time: the picture, unless its OCR file is open in the main area.
+                                                let current = self.viewing_json.is_none() && self.loaded.as_ref().is_some_and(|l| l.index == i);
+                                                let labelled = case::label_path(path).is_file();
+                                                let mark = if labelled { "  ✎" } else { "" };
+                                                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                                                ui.horizontal(|ui| {
+                                                    let row = ui.selectable_label(current, format!("{name}{mark}"));
+                                                    if row.clicked() {
+                                                        pick = Some(i);
+                                                    }
+                                                    row.context_menu(|ui| {
+                                                        if ui.button("Delete…").clicked() {
+                                                            delete_req = Some(i);
+                                                            ui.close();
+                                                        }
+                                                        if ui.button("Show in Explorer").clicked() {
+                                                            if let Some(dir) = path.parent() {
+                                                                open_in_file_manager(dir);
+                                                            }
+                                                            ui.close();
+                                                        }
+                                                    });
+                                                    if ui.small_button("🗑").on_hover_text("Delete this picture").clicked() {
+                                                        delete_req = Some(i);
+                                                    }
+                                                    // A floppy appears on the open sample once it has changes to save.
+                                                    let unsaved = self.loaded.as_ref().is_some_and(|l| l.index == i && l.dirty);
+                                                    if unsaved && ui.small_button("💾").on_hover_text("Save this drawing").clicked() {
+                                                        save_now = true;
+                                                    }
+                                                });
+                                                // The OCR text, as a child of the sample: `<picture>.txt`, when OCR has run.
+                                                let text_file = ocr_json_path(path);
+                                                if text_file.is_file() {
+                                                    let child = text_file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                                                    ui.indent(("ocr-text", i), |ui| {
+                                                        let showing = self.viewing_json.as_ref().is_some_and(|(p, _)| *p == text_file);
+                                                        if ui
+                                                            .selectable_label(showing, format!("📄 {child}"))
+                                                            .on_hover_text("Show or hide this file in the main area")
+                                                            .clicked()
+                                                        {
+                                                            view_json = Some(text_file.clone());
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                        });
+                                    if content_header.header_response.clicked() {
+                                        toggled = Some((2, if content_open { None } else { Some(content.clone()) }));
                                     }
                                 }
-                            },
-                        );
+                            });
+                        if source_header.header_response.clicked() {
+                            toggled = Some((1, if source_open { None } else { Some(source.clone()) }));
+                        }
                     }
                 });
+                if header.header_response.clicked() {
+                    toggled = Some((0, if is_open { None } else { Some(language.clone()) }));
+                }
             }
         });
-        if let Some(i) = pick {
-            self.select(ctx, i);
+        // Opening a node closes its siblings, and everything under them: the path keeps only the
+        // levels above the one changed.
+        if let Some((depth, id)) = toggled {
+            self.open_path.truncate(depth);
+            if let Some(id) = id {
+                self.open_path.push(id);
+            }
+            self.remember();
         }
-        if let Some((kind, language, tests_dir)) = insert_into {
-            self.open_insert(&kind, &language, tests_dir);
+        if let Some((dir, tags)) = blank_in {
+            self.pending_new = Some((dir, tags));
+        }
+        if let Some((dir, tags)) = import_in {
+            self.import_picture(ctx, &dir, tags);
+        }
+        if save_now {
+            self.save_if_dirty();
+        }
+        // Clicking the file's row shows it, and clicking it again hides it.
+        if let Some(path) = view_json {
+            if self.viewing_json.as_ref().is_some_and(|(p, _)| *p == path) {
+                self.viewing_json = None;
+            } else {
+                self.show_file(&path);
+            }
+        }
+        if let Some(i) = delete_req {
+            self.pending_delete = Some(i);
+        }
+        self.confirm_delete(ctx);
+        self.confirm_new_drawing(ctx);
+        if let Some(i) = pick {
+            if self.loaded.as_ref().is_some_and(|l| l.dirty) {
+                self.status = "Save the drawing you are working on first.".to_string();
+            } else {
+                self.select(ctx, i);
+            }
         }
     }
 
@@ -990,8 +1509,15 @@ impl Lab {
             ui.selectable_value(&mut self.mode, Mode::Select, "Select / move / resize");
             ui.selectable_value(&mut self.mode, Mode::Draw, "Draw a label");
         });
-        ui.checkbox(&mut self.show_engine, "Show the engine's lines (orange)");
-        egui::CollapsingHeader::new("Models").default_open(false).show(ui, |ui| self.models_section(ui));
+        // The pen lives in the drawing ribbon above the picture, so only a drawing can be in pen mode.
+        if !self.open_is_drawing() && self.mode == Mode::Ink {
+            self.mode = Mode::Select;
+        }
+        let dirty = self.loaded.as_ref().is_some_and(|l| l.dirty);
+        if dirty && ui.button("Save drawing").clicked() {
+            self.save_drawing();
+        }
+        ui.checkbox(&mut self.show_engine, "Show the recognised text");
         egui::CollapsingHeader::new("Metrics").default_open(false).show(ui, |ui| self.metrics.show(ui));
         egui::CollapsingHeader::new("Picture").default_open(false).show(ui, |ui| {
             ui.add(egui::Slider::new(&mut self.adjust.hue, -180.0..=180.0).text("Hue"));
@@ -1002,6 +1528,7 @@ impl Lab {
             }
             ui.small("Only the picture on screen changes. OCR reads the file.");
         });
+        egui::CollapsingHeader::new("Models").default_open(false).show(ui, |ui| self.models_info(ui));
         ui.separator();
         let Some(loaded) = self.loaded.as_ref() else {
             ui.label("No picture open.");
@@ -1061,51 +1588,52 @@ impl Lab {
         } else if text_changed {
             self.save();
         }
+        let mut recolour: Option<(usize, Color32)> = None;
         if let Some(loaded) = self.loaded.as_ref() {
             ui.separator();
             ui.strong(format!("Engine lines ({})", loaded.lines.len()));
             egui::ScrollArea::vertical().id_salt("lines").show(ui, |ui| {
-                for line in &loaded.lines {
+                for (i, line) in loaded.lines.iter().enumerate() {
                     let conf = line.confidence.map_or("no score".to_string(), |c| format!("{:.2}", c));
-                    ui.label(format!("{}  [{conf}]", line.text));
+                    // The swatch is the box's colour on the picture: a click opens the picker for this line.
+                    ui.horizontal(|ui| {
+                        let mut colour = line_colour(loaded, i);
+                        if ui.color_edit_button_srgba(&mut colour).on_hover_text("Colour of this line's box").changed() {
+                            recolour = Some((i, colour));
+                        }
+                        ui.label(format!("{}  [{conf}]", line.text));
+                    });
                 }
             });
         }
+        // A line recoloured from its swatch keeps its colour until the picture changes.
+        if let Some((index, colour)) = recolour
+            && let Some(loaded) = self.loaded.as_mut()
+        {
+            loaded.line_colours.insert(index, colour);
+        }
     }
 
-    /// The Models section: for each model file, its role, its size on disk against the size and
-    /// checksum expected, what it can read, and where it comes from. With no folder set, or a file
-    /// missing, it says so and still shows what is expected (issue #490).
-    fn models_section(&mut self, ui: &mut egui::Ui) {
-        match (&self.models, &self.health) {
-            (None, _) => ui.label("No model folder is set. These are the files the lab expects:"),
-            (Some(_), crate::models::Health::Ok) if self.reader.is_some() => ui.label("Loaded:"),
-            (Some(_), health) => ui.label(format!("Not loaded. {}", health.describe())),
-        };
-        for row in crate::models::shown(self.models.as_deref()) {
-            let model = row.model;
-            ui.add_space(4.0);
-            ui.strong(model.name);
-            ui.label(model.role);
-            let on_disk = match row.on_disk {
-                Some(bytes) if bytes == model.size => format!("{} on disk", crate::models::megabytes(bytes)),
-                Some(bytes) => format!("{} on disk, expected {}", crate::models::megabytes(bytes), crate::models::megabytes(model.size)),
-                None => format!("Not on disk. Expected {}", crate::models::megabytes(model.size)),
-            };
-            ui.label(on_disk);
-            ui.small(format!("SHA-256 {}", model.sha256)).on_hover_text("The checksum the file must have.");
-            ui.label(model.capabilities);
-            ui.horizontal_wrapped(|ui| {
-                ui.hyperlink_to("Source", model.source).on_hover_text(model.source);
-                ui.label("·");
-                ui.hyperlink_to(format!("Licence: {}", model.licence), model.licence_url).on_hover_text(model.licence_url);
-            });
+    /// Loads a text file into the main area, read-only. Picking a sample or closing the view shows the picture again.
+    fn show_file(&mut self, path: &Path) {
+        match std::fs::read_to_string(path) {
+            Ok(text) => self.viewing_json = Some((path.to_path_buf(), text.trim_start_matches('\u{feff}').to_string())),
+            Err(e) => self.status = format!("Could not read {}: {e}", path.display()),
         }
-        ui.add_space(4.0);
-        ui.hyperlink_to("Model card (training data and licence)", crate::models::MODEL_CARD);
     }
 
     fn picture_area(&mut self, ui: &mut egui::Ui) {
+        // The OCR file, when it is open, replaces the picture until another sample is picked or the file row is clicked again.
+        if let Some((path, text)) = self.viewing_json.as_ref() {
+            ui.strong(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+            ui.separator();
+            let font = egui::FontId::monospace(13.0);
+            let plain = ui.visuals().text_color();
+            egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+                ui.label(crate::json_view::job(text, font, plain));
+            });
+            return;
+        }
         let Some(loaded) = self.loaded.as_ref() else {
             ui.centered_and_justified(|ui| ui.label("Pick a test case on the left."));
             return;
@@ -1118,11 +1646,18 @@ impl Lab {
         let origin = response.rect.min;
         let painter = ui.painter_at(response.rect);
         painter.image(loaded.texture.id(), response.rect, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+        // The paper's lines or squares, drawn over the picture on screen only.
+        if self.rules != ribbon::RuleLines::None {
+            let line = Color32::from_rgba_unmultiplied(90, 130, 200, 90);
+            let strong = Color32::from_rgba_unmultiplied(90, 130, 200, 160);
+            ribbon::paint_paper(&painter, response.rect, self.rules, scale, line, strong);
+        }
         if self.show_engine {
-            for line in &loaded.lines {
+            for (n, line) in loaded.lines.iter().enumerate() {
+                let colour = line_colour(loaded, n);
                 let pts: Vec<Pos2> = line.quad.iter().map(|p| Self::to_screen(origin, scale, [p.x, p.y])).collect();
                 for i in 0..4 {
-                    painter.line_segment([pts[i], pts[(i + 1) % 4]], Stroke::new(1.5, ENGINE_COLOUR));
+                    painter.line_segment([pts[i], pts[(i + 1) % 4]], Stroke::new(1.5, colour));
                 }
             }
         }
@@ -1148,11 +1683,33 @@ impl Lab {
             Some(l) => l.size,
             None => return,
         };
+        if matches!(self.mode, Mode::Ink | Mode::Erase) {
+            if let Some(pos) = response.interact_pointer_pos().filter(|_| response.dragged() || response.drag_started()) {
+                let p = Self::clamp_point(Self::to_pixels(origin, scale, pos), size);
+                let ctx = response.ctx.clone();
+                if self.mode == Mode::Erase {
+                    self.erase_ink(&ctx, p);
+                } else {
+                    self.paint_ink(&ctx, p);
+                }
+            }
+            if response.drag_stopped()
+                && let Some(loaded) = self.loaded.as_mut()
+            {
+                loaded.last_ink = None;
+                if let Some(stroke) = loaded.current.take() {
+                    let _ = loaded.ink.add(stroke);
+                }
+            }
+            return;
+        }
         if response.drag_started() {
             let Some(pos) = response.interact_pointer_pos() else { return };
             let p = Self::clamp_point(Self::to_pixels(origin, scale, pos), size);
             match self.mode {
                 Mode::Draw => self.drag = Some(Drag::New { start: p, now: p }),
+                // The pen and the eraser are handled at the top of this function.
+                Mode::Ink | Mode::Erase => {}
                 Mode::Select => {
                     let Some(loaded) = self.loaded.as_ref() else { return };
                     // A corner within reach resizes; inside a label moves it; anywhere else clears the selection.
@@ -1264,37 +1821,6 @@ impl Lab {
     }
 }
 
-/// The drawing canvas of the Insert dialog: white paper, black pen, drawn with any pointer.
-fn sketch_canvas(ui: &mut egui::Ui, sketch: &mut crate::insert::Sketch) {
-    let size = Vec2::new(sketch.size[0] as f32 / CANVAS_SCALE, sketch.size[1] as f32 / CANVAS_SCALE);
-    let (response, painter) = ui.allocate_painter(size, Sense::drag());
-    let rect = response.rect;
-    painter.rect_filled(rect, CornerRadius::ZERO, Color32::WHITE);
-    painter.rect_stroke(rect, CornerRadius::ZERO, Stroke::new(1.0, Color32::GRAY), StrokeKind::Outside);
-    let to_canvas = |p: Pos2| [(p.x - rect.min.x) * CANVAS_SCALE, (p.y - rect.min.y) * CANVAS_SCALE];
-    if response.drag_started() {
-        sketch.strokes.push(Vec::new());
-    }
-    if (response.drag_started() || response.dragged())
-        && let Some(pos) = response.interact_pointer_pos()
-        && let Some(stroke) = sketch.strokes.last_mut()
-    {
-        let p = to_canvas(pos.clamp(rect.min, rect.max));
-        if stroke.last() != Some(&p) {
-            stroke.push(p);
-        }
-    }
-    let width = sketch.width / CANVAS_SCALE;
-    for stroke in &sketch.strokes {
-        let points: Vec<Pos2> = stroke.iter().map(|p| rect.min + Vec2::new(p[0], p[1]) / CANVAS_SCALE).collect();
-        if let [only] = points.as_slice() {
-            painter.circle_filled(*only, width / 2.0, Color32::BLACK);
-        } else {
-            painter.add(egui::Shape::line(points, Stroke::new(width, Color32::BLACK)));
-        }
-    }
-}
-
 fn folder_name(folder: &Path) -> String {
     folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
@@ -1330,11 +1856,26 @@ fn scrub_paths(text: &str, cases: &Path) -> String {
 }
 
 /// Deletes the saved run beside a picture. Returns whether there was one to delete.
+/// The editable strokes of a drawing: `<picture>.svg` beside the PNG, with the pen's readings.
+fn ink_path(picture: &Path) -> PathBuf {
+    picture.with_extension("svg")
+}
+
+/// Reads a drawing's strokes back. A drawing with no strokes file starts empty at its picture's size.
+fn load_ink(picture: &Path, size: [u32; 2]) -> Drawing {
+    std::fs::read_to_string(ink_path(picture))
+        .ok()
+        .and_then(|text| svg::read(&text).ok())
+        .map(|(drawing, _)| drawing)
+        .unwrap_or_else(|| Drawing::new(size[0] as f32, size[1] as f32))
+}
+
+/// Removes a picture's OCR file, which is its saved run. Returns whether there was one to remove.
 fn remove_run_file(picture: &Path) -> Result<bool, String> {
-    match std::fs::remove_file(case::run_path(picture)) {
+    match std::fs::remove_file(ocr_json_path(picture)) {
         Ok(()) => Ok(true),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(format!("{}: {e}", case::run_path(picture).display())),
+        Err(e) => Err(format!("{}: {e}", ocr_json_path(picture).display())),
     }
 }
 
@@ -1344,48 +1885,78 @@ fn remove_run_file(picture: &Path) -> Result<bool, String> {
 fn save_run(picture: &Path, lines: &[Line], timings: &[Timing], log: &mut Log) {
     let Some(sha) = case::picture_sha256(picture) else { return };
     let saved_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    let value = serde_json::json!({
+    // The OCR file beside the picture, schema version 1 (see nc-info-ocr/references/ocr-json-schema.md):
+    // the text, each line's polygon, and the description, which no model writes yet. It is also the
+    // saved run: the lab reads it back instead of running OCR again.
+    let (width, height) = image::image_dimensions(picture).unwrap_or((0, 0));
+    let name = picture.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let text = lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n");
+    let ocr = serde_json::json!({
+        "schema": "notecraft.ocr",
         "version": 1,
-        "picture_sha256": sha,
-        "saved_at": saved_at,
-        "engine": "ocrs 0.14 through notecraft-ocr",
-        "timings": timings,
+        "picture": { "name": name, "sha256": sha, "width": width, "height": height },
+        "produced": { "at": saved_at, "by": "ocrs 0.14 through notecraft-ocr" },
+        "text": text,
         "lines": lines.iter().map(|l| serde_json::json!({
             "text": l.text,
-            "quad": l.quad.iter().map(|p| [p.x, p.y]).collect::<Vec<_>>(),
+            "polygon": l.quad.iter().map(|p| [p.x, p.y]).collect::<Vec<_>>(),
             "confidence": l.confidence,
         })).collect::<Vec<_>>(),
+        "bounds": bounds_polygon(lines),
+        "alt": null,
+        // The lab's own measurements of this run. Optional in the schema; not product data.
+        "timings": timings,
     });
-    let path = case::run_path(picture);
-    let tmp = path.with_extension("json.tmp");
-    let written = serde_json::to_string_pretty(&value)
-        .map_err(|e| e.to_string())
-        .and_then(|text| {
-            std::fs::write(
-                &tmp,
-                format!(
-                    "{text}
-"
-                ),
-            )
-            .map_err(|e| e.to_string())
-        })
-        .and_then(|_| std::fs::rename(&tmp, &path).map_err(|e| e.to_string()));
-    if let Err(e) = written {
-        log.event(&format!("OCR run not saved: {e}"));
+    // The schema says line outlines never cross. The file is still written, so the crossing is visible in the log.
+    let outlines: Vec<[[f32; 2]; 4]> = lines.iter().map(|l| l.quad.map(|p| [p.x, p.y])).collect();
+    let crossing = (0..outlines.len())
+        .flat_map(|i| (i + 1..outlines.len()).map(move |j| (i, j)))
+        .filter(|&(i, j)| case::outlines_cross(&outlines[i], &outlines[j]))
+        .count();
+    if crossing > 0 {
+        log.event(&format!("{name}: {crossing} pairs of line outlines cross, which the schema does not allow"));
     }
+    let target = ocr_json_path(picture);
+    let tmp = target.with_extension("json.tmp");
+    let written = serde_json::to_string_pretty(&ocr)
+        .map_err(|e| e.to_string())
+        .and_then(|text| std::fs::write(&tmp, format!("{text}\n")).map_err(|e| e.to_string()))
+        .and_then(|_| std::fs::rename(&tmp, &target).map_err(|e| e.to_string()));
+    if let Err(e) = written {
+        log.event(&format!("OCR file not saved: {e}"));
+    }
+}
+
+/// The polygon around everything the engine found: the four corners of the box round all the lines, clockwise
+/// from the top left. `null` when no line was found. A tighter outline can replace this later.
+fn bounds_polygon(lines: &[Line]) -> serde_json::Value {
+    let points: Vec<[f32; 2]> = lines.iter().flat_map(|l| l.quad.iter().map(|p| [p.x, p.y])).collect();
+    if points.is_empty() {
+        return serde_json::Value::Null;
+    }
+    let x0 = points.iter().map(|p| p[0]).fold(f32::MAX, f32::min);
+    let y0 = points.iter().map(|p| p[1]).fold(f32::MAX, f32::min);
+    let x1 = points.iter().map(|p| p[0]).fold(f32::MIN, f32::max);
+    let y1 = points.iter().map(|p| p[1]).fold(f32::MIN, f32::max);
+    serde_json::json!([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])
+}
+
+/// The OCR file beside a picture: `<picture>.ocr.json`, the picture's full name with `.ocr.json` added.
+fn ocr_json_path(picture: &Path) -> PathBuf {
+    let name = picture.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    picture.with_file_name(format!("{name}.ocr.json"))
 }
 
 /// The saved run for a picture, if one exists and still matches the picture's bytes.
 fn load_run(picture: &Path) -> Option<(Vec<Line>, Vec<Timing>)> {
-    let text = std::fs::read_to_string(case::run_path(picture)).ok()?;
+    let text = std::fs::read_to_string(ocr_json_path(picture)).ok()?;
     let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-    if value.get("picture_sha256")?.as_str()? != case::picture_sha256(picture)? {
+    if value.get("picture")?.get("sha256")?.as_str()? != case::picture_sha256(picture)? {
         return None;
     }
     let mut lines = Vec::new();
     for item in value.get("lines")?.as_array()? {
-        let quad_values = item.get("quad")?.as_array()?;
+        let quad_values = item.get("polygon")?.as_array()?;
         if quad_values.len() != 4 {
             return None;
         }
@@ -1399,7 +1970,7 @@ fn load_run(picture: &Path) -> Option<(Vec<Line>, Vec<Timing>)> {
         lines.push(Line::new(item.get("text")?.as_str()?, quad, confidence).ok()?);
     }
     let mut timings = Vec::new();
-    for item in value.get("timings")?.as_array()? {
+    for item in value.get("timings").and_then(|t| t.as_array()).into_iter().flatten() {
         let step = match item.get("step")?.as_str()? {
             "model load" => "model load",
             "read picture" => "read picture",
@@ -1482,12 +2053,38 @@ mod tests {
     }
 
     #[test]
+    fn a_json_file_is_shown_in_the_main_area_without_its_byte_order_mark() {
+        let dir = std::env::temp_dir().join(format!("ocr-lab-view-{}", crate::unique_suffix()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let file = dir.join("p.png.ocr.json");
+        std::fs::write(&file, "\u{feff}{\"version\": 1}").expect("file");
+        let mut lab = Lab::new(dir.clone(), None, None, false, telemetry::Log::open(&dir.join("log.txt")));
+        lab.show_file(&file);
+        let (path, text) = lab.viewing_json.clone().expect("the file is open in the main area");
+        assert_eq!(path, file);
+        assert_eq!(text, "{\"version\": 1}", "the byte-order mark is not shown");
+        std::fs::remove_dir_all(&dir).expect("clean up");
+    }
+
+    // P0 check, run only when asked: `cargo test -p notecraft-ocr-lab -- --ignored`.
+    #[test]
+    #[ignore = "P0 check, run with: cargo test -p notecraft-ocr-lab -- --ignored"]
+    fn p0_the_ribbon_sensitivity_reaches_the_lab() {
+        let dir = std::env::temp_dir().join(format!("ocr-lab-p0-{}", crate::unique_suffix()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut lab = Lab::new(dir.clone(), None, None, false, telemetry::Log::open(&dir.join("log.txt")));
+        lab.apply_ribbon(vec![ribbon::Act::InkSensitivity(100)]);
+        assert_eq!(lab.sensitivity, 100, "the slider's value is kept");
+        std::fs::remove_dir_all(&dir).expect("clean up");
+    }
+
+    #[test]
     fn clearing_a_result_removes_only_its_run_file_and_says_when_there_was_none() {
         let dir = std::env::temp_dir().join(format!("ocr-lab-clear-{}", crate::unique_suffix()));
         std::fs::create_dir_all(&dir).expect("dir");
         let picture = dir.join("c.png");
         image::RgbImage::new(4, 4).save(&picture).expect("picture");
-        std::fs::write(case::run_path(&picture), "{}").expect("run file");
+        std::fs::write(ocr_json_path(&picture), "{}").expect("run file");
         assert_eq!(remove_run_file(&picture), Ok(true), "the run is removed");
         assert!(picture.is_file(), "the picture is kept");
         assert_eq!(remove_run_file(&picture), Ok(false), "a second clear finds nothing");

@@ -88,6 +88,12 @@ REM   The script runs a debug build (no --release). Debug builds compile faster
 REM   but run more slowly. For a release build, use the commented line above
 REM   the active command (it adds --release) and comment out the active one.
 REM
+REM CLEANING BUILD OUTPUT
+REM   run.cmd does not clean anything. To free disk space, run from the repository root:
+REM     cargo clean                 remove all of target\ (every build; next build is a full rebuild)
+REM     cargo clean -p notecraft    remove only the notecraft crate's output, keep dependencies
+REM   Neither command touches local settings, notebooks or the OCR models in tools\ocr-lab\local\.
+REM
 REM EXIT CODE
 REM   The script exits with the exit code of cargo (and so of notecraft). A
 REM   non-zero code means the build or the app failed.

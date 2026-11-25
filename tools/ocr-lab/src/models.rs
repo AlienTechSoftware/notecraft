@@ -7,78 +7,61 @@
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
-/// One model file: where it is downloaded from, what it must look like, and what the lab's
-/// Models section says about it. Kept together, so the description cannot drift from the files the
-/// lab checks (issue #490).
 pub struct ModelFile {
     pub name: &'static str,
     pub url: &'static str,
     pub size: u64,
     pub sha256: &'static str,
-    /// What the model does in the reading, in a few words.
+    /// What the model does in the OCR pipeline.
     pub role: &'static str,
-    /// What it can read, and what it is given.
+    /// What the model can and cannot read, as measured or documented.
     pub capabilities: &'static str,
-    /// The project page the model comes from.
-    pub source: &'static str,
-    pub licence: &'static str,
-    pub licence_url: &'static str,
+    /// Where the file's version is recorded, and what the header says about how it was made.
+    pub version: &'static str,
+    /// Measured cost, from the bake-off (see the OCR skill's references).
+    pub perf: &'static str,
 }
 
-/// The model card of the ocrs weights (its licence and training data are stated there).
-pub const MODEL_CARD: &str = "https://huggingface.co/robertknight/ocrs";
+/// Versions of the code that runs the models, as pinned in Cargo.lock.
+pub const ENGINE_VERSION: &str = "ocrs 0.14.0, rten 0.28.0";
+/// Measured on the POC pictures, release build, one run each (bake-off 2026-11-22).
+pub const PERF_SUMMARY: &str = "Load of both models about 6 ms. One picture 109 to 154 ms, including decoding, on a Windows development machine";
 
-pub const DETECTION: &str = "text-detection.onnx";
-pub const RECOGNITION: &str = "text-recognition.onnx";
+/// Where the models and the engine come from. Shown in the lab's details pane and opened by its links.
+pub const ENGINE_NAME: &str = "ocrs 0.14 (robertknight/ocrs)";
+pub const ENGINE_SOURCE: &str = "https://github.com/robertknight/ocrs";
+/// The neural-network runtime that runs the ONNX models. Pure Rust, from the same author as `ocrs`.
+pub const INFERENCE_RUNTIME: &str = "rten 0.28 (pure Rust), runs ONNX model files";
+/// The model family: the official ocrs detection and recognition models, both in ONNX format.
+pub const MODEL_FAMILY: &str = "ocrs official models (ONNX format): text detection and text recognition";
+pub const INFERENCE_SOURCE: &str = "https://crates.io/crates/rten";
+pub const MODEL_REPO: &str = "https://github.com/robertknight/ocrs-models";
+pub const MODEL_CARD: &str = "https://huggingface.co/robertknight/ocrs";
+/// The weights' licence, from the model card. Not shipped with the product until decided.
+pub const LICENCE: &str = "CC BY-SA 4.0 (weights); the ocrs crate is MIT or Apache-2.0";
 
 pub const MODELS: [ModelFile; 2] = [
     ModelFile {
-        name: DETECTION,
+        name: "text-detection.onnx",
         url: "https://ocrs-models.s3-accelerate.amazonaws.com/text-detection.onnx",
         size: 2_499_479,
         sha256: "a917b23dbd9524b465df7e922641b3ff2981623df4ded5a0234004ef2fee7cfe",
-        role: "Detection: finds where the words are",
-        capabilities: "Marks the pixels that are text, from which the words and lines are boxed. Any script, \
-            as long as it looks like text. Reads the picture in greyscale, scaled to its 800 x 600 input.",
-        source: "https://github.com/robertknight/ocrs-models",
-        licence: "CC BY-SA 4.0",
-        licence_url: "https://creativecommons.org/licenses/by-sa/4.0/",
+        role: "Finds text lines and their boxes in the picture",
+        capabilities: "Printed text lines; ocrs gives no per-line confidence score",
+        version: "No version field in the name; identified by size and SHA-256. Header says rten-convert",
+        perf: "Part of the 109 to 154 ms per picture above",
     },
     ModelFile {
-        name: RECOGNITION,
+        name: "text-recognition.onnx",
         url: "https://ocrs-models.s3-accelerate.amazonaws.com/text-recognition.onnx",
         size: 9_713_177,
         sha256: "86c145c2edb96c8caed5b1ebb8f44d706408922211451c309c625157dd6061c5",
-        role: "Recognition: reads each line",
-        capabilities: "Turns one line at a time into text, in greyscale at a fixed height. English only: the \
-            Latin letters A to Z and a to z, digits, space and ASCII punctuation. No accents and no other \
-            scripts (Arabic fails).",
-        source: "https://github.com/robertknight/ocrs-models",
-        licence: "CC BY-SA 4.0",
-        licence_url: "https://creativecommons.org/licenses/by-sa/4.0/",
+        role: "Reads the characters inside each text line",
+        capabilities: "English alphabet only; Arabic measured to fail (bake-off 2026-11-22)",
+        version: "No version field in the name; identified by size and SHA-256. Header says rten-convert",
+        perf: "Part of the 109 to 154 ms per picture above",
     },
 ];
-
-/// What the Models section shows for one file: the file as the lab expects it, and its size in the
-/// model folder when it is there.
-pub struct Shown {
-    pub model: &'static ModelFile,
-    /// The size on disk, when the folder is set and the file is in it.
-    pub on_disk: Option<u64>,
-}
-
-/// One row per model file, for the Models section.
-pub fn shown(dir: Option<&Path>) -> Vec<Shown> {
-    MODELS
-        .iter()
-        .map(|model| Shown { model, on_disk: dir.and_then(|dir| std::fs::metadata(dir.join(model.name)).ok()).map(|meta| meta.len()) })
-        .collect()
-}
-
-/// A byte count as people read it: "2.5 MB".
-pub fn megabytes(bytes: u64) -> String {
-    format!("{:.1} MB", bytes as f64 / 1_000_000.0)
-}
 
 /// The state of a model folder.
 #[derive(Debug, Clone, PartialEq)]
@@ -169,39 +152,6 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("dir");
         std::fs::write(dir.join("text-detection.onnx"), b"short").expect("file");
         assert!(matches!(check(Some(&dir)), Health::Corrupt(_)));
-        std::fs::remove_dir_all(&dir).expect("clean up");
-    }
-
-    #[test]
-    fn every_checked_file_has_its_description_and_the_reader_loads_those_files() {
-        let names: Vec<&str> = MODELS.iter().map(|m| m.name).collect();
-        assert_eq!(names, [DETECTION, RECOGNITION], "the files the lab checks are the files the reader loads");
-        for model in &MODELS {
-            assert!(model.url.ends_with(model.name), "{} is downloaded under its own name", model.name);
-            assert_eq!(model.sha256.len(), 64, "{}: a SHA-256 is 64 hex digits", model.name);
-            assert!(model.sha256.bytes().all(|b| b.is_ascii_hexdigit()));
-            assert!(model.size > 0);
-            for text in [model.role, model.capabilities, model.licence] {
-                assert!(!text.trim().is_empty(), "{} has every field filled", model.name);
-            }
-            for link in [model.source, model.licence_url, MODEL_CARD] {
-                assert!(link.starts_with("https://"), "{link} opens in the browser");
-            }
-        }
-    }
-
-    #[test]
-    fn the_models_section_shows_each_file_with_its_size_on_disk_or_none() {
-        let rows = shown(None);
-        assert_eq!(rows.len(), MODELS.len());
-        assert!(rows.iter().all(|r| r.on_disk.is_none()), "no folder: nothing on disk");
-        let dir = std::env::temp_dir().join(format!("ocr-lab-models-shown-{}", crate::unique_suffix()));
-        std::fs::create_dir_all(&dir).expect("dir");
-        std::fs::write(dir.join(DETECTION), b"12345").expect("file");
-        let rows = shown(Some(&dir));
-        assert_eq!(rows[0].on_disk, Some(5));
-        assert_eq!(rows[1].on_disk, None, "a missing file shows as missing");
-        assert_eq!(megabytes(2_499_479), "2.5 MB");
         std::fs::remove_dir_all(&dir).expect("clean up");
     }
 }

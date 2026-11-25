@@ -69,8 +69,10 @@ addition, never a requirement for finding a word.
 - **Known limit: snippets** show the text around the first query word, at most 120 characters.
 - **Alt text.** The `alt` of each picture in the page markup, per RFC 0003. Indexed with the page
   as its own text; the page is the hit, and an alt hit carries no boxes.
-- **OCR text.** `<picture>.txt` (derived, from `nc-info-ocr`). Indexed as its own unit, so a hit
-  can open the picture with its box outlined (criterion A8).
+- **OCR text.** `<picture>.txt` and `<picture>.lines` (derived, from `nc-info-ocr`; current product).
+  Proposed: one `<picture>.ocr.json` holding the text and its polygons (see
+  `nc-info-ocr/references/ocr-json-schema.md`). Indexed as its own unit, so a hit can open the
+  picture with its box outlined (criterion A8).
 - **Later:** attachment text, handwriting and transcripts (Stages 2 and 3).
 
 Each unit keeps: its page path, its node id, its kind (page, alt, OCR, later others), and for

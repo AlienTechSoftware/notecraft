@@ -9,9 +9,10 @@
 
 mod app;
 mod case;
-mod insert;
+mod json_view;
 mod metrics;
 mod models;
+mod pen;
 mod settings;
 mod telemetry;
 
@@ -56,16 +57,20 @@ fn main() -> eframe::Result {
         models: models.clone().filter(|m| settings::models_present(m)).or(saved.models.clone()),
         theme: saved.theme.clone(),
         follow_system: saved.follow_system,
+        // Tree and ribbon state are paused, as in Lab::remember. Uncomment with the saving to bring them back.
+        // open_path: saved.open_path.clone(),
+        // ribbon_tab: saved.ribbon_tab.clone(),
+        // ribbon_folded: saved.ribbon_folded,
+        ..Default::default()
     });
+    let lab = app::Lab::new(folder, models, saved.theme.clone(), saved.follow_system, log);
+    // lab.restore_open_path(saved.open_path.clone());
+    // lab.restore_ribbon(saved.ribbon_tab.clone(), saved.ribbon_folded);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1400.0, 900.0]).with_title("NoteCraft OCR lab").with_decorations(false),
         ..Default::default()
     };
-    eframe::run_native(
-        "NoteCraft OCR lab",
-        options,
-        Box::new(move |_cc| Ok(Box::new(Shell(app::Lab::new(folder, models, saved.theme.clone(), saved.follow_system, log))))),
-    )
+    eframe::run_native("NoteCraft OCR lab", options, Box::new(move |_cc| Ok(Box::new(Shell(lab)))))
 }
 
 /// Headless run for a test folder: reads every picture with the product's engine, scores it

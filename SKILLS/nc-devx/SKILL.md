@@ -199,13 +199,17 @@ member, so a bare `cargo build` and the release do not build it. `cargo xtask` g
   presses the button. The weights are CC BY-SA 4.0 (see the OCR skill).
 - **Cases:** a folder of pictures, grouped in the navigator by kind (the first folder) and language
   (folder names). Labels are drawn in the window and saved beside each picture as
-  `<picture>.label.json`. A run is saved as `<picture>.ocr-run.json`, and a changed picture ignores
+  `<picture>.label.json`. The result is saved as `<picture>.ocr.json` (the one OCR file, see nc-info-ocr), and a changed picture ignores
   its old run. Each case folder keeps a `SOURCES.txt` with where each picture came from and its
   licence.
 - **Local, never committed:** `tools/ocr-lab/local/` holds the settings, the log, the reports and
   the downloaded models. It is git-ignored.
 - **Checks:** `cargo test -p notecraft-ocr-lab` covers scoring, label files, the grouping rules,
   the model check and the saved-run round trip.
+- **Full guide:** `tools/ocr-lab/README.md` (window layout, labels, picture sliders, runs, where
+  files live, checks). The OCR design and engine facts are in the `nc-info-ocr` skill.
+- **Open feature requests (label `OCR`):** #489 insert and draw your own test pictures under each
+  group; #490 show loaded model name, size, capabilities and source in the details pane.
 
 ### Local diagnostics paths
 

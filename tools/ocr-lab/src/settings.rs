@@ -13,6 +13,15 @@ pub struct Settings {
     /// Follow the system's light or dark setting, as the app's switch does.
     #[serde(default)]
     pub follow_system: bool,
+    /// The open path in the navigator: language, source, content. Empty means the tree is all closed.
+    #[serde(default)]
+    pub open_path: Vec<String>,
+    /// The drawing ribbon's chosen tab, such as "Draw". None means the default.
+    #[serde(default)]
+    pub ribbon_tab: Option<String>,
+    /// Whether the drawing ribbon is folded to its tab names.
+    #[serde(default)]
+    pub ribbon_folded: bool,
 }
 
 fn file() -> PathBuf {
@@ -21,7 +30,9 @@ fn file() -> PathBuf {
 
 /// The saved settings, or none when there is no file or it cannot be read.
 pub fn load() -> Settings {
-    std::fs::read_to_string(file()).ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default()
+    // Files written on Windows can start with a byte-order mark, which JSON does not allow. Reading
+    // one as empty would fall back to the defaults and overwrite the person's folder on the next save.
+    std::fs::read_to_string(file()).ok().and_then(|text| serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()).unwrap_or_default()
 }
 
 /// Saves the settings. A failure only means the next start asks again, so it is not reported.
@@ -37,5 +48,5 @@ pub fn save(settings: &Settings) {
 
 /// The model folder is usable when both ONNX files are in it.
 pub fn models_present(dir: &Path) -> bool {
-    dir.join(crate::models::DETECTION).is_file() && dir.join(crate::models::RECOGNITION).is_file()
+    dir.join("text-detection.onnx").is_file() && dir.join("text-recognition.onnx").is_file()
 }

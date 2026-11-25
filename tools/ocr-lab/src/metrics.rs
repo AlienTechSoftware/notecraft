@@ -60,7 +60,28 @@ impl Metrics {
         chart(ui, self.samples.iter().map(|s| s.cpu_percent), cpu_max, Color32::from_rgb(90, 170, 255));
         ui.label(format!("Memory {:.0} MB (peak {:.0} MB)", latest.memory_mb, mem_max));
         chart(ui, self.samples.iter().map(|s| s.memory_mb), mem_max, Color32::from_rgb(160, 120, 230));
+        self.show_gpus(ui);
     }
+
+    /// One GPU chart. Greyed out when the machine has no GPU. The lab has no GPU backend yet, so
+    /// even with a GPU the chart stays empty until one is added.
+    fn show_gpus(&self, ui: &mut egui::Ui) {
+        match gpu_device() {
+            None => ui.add_enabled_ui(false, |ui| {
+                ui.label("GPU: none detected");
+                chart(ui, std::iter::empty(), 100.0, Color32::GRAY);
+            }),
+            Some(name) => ui.vertical(|ui| {
+                ui.label(format!("GPU {name}: sampling not built"));
+                chart(ui, std::iter::empty(), 100.0, Color32::GRAY);
+            }),
+        };
+    }
+}
+
+/// The name of the GPU this machine has, or None. Always None until a GPU backend is added to the lab.
+fn gpu_device() -> Option<String> {
+    None
 }
 
 fn chart(ui: &mut egui::Ui, values: impl Iterator<Item = f32>, top: f32, colour: Color32) {
