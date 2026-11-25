@@ -246,6 +246,9 @@ pub enum Act {
     /// words. Its own act rather than `Clipboard("paste")`, because a picture is not a
     /// clipboard operation on the text at all.
     Paste,
+    /// Paste > Keep text only, and Ctrl+Shift+V (issue #535): the clipboard's text alone, as if
+    /// typed, with none of the formatting it came with.
+    PastePlain,
     /// More or less indent on a list item.
     Indent(bool),
     /// Which way the line the caret is in reads. `None` lets the words decide again.
@@ -1066,13 +1069,21 @@ fn big_menu(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui
     big_inner(ui, icon, label, tip, true, false, t)
 }
 
+/// The picture on a split button: one of the ribbon's icons, or one of the marks.
+#[derive(Clone, Copy)]
+enum SplitIcon {
+    Icon(Icon),
+    Mark(Mark),
+}
+
 /// A big button with two parts, as Office draws one (issue #374): the picture does the usual
 /// thing at once, and the name with its chevron opens the other ways. Each part is a button of
 /// its own, so a pointer, the keyboard and a screen reader can tell them apart: the second is
 /// named "<name> options". Hovering one part lights it and draws the line between the two.
 /// Returns the action part and the part that opens the menu.
 // i18n-ui-text: label,tip
-fn big_split(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> (egui::Response, egui::Response) {
+fn big_split(ui: &mut Ui, icon: impl Into<SplitIconArg>, label: &str, tip: &str, t: &Tokens) -> (egui::Response, egui::Response) {
+    let icon = icon.into().0;
     let label = crate::tl!(label);
     let tip = crate::tl!(tip);
     let font = egui::FontId::proportional(12.0);
@@ -1098,8 +1109,17 @@ fn big_split(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> (eg
             painter.rect_stroke(part.rect.shrink(0.5), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
         }
     }
-    let colour = if enabled { if icon == Icon::Picture { t.ok } else { t.accent } } else { t.muted };
-    icons::paint_ribbon(ui, Rect::from_center_size(egui::pos2(rect.center().x, rect.min.y + ICON_Y), vec2(28.0, 28.0)), icon, colour);
+    let at = egui::pos2(rect.center().x, rect.min.y + ICON_Y);
+    match icon {
+        SplitIcon::Icon(icon) => {
+            let colour = if enabled { if icon == Icon::Picture { t.ok } else { t.accent } } else { t.muted };
+            icons::paint_ribbon(ui, Rect::from_center_size(at, vec2(28.0, 28.0)), icon, colour);
+        }
+        SplitIcon::Mark(mark) => {
+            let colour = if enabled { mark.color(t.text, t.accent) } else { t.muted };
+            ribbon_icons::paint(&painter, Rect::from_center_size(at, vec2(24.0, 24.0)), mark, colour);
+        }
+    }
     painter.text(egui::pos2(rect.center().x, rect.min.y + LABEL_Y), Align2::CENTER_CENTER, label, font, t.text);
     chevron(&painter, egui::pos2(rect.center().x, rect.min.y + LABEL_Y + LINE_H - 1.0), t.muted);
     let (name, options) = (label.to_string(), crate::i18n::format_message_id("ui.name_options", &[("name", label)]));
@@ -1107,6 +1127,21 @@ fn big_split(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> (eg
     let options_tip = options.clone();
     open.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, options.clone()));
     (main.on_hover_text(tip), open.on_hover_text(options_tip))
+}
+
+/// What [`big_split`] takes for its picture: an [`Icon`] or a [`Mark`].
+struct SplitIconArg(SplitIcon);
+
+impl From<Icon> for SplitIconArg {
+    fn from(icon: Icon) -> Self {
+        SplitIconArg(SplitIcon::Icon(icon))
+    }
+}
+
+impl From<Mark> for SplitIconArg {
+    fn from(mark: Mark) -> Self {
+        SplitIconArg(SplitIcon::Mark(mark))
+    }
 }
 
 /// A picker opened from the keyboard puts the keyboard on its first choice (issue #374), so
@@ -1434,8 +1469,33 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         });
     });
     group(ui, crate::tl_id!("ui.clipboard"), t, |ui| {
-        if big_mark(ui, Mark::Paste, crate::tl_id!("ui.paste"), crate::tl_id!("ui.ctrl_v_pastes_into_the_page"), t).clicked() {
+        // Paste does the usual paste at once; its options keep the formatting or the text only
+        // (issue #535).
+        let (paste, options) = big_split(ui, Mark::Paste, crate::tl_id!("ui.paste"), crate::tl_id!("ui.ctrl_v_pastes_into_the_page"), t);
+        if paste.clicked() {
             acts.push(Act::Paste);
+        }
+        let popup_id = egui::Popup::default_response_id(&options);
+        let was_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+        if opened_by_keys(&options) && !was_open {
+            ui.data_mut(|d| d.insert_temp(first_choice_id(popup_id), true));
+        }
+        egui::Popup::menu(&options).show(|ui| {
+            picker_title(ui, crate::tl_id!("ui.paste_options"), t);
+            let (rich, plain) = if cfg!(target_os = "macos") { ("Cmd+V", "Cmd+Shift+V") } else { ("Ctrl+V", "Ctrl+Shift+V") };
+            let keep = floating::menu_row_shortcut(ui, Some(Glyph::Mark(Mark::Paste)), crate::tl_id!("ui.keep_source_formatting"), rich, t);
+            first_choice(ui, popup_id, &keep);
+            if keep.clicked() {
+                acts.push(Act::Paste);
+                ui.close();
+            }
+            if floating::menu_row_shortcut(ui, None, crate::tl_id!("ui.keep_text_only"), plain, t).clicked() {
+                acts.push(Act::PastePlain);
+                ui.close();
+            }
+        });
+        if was_open && !egui::Popup::is_id_open(ui.ctx(), popup_id) && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            options.request_focus();
         }
         rows(ui, |ui| {
             if mark_row(ui, Mark::Cut, crate::tl_id!("ui.cut"), crate::tl_id!("ui.cut_the_selection"), t).clicked() {
@@ -4568,29 +4628,6 @@ fn source_tab(ui: &mut Ui, format: Option<PageFormat>, t: &Tokens, acts: &mut Ve
             ui.label(egui::RichText::new(crate::tl_id!("ui.the_format_is_set_when_the_page_is_created")).size(10.0).color(t.muted));
         });
     });
-}
-
-/// A big button that draws one of the ribbon's own marks.
-// i18n-ui-text: label,tip
-fn big_mark(ui: &mut Ui, mark: Mark, label: &str, tip: &str, t: &Tokens) -> egui::Response {
-    let label = crate::tl!(label);
-    let tip = crate::tl!(tip);
-    let (rect, resp) = ui.allocate_exact_size(vec2(BIG, GROUP_H - 18.0), Sense::click());
-    let painter = ui.painter_at(rect);
-    if resp.hovered() {
-        painter.rect_filled(rect, 4.0, t.row_hover);
-    }
-    ribbon_icons::paint(
-        &painter,
-        Rect::from_center_size(egui::pos2(rect.center().x, rect.min.y + 18.0), vec2(24.0, 24.0)),
-        mark,
-        mark.color(t.text, t.accent),
-    );
-    painter.text(egui::pos2(rect.center().x, rect.min.y + 40.0), Align2::CENTER_CENTER, label, egui::FontId::proportional(11.0), t.text);
-    let enabled = ui.is_enabled();
-    let name = label.to_string();
-    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
-    resp.on_hover_text(tip)
 }
 
 #[cfg(test)]

@@ -460,6 +460,17 @@ impl Widths {
         true
     }
 
+    /// The page's blocks were put in another order: the block that was at `i` is now at
+    /// `moved(i)`. What is kept for a table goes with it (issue #563). True when anything changed.
+    pub fn renumber(&mut self, moved: impl Fn(usize) -> usize) -> bool {
+        let before = self.tables.clone();
+        for layout in &mut self.tables {
+            layout.block = moved(layout.block);
+        }
+        self.tables.sort_by_key(|l| l.block);
+        self.tables != before
+    }
+
     /// The blocks in `gone` were taken off the page. What is kept for one of them goes, and
     /// what is kept for a table after them moves up with it, so it stays on the same table.
     /// True when anything changed.
@@ -630,6 +641,20 @@ pub fn write(widths: &Widths) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #563: blocks put in another order take their tables' layouts with them.
+    #[test]
+    fn a_layout_goes_with_its_table_when_blocks_are_reordered() {
+        let mut widths = parse("1:100,100; 6:120,200");
+        // Block 1 moves down past block 2: 1 -> 2, 2 -> 1.
+        assert!(widths.renumber(|i| match i {
+            1 => 2,
+            2 => 1,
+            i => i,
+        }));
+        assert_eq!(write(&widths), "2:100,100; 6:120,200");
+        assert!(!widths.renumber(|i| i), "the same order changes nothing");
+    }
 
     /// Issue #161: hiding the borders is a fact about one table, kept with it.
     #[test]
