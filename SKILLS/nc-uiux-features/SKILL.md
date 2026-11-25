@@ -51,3 +51,9 @@ read-only/recovered view when possible, and emit an error-level local diagnostic
 
 Report files changed, commands run, visual checks, known gaps, and whether the demo notebook was
 updated or intentionally left unchanged.
+
+## Generated data and the user's content
+
+Actions that show derived data (OCR overlays, detected text, descriptions) are view state: they change what is shown, not what the page contains, and they stay off the undo history.
+
+Actions that move derived data into the user's content are edits. A reversible one goes on the undo history, so Ctrl+Z reverses it. A permanent one is marked in the menu with (!) and placed last in its menu, and says that it cannot be undone. It is not confirmed with a dialog: the marking is the warning. The full principle is in `nc-prod` (principle 6).

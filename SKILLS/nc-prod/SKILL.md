@@ -419,3 +419,16 @@ If you have to choose, prioritize in this order:
 **Decision Date:** 2026-10-17 (update 2026-10-19)  
 **Last Reviewed:** 2026-10-24  
 **Next Review:** Quarterly or when major features are proposed
+
+## Generated Data Versus User Content (Virtual Boundary)
+
+Everything NoteCraft generates is derived, and it stays on its side of a boundary. Derived data includes OCR text, text boxes (polygons), descriptions (alt text), tags, thumbnails, previews and caches.
+
+- **Derived data lives beside its source,** as a sidecar named after the file it came from. For example `<image>.<ext>.ocr.json` sits in the page folder next to `<image>.<ext>`. Derived data is never written into the user's own text unless the user asks for it.
+- **Derived data can always be deleted and rebuilt** from its source without loss. If it is missing, the app rebuilds it; it never treats it as the only copy.
+- **Crossing into user content takes an explicit action by the user.** Examples: copying OCR text and pasting it, or choosing a permanent conversion. Nothing crosses by itself.
+- **A reversible crossing is undoable.** It goes on the editor's undo history, so Ctrl+Z reverses it.
+- **A permanent crossing is marked, not confirmed.** Its menu item carries a visible (!) and sits last in its menu, and it says it cannot be undone. No confirmation dialog: the marking is the warning.
+- **View state is neither.** Showing or hiding a derived overlay changes how the page looks, not what it contains, so it stays off the undo history.
+
+Why: the user must always know which words they wrote and which the app made, and a derived result must never silently become the user's content.
