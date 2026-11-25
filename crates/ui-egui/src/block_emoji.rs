@@ -235,13 +235,17 @@ pub fn header(ui: &mut egui::Ui, page_dir: &std::path::Path, i: usize, emoji: &[
     let mut head = ui.new_child(egui::UiBuilder::new().max_rect(area_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
     let plus_rect = {
         let ui = &mut head;
-        // Forced to a square, so the round corners make a circle and not an ellipse.
-        let button = ui
-            .add_enabled_ui(editable, |ui| {
+        // Forced to a square, so the round corners make a circle and not an ellipse. A printed
+        // page keeps the button's room but not the button (issue #168).
+        let button = if crate::print::is_printing(ui.ctx()) {
+            ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover()).1
+        } else {
+            ui.add_enabled_ui(editable, |ui| {
                 // i18n-exempt: "+" is the glyph of the add button, not a word.
                 ui.add_sized([size, size], egui::Button::new("+").corner_radius(egui::CornerRadius::same(255)))
             })
-            .inner;
+            .inner
+        };
         // Named for the block it belongs to, so tests and screen readers can tell the headers apart.
         button.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, editable, format!("Add emoji to block {}", i + 1)));
         if button.clicked() {

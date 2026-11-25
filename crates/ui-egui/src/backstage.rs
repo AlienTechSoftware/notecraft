@@ -13,6 +13,8 @@ use notecraft_store::tree::Node;
 pub enum Act {
     /// Leave the File screen.
     Close,
+    /// File > Print (issue #168): leave the File screen and open the Print dialog.
+    Print,
     NewNotebook,
     /// Show this notebook's folder in the file manager.
     OpenFolder(std::path::PathBuf),
@@ -122,7 +124,7 @@ pub const SIDE: [(&str, bool); 10] = [
     ("New", true),
     ("Open", true),
     ("Save a Copy", true),
-    ("Print", false),
+    ("Print", true),
     ("Share", true),
     ("Export", true),
     ("Account", true),
@@ -297,7 +299,13 @@ fn side_bar(ui: &mut Ui, page: &str, t: &Tokens, acts: &mut Vec<Act>) {
             let label = crate::tl!(name).to_string();
             resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, selected, label.clone()));
             if resp.clicked() {
-                acts.push(if built { Act::Page(name) } else { Act::NotBuilt(name) });
+                acts.push(if name == "Print" {
+                    Act::Print
+                } else if built {
+                    Act::Page(name)
+                } else {
+                    Act::NotBuilt(name)
+                });
             }
         }
     });
@@ -860,9 +868,8 @@ mod tests {
     #[test]
     fn the_side_entries_say_what_works() {
         let built: Vec<&str> = SIDE.iter().filter(|(_, b)| *b).map(|(n, _)| *n).collect();
-        assert_eq!(built, vec!["Info", "New", "Open", "Save a Copy", "Share", "Export", "Account", "Options", "About"]);
-        assert_eq!(SIDE.len(), 10, "the rest are listed and marked, not hidden");
-        assert!(SIDE.iter().any(|(n, b)| *n == "Print" && !*b));
+        assert_eq!(built, vec!["Info", "New", "Open", "Save a Copy", "Print", "Share", "Export", "Account", "Options", "About"]);
+        assert_eq!(SIDE.len(), 10, "every entry is listed");
     }
 
     #[test]

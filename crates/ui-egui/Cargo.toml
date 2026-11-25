@@ -37,6 +37,8 @@ hayro = { workspace = true }
 log = { workspace = true }
 serde_json = { workspace = true }
 zip = { workspace = true }
+# File > Print writes its PDF's pictures compressed (issue #168). Already in the build through zip.
+flate2 = "1"
 # File > Check for updates: release versions and the SHA-256 of a download (see `update.rs`).
 semver = "1"
 sha2 = "0.10"
@@ -73,3 +75,11 @@ egui-wgpu = "0.37"
 # Desktop only: the web build has no installed copy to update, and the TLS stack does not build for wasm32.
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 craft-update = { path = "../craft-update" }
+
+# File > Print sends its PDF to a printer through CUPS on macOS and Linux (issue #168), with the
+# suite's shared print crate from craft-libs at the same commit as craft-i18n, as PdfCraft and
+# DesignCraft use it. Not on Windows: there the crate's printing backend brings a build-time
+# download tool chain (reqwest, aws-lc, sigstore) into the build, so Windows opens the PDF in the
+# system's PDF viewer to print instead.
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+craft-print = { git = "https://github.com/storytold/craft-libs", rev = "92d392cff132eaf53e13afff77f38b5c11b73aa0" }

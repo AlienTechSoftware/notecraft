@@ -67,6 +67,7 @@ pub mod picture_text;
 pub mod pictures;
 pub mod portable;
 pub mod preview;
+pub mod print;
 pub(crate) mod printout;
 pub mod quickaccess;
 pub mod reader;

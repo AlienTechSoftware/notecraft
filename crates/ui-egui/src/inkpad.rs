@@ -1334,6 +1334,15 @@ pub fn paint_stroke(painter: &egui::Painter, origin: egui::Pos2, stroke: &Stroke
     }
 }
 
+/// Paints `stroke` at `zoom` about `origin`, in its own colour on white paper: what File > Print
+/// draws (issue #168).
+pub(crate) fn paint_zoomed(painter: &egui::Painter, origin: egui::Pos2, stroke: &Stroke, zoom: f32) {
+    if let Some(mut shape) = scaled_shape(stroke, zoom, false, 1.0 / painter.ctx().pixels_per_point()) {
+        shape.translate(origin.to_vec2());
+        painter.add(shape);
+    }
+}
+
 /// `stroke` scaled to `zoom` and in the colour the page shows it in, as a shape about the page's
 /// top left corner. `None` for a stroke with nothing to draw.
 fn scaled_shape(stroke: &Stroke, zoom: f32, dark_page: bool, feather: f32) -> Option<egui::Shape> {
