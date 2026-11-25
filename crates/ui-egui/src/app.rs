@@ -5017,7 +5017,10 @@ impl NoteCraftApp {
                 }
                 backstage::Act::SetWelcomeNotebookUpdatePrompt(enabled) => {
                     if let Err(error) = self.session.settings.set_welcome_notebook_update_prompt(enabled) {
-                        self.complain(&crate::i18n::format_message_id("ui.welcome_notebook_update_prompt_not_saved", &[("error", &error.to_string())]));
+                        self.complain(&crate::i18n::format_message_id(
+                            "ui.welcome_notebook_update_prompt_not_saved",
+                            &[("error", &error.to_string())],
+                        ));
                     }
                 }
                 backstage::Act::ChooseNotebooksFolder => self.choose_default_notebooks_folder(),
