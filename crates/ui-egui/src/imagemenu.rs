@@ -1,4 +1,5 @@
-//! The context menu for an image: "Save picture as...", and Rotate and Flip (issue #273).
+//! The context menu for an image: "Save picture as...", Copy Text from Picture (issue #274),
+//! and Rotate and Flip (issue #273).
 //!
 //! Opened when an image in the note is right-clicked.
 
@@ -71,6 +72,20 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens) {
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 if floating::menu_row(ui, Some(Glyph::Icon(Icon::Picture)), crate::tl_id!("ui.save_picture_as"), t).clicked() {
                     acts.push(Act::SavePictureAs(src.clone()));
+                    picked = true;
+                }
+                // The printed text of the picture, or of a printout's page or every page (issue #274).
+                if crate::picture_text::printout_source(&src).is_some() {
+                    if floating::menu_row(ui, None, crate::tl_id!("ui.copy_text_from_this_printout_page"), t).clicked() {
+                        acts.push(Act::CopyTextFromPicture { src: src.clone(), whole_printout: false });
+                        picked = true;
+                    }
+                    if floating::menu_row(ui, None, crate::tl_id!("ui.copy_text_from_all_printout_pages"), t).clicked() {
+                        acts.push(Act::CopyTextFromPicture { src: src.clone(), whole_printout: true });
+                        picked = true;
+                    }
+                } else if floating::menu_row(ui, None, crate::tl_id!("ui.copy_text_from_picture"), t).clicked() {
+                    acts.push(Act::CopyTextFromPicture { src: src.clone(), whole_printout: false });
                     picked = true;
                 }
                 // A picture or printout that shares a box with other blocks can be taken out of it
@@ -311,5 +326,36 @@ mod tests {
         frame.textures_delta.clear();
 
         assert_eq!(state(&ctx), None);
+    }
+
+    /// The menu offers Copy Text from Picture for a picture, and for a printout's page both that
+    /// page and the whole printout (issue #274).
+    #[test]
+    fn copy_text_rows_fit_what_was_right_clicked() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable;
+
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let body = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
+        for (src, label, whole) in [
+            ("assets/receipt.png", "Copy Text from Picture", false),
+            ("assets/report.pdf.printout-002.png", "Copy Text from This Page of the Printout", false),
+            ("assets/report.pdf.printout-002.png", "Copy Text from All Pages of the Printout", true),
+        ] {
+            let mut h = Harness::builder().with_size(egui::vec2(800.0, 600.0)).with_accessibility_check(false).build_ui_state(
+                |ui, acts: &mut Vec<Act>| {
+                    show(ui, body, acts, &tokens);
+                },
+                Vec::new(),
+            );
+            h.ctx.data_mut(|d| d.insert_temp(id(), (egui::pos2(100.0, 100.0), src.to_string())));
+            h.run();
+            let printout = src.contains(".printout-");
+            assert_eq!(h.query_by_label("Copy Text from Picture").is_some(), !printout, "{src}");
+            assert_eq!(h.query_by_label("Copy Text from All Pages of the Printout").is_some(), printout, "{src}");
+            h.get_by_label(label).click();
+            h.run();
+            assert_eq!(*h.state(), vec![Act::CopyTextFromPicture { src: src.to_string(), whole_printout: whole }]);
+        }
     }
 }

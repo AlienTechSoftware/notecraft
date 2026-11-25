@@ -63,6 +63,7 @@ pub mod pageedit;
 pub mod pagemenu;
 pub mod pagetext;
 pub mod paper;
+pub mod picture_text;
 pub mod pictures;
 pub mod portable;
 pub mod preview;

@@ -200,12 +200,12 @@ const WIZARD_SCREEN_MARGIN: f32 = 2.0 * (16.0 + 2.0 + 8.0);
 /// The height kept below the wizard's scrolling body for its Back, Next and Finish buttons.
 const WIZARD_BUTTON_ROW: f32 = 56.0;
 
-fn modal_frame(tokens: &Tokens) -> egui::Frame {
+pub(crate) fn modal_frame(tokens: &Tokens) -> egui::Frame {
     egui::Frame::NONE.fill(tokens.panel).stroke(egui::Stroke::new(1.5, tokens.accent)).inner_margin(egui::Margin::same(16))
 }
 
 // i18n-ui-text: title
-fn modal_title(ui: &mut Ui, tokens: &Tokens, title: &str) {
+pub(crate) fn modal_title(ui: &mut Ui, tokens: &Tokens, title: &str) {
     egui::Frame::NONE.fill(tokens.band).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.label(egui::RichText::new(crate::tl!(title)).strong().size(17.0).color(tokens.band_text));
@@ -216,7 +216,7 @@ fn modal_title(ui: &mut Ui, tokens: &Tokens, title: &str) {
 /// Dims the window behind a modal dialog and takes the clicks that miss the dialog, so they do
 /// not reach the page underneath. Returns the backdrop's layer: the dialog's window keeps itself
 /// above it with [`stay_above`].
-fn modal_backdrop(ctx: &egui::Context, id: &str) -> egui::LayerId {
+pub(crate) fn modal_backdrop(ctx: &egui::Context, id: &str) -> egui::LayerId {
     let screen = ctx.viewport_rect();
     egui::Area::new(egui::Id::new(id))
         .order(egui::Order::Foreground)
@@ -232,13 +232,13 @@ fn modal_backdrop(ctx: &egui::Context, id: &str) -> egui::LayerId {
 /// Keeps a modal dialog's window directly above its backdrop. Both are foreground areas, and egui
 /// raises an area that is clicked to the top of its order: a click on the dimmed backdrop used to
 /// lift it over the dialog, whose buttons could then never be reached again (issue #98).
-fn stay_above(ui: &Ui, backdrop: egui::LayerId) {
+pub(crate) fn stay_above(ui: &Ui, backdrop: egui::LayerId) {
     ui.ctx().set_sublayer(backdrop, ui.layer_id());
 }
 
 /// Modal actions use a readable size based on their label instead of egui's compact default.
 // i18n-ui-text: label
-fn modal_button(ui: &mut Ui, tokens: &Tokens, label: &str, primary: bool) -> egui::Response {
+pub(crate) fn modal_button(ui: &mut Ui, tokens: &Tokens, label: &str, primary: bool) -> egui::Response {
     modal_button_enabled(ui, tokens, label, primary, true)
 }
 
@@ -1380,6 +1380,10 @@ pub struct NoteCraftApp {
     tags_pane: Option<TagsPane>,
     /// Home > More tags > Customize Tags, while it is open (issue #259).
     custom_tags: Option<crate::customtags::Dialog>,
+    /// Copy Text from Picture while its dialog is open (issue #274).
+    picture_text: Option<crate::picture_text::Dialog>,
+    /// A paste meant for the text box of such a dialog, held while the page is drawn.
+    modal_paste: Option<String>,
     templates_pane: Option<TemplatesPane>,
     cursor: usize,
     tokens: Tokens,
@@ -1671,6 +1675,8 @@ impl NoteCraftApp {
             search_scope: SearchScope::default(),
             tags_pane: None,
             custom_tags: None,
+            picture_text: None,
+            modal_paste: None,
             templates_pane: None,
             cursor: 0,
             tokens: Theme::DEFAULT.tokens(),
@@ -6155,6 +6161,7 @@ impl NoteCraftApp {
             ribbon::Act::InkExportPlain => self.ink_export_plain(),
             ribbon::Act::SavePictureAs(src) => self.save_picture_as(&src),
             ribbon::Act::TurnPicture(src, how) => self.turn_picture(&src, how),
+            ribbon::Act::CopyTextFromPicture { src, whole_printout } => self.copy_text_from_picture(&src, whole_printout),
         }
     }
 
@@ -7466,6 +7473,81 @@ impl NoteCraftApp {
         });
     }
 
+    /// Copy Text from Picture (issue #274): reads the printed text of the picture `src`, or of every
+    /// page of the printout it is a page of, and opens the dialog that shows it for review.
+    fn copy_text_from_picture(&mut self, src: &str, whole_printout: bool) {
+        let Some(ed) = self.editor.as_ref() else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        let printout = crate::picture_text::printout_source(src).filter(|_| whole_printout);
+        let sources: Vec<String> = match printout {
+            // Every page of the printout, in the order the page shows them.
+            Some(source) => {
+                let mut pages: Vec<String> = Vec::new();
+                for block in &ed.blocks {
+                    if let notecraft_formats::Block::Image { src: page, .. } = block
+                        && crate::picture_text::printout_source(page) == Some(source)
+                        && !pages.contains(page)
+                    {
+                        pages.push(page.clone());
+                    }
+                }
+                if pages.is_empty() { vec![src.to_string()] } else { pages }
+            }
+            None => vec![src.to_string()],
+        };
+        let mut pictures = Vec::with_capacity(sources.len());
+        for source in &sources {
+            match crate::preview::page_asset_path(&ed.dir, source) {
+                Some(path) => pictures.push(path),
+                None => {
+                    self.complain(&crate::i18n::format_message_id("ui.cannot_read_the_picture_error", &[("error", source)]));
+                    return;
+                }
+            }
+        }
+        let scope = match (printout.is_some(), crate::picture_text::printout_source(src).is_some()) {
+            (true, _) => crate::picture_text::Scope::Printout,
+            (false, true) => crate::picture_text::Scope::PrintoutPage,
+            (false, false) => crate::picture_text::Scope::Picture,
+        };
+        self.picture_text = Some(crate::picture_text::Dialog::start(scope, pictures, self.ocr_models()));
+    }
+
+    /// The folder with the text recognition models, when one is set.
+    fn ocr_models(&self) -> Option<PathBuf> {
+        self.session.settings.get("ocr_models").filter(|v| !v.trim().is_empty()).map(PathBuf::from)
+    }
+
+    /// Shows Copy Text from Picture while it is open, and does what it asks.
+    fn picture_text_dialog(&mut self, ctx: &Context) {
+        let Some(mut dialog) = self.picture_text.take() else { return };
+        self.give_modal_paste(ctx);
+        let out = dialog.show(ctx, &self.tokens);
+        if let Some(text) = out.copy {
+            match self.clipboard.set_text(&text) {
+                Ok(()) => dialog.mark_copied(),
+                Err(e) => self.complain(&crate::i18n::format_message_id("ui.picture_text_copy_failed", &[("error", &e)])),
+            }
+        }
+        if out.choose_models
+            && let Some(folder) = pick_ocr_models_folder()
+        {
+            if crate::picture_text::models_folder_is_complete(&folder) {
+                if let Err(e) = self.session.settings.set("ocr_models", &folder.to_string_lossy()) {
+                    self.complain(&e.to_string());
+                }
+                dialog = crate::picture_text::Dialog::start(dialog.scope(), dialog.pictures().to_vec(), Some(folder));
+            } else {
+                self.complain(crate::tl_id!("ui.picture_text_models_folder_incomplete"));
+            }
+        }
+        if !out.closed {
+            self.picture_text = Some(dialog);
+        }
+    }
+
     fn save_picture_as(&mut self, src: &str) {
         let Some(page_dir) = self.editor.as_ref().map(|e| e.dir.clone()) else {
             self.say(crate::tl_id!("ui.open_a_page_first"));
@@ -8564,6 +8646,46 @@ impl NoteCraftApp {
         (input.key_pressed(want) && (input.modifiers.command || input.modifiers.ctrl))
             || input.events.iter().any(event_hit)
             || input.raw.events.iter().any(event_hit)
+    }
+
+    /// Whether one of the dialogs drawn outside `self.dialog` is open: Copy Text from Picture. It
+    /// owns the keyboard as `self.dialog` does, so the page's shortcuts and paste wait.
+    fn own_modal_open(&self) -> bool {
+        self.picture_text.is_some()
+    }
+
+    /// Ctrl+V while such a dialog is open: the clipboard's text goes to the dialog's text box when
+    /// it has the keyboard, and nowhere otherwise.
+    ///
+    /// The page is drawn before the dialog and takes a paste for itself, so the paste is held here,
+    /// out of the frame's events, and handed to the dialog just before it is drawn
+    /// ([`Self::give_modal_paste`]).
+    fn paste_into_modal(&mut self, ctx: &egui::Context, queued: bool) {
+        let mut pasted: Option<String> = None;
+        ctx.input_mut(|input| {
+            input.events.retain(|event| match event {
+                egui::Event::Paste(text) => {
+                    pasted.get_or_insert_with(|| text.clone());
+                    false
+                }
+                egui::Event::PasteImage(_) => false,
+                _ => true,
+            });
+        });
+        if ctx.memory(|memory| memory.focused().is_none()) {
+            return;
+        }
+        if pasted.is_none() && (queued || ctx.input(|input| Self::clipboard_key_hit(input, Key::V))) {
+            pasted = self.clipboard.text();
+        }
+        self.modal_paste = pasted;
+    }
+
+    /// Hands a paste held by [`Self::paste_into_modal`] to the dialog about to be drawn.
+    fn give_modal_paste(&mut self, ctx: &egui::Context) {
+        if let Some(text) = self.modal_paste.take() {
+            ctx.input_mut(|input| input.events.push(egui::Event::Paste(text)));
+        }
     }
 
     fn paste_into_emoji_search(&mut self, ctx: &egui::Context, queued: bool) {
@@ -10902,6 +11024,7 @@ impl NoteCraftApp {
         {
             self.reader = None;
         }
+        self.picture_text_dialog(ctx);
         if let Some(mut dialog) = self.custom_tags.take() {
             let out = dialog.show(ctx, &self.tokens);
             if let Some(list) = out.changed {
@@ -13345,8 +13468,13 @@ impl NoteCraftApp {
             }
         }
         let queued_paste = std::mem::take(&mut self.keyboard_paste_requested);
+        // A dialog of the window's own (Copy Text from Picture) owns the keyboard: a paste goes into
+        // its text box, never into the page behind it.
+        let modal = self.own_modal_open();
         if emoji_picker_open {
             self.paste_into_emoji_search(ctx, queued_paste);
+        } else if modal {
+            self.paste_into_modal(ctx, queued_paste);
         } else if queued_paste {
             log::debug!("queued keyboard paste dispatched to paste_here");
             self.paste_here();
@@ -13356,7 +13484,7 @@ impl NoteCraftApp {
         if let Some(notice) = crate::filepicker::take_notice() {
             self.say(notice);
         }
-        if !emoji_picker_open {
+        if !emoji_picker_open && !modal {
             self.clipboard_keys(ctx);
         }
         self.poll_control(ctx);
@@ -13379,7 +13507,7 @@ impl NoteCraftApp {
         // Not while a dialog is open: it owns the keyboard, and the page behind it must not
         // change unseen (issue #262: Ctrl+Z undid and saved an edit behind Insert symbol). A
         // text box in the dialog keeps its own undo.
-        let page_keys = self.dialog.is_none() && !emoji_picker_open && !ctx.memory(|memory| memory.has_focus(search_id));
+        let page_keys = self.dialog.is_none() && !self.own_modal_open() && !emoji_picker_open && !ctx.memory(|memory| memory.has_focus(search_id));
         if page_keys && ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
             // The ink's as well as the page's, whichever Undo took back.
             self.redo();
@@ -13697,6 +13825,18 @@ fn pick_calendar_file() -> Option<PathBuf> {
 
 #[cfg(target_arch = "wasm32")]
 fn pick_calendar_file() -> Option<PathBuf> {
+    None
+}
+
+/// Copy Text from Picture asks for the folder with the text recognition models (issue #274).
+/// Below the other choosers, and gated in its own right, for the same reason as the ones above.
+#[cfg(not(target_arch = "wasm32"))]
+fn pick_ocr_models_folder() -> Option<PathBuf> {
+    rfd::FileDialog::new().set_title(crate::tl_id!("ui.choose_the_ocr_models_folder")).pick_folder()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn pick_ocr_models_folder() -> Option<PathBuf> {
     None
 }
 

@@ -3497,6 +3497,7 @@ dependencies = [
  "notecraft-input-language",
  "notecraft-math",
  "notecraft-model",
+ "notecraft-ocr",
  "notecraft-store",
  "notecraft-text",
  "rfd",
