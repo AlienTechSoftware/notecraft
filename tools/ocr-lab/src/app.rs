@@ -447,8 +447,15 @@ impl Lab {
         }
     }
 
+    /// A picture's name as the lab shows and reports it: its path under the test folder, or under
+    /// this computer's own folder for a picture kept there, never the whole path on disk.
     fn relative_name(&self, path: &Path) -> String {
-        path.strip_prefix(&self.folder).unwrap_or(path).to_string_lossy().replace('\\', "/")
+        let name = |relative: &Path| relative.to_string_lossy().replace('\\', "/");
+        match (path.strip_prefix(&self.folder), path.strip_prefix(&self.local)) {
+            (Ok(relative), _) => name(relative),
+            (_, Ok(relative)) => format!("this computer/{}", name(relative)),
+            _ => name(path),
+        }
     }
 
     /// Redraws the shown picture when the sliders have moved. The pixels OCR reads do not change.

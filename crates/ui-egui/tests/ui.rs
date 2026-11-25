@@ -16171,6 +16171,20 @@ fn a_right_to_left_caret_leaves_the_keyboard_to_the_search_box() {
     assert_eq!(h.state().body().expect("page body"), before, "the typing did not go into the page");
     let typed = h.get_all_by_role(egui::accesskit::Role::TextInput).any(|node| node.value().is_some_and(|v| v.contains("zebra9917")));
     assert!(typed, "the typing went into the search box");
+    // Tab on from the search box: the control it reaches keeps the keyboard, frame after frame.
+    ask(&mut h, "ui.key", json!({"key": "Tab"})).expect("Tab");
+    for _ in 0..4 {
+        settle(&mut h);
+    }
+    ask(&mut h, "ui.text", json!({"text": "q"})).expect("type");
+    settle(&mut h);
+    assert_eq!(h.state().body().expect("page body"), before, "the caret did not take the keyboard back");
+    // A click on the line gives it the keyboard again.
+    ask(&mut h, "ui.caret", json!({"block": 0})).expect("page caret");
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "!"})).expect("type");
+    settle(&mut h);
+    assert_ne!(h.state().body().expect("page body"), before, "typing goes into the line once the caret is put there");
 }
 
 /// The picker search, not the underlying note, owns native clipboard shortcuts.

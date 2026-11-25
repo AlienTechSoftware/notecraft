@@ -3495,6 +3495,8 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
     let behind = ui.painter().add(egui::Shape::Noop);
     crate::bidi::paint(ui, rect.min, &drawn);
 
+    // The caret was just put here (a click, an arrow, a command): this line takes the keyboard.
+    let arriving = c.focus || resp.clicked() || resp.drag_started();
     if c.focus {
         c.focus = false;
         // Where the caret lands when it arrives in this line: where the click was, and
@@ -3519,10 +3521,13 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
         let restore_id = restore_selection_id(ui.ctx());
         ui.data_mut(|d| d.remove::<(usize, usize, usize)>(restore_id));
     }
-    // The caret is in this block, so this is where the typing goes: unless the search box has
-    // the keyboard, which taking it back every frame would leave nobody able to type into.
+    // The caret is in this block, so this is where the typing goes: when it has just arrived,
+    // or when nothing else has the keyboard. Another control that has it (the search box, or one
+    // Tab moved to from there) keeps it; taking it back every frame left nobody able to type
+    // anywhere else.
     let search = search_id(ui.ctx());
-    if !resp.has_focus() && !ui.memory(|memory| memory.has_focus(search) || memory.had_focus_last_frame(search)) {
+    let elsewhere = ui.memory(|memory| memory.focused().is_some_and(|focused| focused != resp.id) || memory.had_focus_last_frame(search));
+    if !resp.has_focus() && (arriving || !elsewhere) {
         resp.request_focus();
     }
     let mut changed = false;
