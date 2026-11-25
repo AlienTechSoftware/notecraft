@@ -9637,6 +9637,9 @@ impl NoteCraftApp {
             self.pending_copy = Some(notecraft_formats::render::blocks_to_text(&copied));
             self.pending_copy_html = Some(notecraft_formats::render::blocks_to_html(&copied));
             if which == "cut" {
+                // The page before the cut is a step of its own, widths and justification with
+                // it, so Undo puts them back with the paragraphs.
+                Self::remember_step(ed);
                 let before = ed.blocks.len();
                 let (block, at) = pageedit::delete_span(&mut ed.blocks, open);
                 let marks = ed.blocks_removed(block + 1..block + 1 + before.saturating_sub(ed.blocks.len()));
@@ -9646,6 +9649,7 @@ impl NoteCraftApp {
                 ed.across = None;
                 ed.rebuild_body();
                 Self::mark_dirty_from_blocks(ed);
+                Self::remember_edit(ed);
                 self.save_block_marks(marks);
             }
             self.say(if which == crate::tl_id!("ui.cut_2") { crate::tl_id!("ui.cut") } else { crate::tl_id!("ui.copied") });
