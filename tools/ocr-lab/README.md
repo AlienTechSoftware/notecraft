@@ -35,6 +35,14 @@ It prints one line per picture and exits 1 if any picture fails.
   with several content tags appears under each of them. Every content node has **+ A page here**:
   **New blank drawing** or **Import picture…**, which put the new sample in `<test folder>/<Language>/`
   with that node's tags. A pencil marks a picture that has labels.
+- **Delete.** A sample has a 🗑 button, and a right-click menu with **Delete…** and **Show in Explorer**.
+  Deleting asks first, then moves the picture and its label, OCR run and tags into `local\deleted\`, so
+  nothing is erased.
+- **OCR file.** Running OCR writes `<picture>.ocr.json` beside the picture: the text, each line's polygon,
+  the picture's bounds polygon, the picture's hash, and the lab's timings. It is also the saved run, and
+  the only OCR file. It follows the proposed schema in `nc-info-ocr/references/ocr-json-schema.md`.
+  The navigator shows it under its sample. Its `alt` is `null` until a description model exists.
+  When OCR runs, the lab checks that no two line outlines cross, and logs any it finds. Nesting is allowed.
 - **Tags.** Each picture's source and content are in `<picture>.tags.json` beside it, for example
   `{"source": "drawing", "content": ["shapes"]}`. A picture without the file is a picture with no
   content tags.
@@ -75,11 +83,16 @@ light's reason is repeated there.
 
 ## Drawings
 
-- **+ Blank drawing** under a group adds a white 1200 × 800 PNG to that group's folder, named
-  `drawing-1.png`, `drawing-2.png`, and so on, and opens it with the pen ready.
-- **Pens** appear in the right panel only for a digital drawing (a sample tagged as a drawing). They are
-  the app's own pens: the same tools, colours and widths as the app's default rack (pen, pencil,
-  highlighter). Choose one and draw on the picture. A highlighter lets the picture show through.
+- **New blank drawing** asks for a width and height, with presets (A4 at 150 dpi, whiteboard, square). It
+  writes `drawing-N.png` and an empty `drawing-N.svg` beside it.
+- **Saving a drawing** writes both files. The PNG is what OCR reads. The SVG keeps each stroke with the
+  pen's readings, so the drawing can be edited later. A drawing made before this change has no SVG, so
+  its strokes are not editable.
+- **The Draw ribbon** appears above the picture only for a digital drawing (a sample tagged as a drawing).
+  It is the app's own Draw ribbon: the pen rack (add, remove, move and change pens), with the same tools,
+  colours and widths. Choose a pen and draw on the picture. A highlighter lets the picture show through.
+  The ribbon's page commands (Insert Space, Save picture, Format Background, and so on) say they are not in
+  the lab yet.
 - The picture on screen changes at once, but the file does not until you press **Save drawing**. Until
   then you cannot open another picture.
 - Pens draw full pressure, since a mouse has none. Undo, more pens, and saving the drawing as the app
@@ -93,9 +106,9 @@ They change only the picture on screen, so you can see faint handwriting. OCR re
 
 ## Runs
 
-A run is saved beside its picture as `<picture>.ocr-run.json` with the picture's checksum. Reopening the
-picture shows the last result without reading it again. If the picture file changes, the old run is
-ignored.
+A run is saved beside its picture as `<picture>.ocr.json`, the one OCR file, with the picture's checksum.
+Reopening the picture shows the last result without reading it again. If the picture file changes, the
+old file is ignored. Clearing a result removes the file.
 
 ## Where things live
 

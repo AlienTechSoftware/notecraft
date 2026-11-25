@@ -199,7 +199,7 @@ member, so a bare `cargo build` and the release do not build it. `cargo xtask` g
   presses the button. The weights are CC BY-SA 4.0 (see the OCR skill).
 - **Cases:** a folder of pictures, grouped in the navigator by kind (the first folder) and language
   (folder names). Labels are drawn in the window and saved beside each picture as
-  `<picture>.label.json`. A run is saved as `<picture>.ocr-run.json`, and a changed picture ignores
+  `<picture>.label.json`. The result is saved as `<picture>.ocr.json` (the one OCR file, see nc-info-ocr), and a changed picture ignores
   its old run. Each case folder keeps a `SOURCES.txt` with where each picture came from and its
   licence.
 - **Local, never committed:** `tools/ocr-lab/local/` holds the settings, the log, the reports and

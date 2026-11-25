@@ -25,7 +25,7 @@ Source: `crates/store/src/search.rs`, read in this check.
 - No index. Every query loads every page file.
 - It does not search picture alt text. The alt text sits in an attribute, and `strip_tags` drops
   attributes.
-- It does not search OCR text (`<picture>.txt`) or attachments.
+- It does not search OCR text (`<picture>.txt`, or the proposed `<picture>.ocr.json`) or attachments.
 - No ranking. Hits come back in folder-walk order, not by relevance.
 - No stemming, no tokenising, no per-word matching. A phrase must occur exactly, ignoring case.
 - Non-ASCII case folding uses `to_lowercase` on `char`s; tests check `CAF\u{c9}` against `café`.

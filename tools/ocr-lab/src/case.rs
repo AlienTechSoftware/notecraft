@@ -151,10 +151,36 @@ pub fn label_path(picture: &Path) -> PathBuf {
     picture.with_file_name(format!("{name}.label.json"))
 }
 
-/// The saved OCR run beside a picture: `<picture>.ocr-run.json`.
-pub fn run_path(picture: &Path) -> PathBuf {
-    let name = picture.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    picture.with_file_name(format!("{name}.ocr-run.json"))
+/// The signed area of a polygon with corners `[x, y]` in order. Used by the tests until a writer needs it.
+#[cfg(test)]
+/// The signed area of a polygon with corners `[x, y]` in order. Positive is clockwise on the screen (y
+/// runs down), negative anticlockwise. In `.ocr.json` the sign says which ring is outer and which inner.
+pub fn signed_area(polygon: &[[f32; 2]]) -> f32 {
+    let n = polygon.len();
+    (0..n)
+        .map(|i| {
+            let (a, b) = (polygon[i], polygon[(i + 1) % n]);
+            a[0] * b[1] - b[0] * a[1]
+        })
+        .sum::<f32>()
+        / 2.0
+}
+
+/// Whether two edges cross or touch. Shared endpoints count as touching.
+fn edges_cross(a: [[f32; 2]; 2], b: [[f32; 2]; 2]) -> bool {
+    let side = |p: [f32; 2], q: [f32; 2], r: [f32; 2]| (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    let (d1, d2) = (side(b[0], b[1], a[0]), side(b[0], b[1], a[1]));
+    let (d3, d4) = (side(a[0], a[1], b[0]), side(a[0], a[1], b[1]));
+    d1 * d2 <= 0.0 && d3 * d4 <= 0.0
+}
+
+/// Whether two polygons' outlines cross or touch. Nesting is not a crossing: a ring inside another, as
+/// circular text is written, is allowed. This is the rule the schema states for `polygon` and `bounds`.
+pub fn outlines_cross(a: &[[f32; 2]], b: &[[f32; 2]]) -> bool {
+    (0..a.len()).any(|i| {
+        let ea = [a[i], a[(i + 1) % a.len()]];
+        (0..b.len()).any(|j| edges_cross(ea, [b[j], b[(j + 1) % b.len()]]))
+    })
 }
 
 /// The SHA-256 of a picture's bytes, so a saved run can tell it still belongs to the picture.
@@ -282,6 +308,18 @@ mod tests {
         save_tags(&picture, &tags).expect("save");
         assert_eq!(load_tags(&picture), tags);
         std::fs::remove_dir_all(&dir).expect("clean up");
+    }
+
+    #[test]
+    fn concentric_rings_nest_but_crossing_outlines_are_refused() {
+        let outer = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
+        let inner = [[3.0, 3.0], [7.0, 3.0], [7.0, 7.0], [3.0, 7.0]];
+        let crossing = [[5.0, -2.0], [12.0, 5.0], [5.0, 12.0], [-2.0, 5.0]];
+        assert!(!outlines_cross(&outer, &inner), "a ring inside another is allowed");
+        assert!(outlines_cross(&outer, &crossing), "outlines that cross are refused");
+        assert!(signed_area(&outer) > 0.0, "clockwise on screen is positive");
+        let reversed: Vec<[f32; 2]> = inner.iter().rev().copied().collect();
+        assert!(signed_area(&reversed) < 0.0, "a hole runs the other way");
     }
 
     #[test]

@@ -6,7 +6,7 @@ metadata:
   version: "0.0.20261122"
   owner_area: image text (OCR and descriptions)
   related_skills: [nc-info-search, nc-arch, nc-arch-x-plat, nc-code-rust]
-  references: [references/verified-sources.md, references/bakeoff-2026-11-22.md]
+  references: [references/verified-sources.md, references/bakeoff-2026-11-22.md, references/ocr-json-schema.md]
 ---
 
 # nc-info-ocr - Image text: OCR and descriptions
@@ -75,8 +75,14 @@ Vec<Line>  { text, quad: [Point; 4], confidence: Option<f32> }   (pixels, clampe
    |
    |  companion job: FNV-1a hash of the bytes, compared with <picture>.ocr-hash
    v
-<picture>.txt        derived text, one line per row      (replaced when the hash changes)
-<picture>.ocr-hash   hash of the bytes it was read from  (written after the text)
+<picture>.txt        derived text, one line per row      (current product; replaced when the hash changes)
+<picture>.lines      the boxes, one row per line         (current product)
+<picture>.ocr-hash   hash of the bytes it was read from  (current product; written after the text)
+
+PROPOSED, see references/ocr-json-schema.md:
+<picture>.ocr.json   one file: the text, each line's polygon, the picture's bounds polygon, the picture's
+                     hash, and the description (alt). Replaces the three files above and the lab's
+                     run file. The lab already writes it.
 ```
 
 ### Why these pieces
@@ -84,8 +90,13 @@ Vec<Line>  { text, quad: [Point; 4], confidence: Option<f32> }   (pixels, clampe
 - **The trait is the seam.** The companion job depends on `PictureReader`, not on `ocrs`. A test
   double runs the job without model files (unit test in `crates/ocr/src/lib.rs`). A later engine
   is one more `impl`, with no change to the job.
-- **Derived files are never authored.** `.txt`, `.lines` and `.ocr-hash` are rebuilt from the
-  picture. The OCR job never writes alt text; alt text lives in the page markup (see below).
+- **Polygon rules (proposed, in `.ocr.json`).** Polygons may nest, as circular text does: the sign of
+  the signed area tells outer from inner. Outlines never cross or touch. The OCR writer checks this when
+  it creates the file. Renderers and readers assume it and skip the check, for speed.
+- **Derived files are never authored.** `.txt`, `.lines` and `.ocr-hash` (and, proposed, `.ocr.json`)
+  are rebuilt from the picture. The OCR job does not write the description. Today alt text lives in
+  the page markup. Proposed: the description goes in the `alt` field of `<picture>.ocr.json`, written
+  by a description model (not built yet, so `alt` stays `null`).
 - **Atomic replacement.** Text and hash are written to `<name>.tmp` and renamed, so a crash leaves
   the old pair, never a half-written file.
 - **Stable hash.** FNV-1a 64 bit, written in code. The standard library's hasher is not stable
@@ -171,3 +182,5 @@ cargo clippy -p notecraft-ocr --all-targets -- -D warnings
   it was checked.
 - `references/bakeoff-2026-11-22.md`: the measured `ocrs` results on the POC pictures, timings,
   and what failed.
+- `references/ocr-json-schema.md`: the proposed `<picture>.ocr.json` (version 1), its fields, rules,
+  and the migration steps from the current `.txt`, `.lines` and `.ocr-hash` files.
