@@ -90,8 +90,6 @@ pub enum Mode {
     Ink,
 }
 
-/// Width of the pen, in picture pixels.
-const INK_RADIUS: i32 = 2;
 /// Size of a new blank drawing, in picture pixels.
 const BLANK_SIZE: [u32; 2] = [1200, 800];
 
@@ -140,6 +138,8 @@ pub struct Lab {
     /// The theme last applied to the window, so the visuals are set only when it changes.
     applied_theme: Option<Theme>,
     mode: Mode,
+    /// The pens for digital drawings, from the app's rack.
+    pen: crate::pen::Pen,
     selected: Option<usize>,
     drag: Option<Drag>,
     show_engine: bool,
@@ -171,6 +171,7 @@ impl Lab {
             applied_adjust: None,
             applied_theme: None,
             mode: Mode::Select,
+            pen: crate::pen::Pen::new(),
             selected: None,
             drag: None,
             show_engine: true,
@@ -313,6 +314,8 @@ impl Lab {
             self.log.event(&format!("could not create a drawing: {e}"));
             return;
         }
+        // A blank sheet is a digital drawing whatever node it was added under, so the pens are there.
+        let tags = case::Tags { source: "drawing".to_string(), ..tags };
         if let Err(e) = case::save_tags(&path, &tags) {
             self.status = e;
         }
@@ -365,25 +368,10 @@ impl Lab {
     /// Paints one pen dab, or a line from the last dab, into the open picture. Only the picture on
     /// screen and in memory changes until the drawing is saved.
     fn paint_ink(&mut self, ctx: &egui::Context, p: [f32; 2]) {
+        let nib = self.pen.nib();
         let Some(loaded) = self.loaded.as_mut() else { return };
         let from = loaded.last_ink.unwrap_or(p);
-        let steps = (p[0] - from[0]).abs().max((p[1] - from[1]).abs()).ceil().max(1.0) as i32;
-        let (w, h) = (loaded.size[0] as i32, loaded.size[1] as i32);
-        for s in 0..=steps {
-            let t = s as f32 / steps as f32;
-            let (x, y) = (from[0] + (p[0] - from[0]) * t, from[1] + (p[1] - from[1]) * t);
-            for dy in -INK_RADIUS..=INK_RADIUS {
-                for dx in -INK_RADIUS..=INK_RADIUS {
-                    if dx * dx + dy * dy > INK_RADIUS * INK_RADIUS {
-                        continue;
-                    }
-                    let (px, py) = (x as i32 + dx, y as i32 + dy);
-                    if px >= 0 && py >= 0 && px < w && py < h {
-                        loaded.original.put_pixel(px as u32, py as u32, image::Rgba([0, 0, 0, 255]));
-                    }
-                }
-            }
-        }
+        crate::pen::line(&mut loaded.original, from, p, nib);
         loaded.last_ink = Some(p);
         loaded.dirty = true;
         let shown = self.adjust.apply(&loaded.original);
@@ -1017,8 +1005,27 @@ impl Lab {
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.mode, Mode::Select, "Select / move / resize");
             ui.selectable_value(&mut self.mode, Mode::Draw, "Draw a label");
-            ui.selectable_value(&mut self.mode, Mode::Ink, "Pen on picture");
         });
+        // The pens belong to digital drawings only. A picture of paper is not drawn on.
+        let is_drawing = self.loaded.as_ref().is_some_and(|l| self.tags.get(l.index).is_some_and(|t| t.source == "drawing"));
+        if is_drawing {
+            ui.strong("Pens");
+            ui.horizontal_wrapped(|ui| {
+                for (i, nib) in self.pen.rack.clone().into_iter().enumerate() {
+                    let c = nib.colour;
+                    let text = egui::RichText::new(format!("{} {:.1}", nib.tool.label(), nib.width())).color(Color32::from_rgb(c.0, c.1, c.2));
+                    if ui.add(egui::Button::new(text).selected(self.pen.selected == i)).clicked() {
+                        self.pen.selected = i;
+                        self.mode = Mode::Ink;
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.mode, Mode::Ink, "Pen on picture");
+            });
+        } else if self.mode == Mode::Ink {
+            self.mode = Mode::Select;
+        }
         let dirty = self.loaded.as_ref().is_some_and(|l| l.dirty);
         if dirty && ui.button("Save drawing").clicked() {
             self.save_drawing();

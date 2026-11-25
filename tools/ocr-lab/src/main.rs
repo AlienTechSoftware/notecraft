@@ -11,6 +11,7 @@ mod app;
 mod case;
 mod metrics;
 mod models;
+mod pen;
 mod settings;
 mod telemetry;
 
