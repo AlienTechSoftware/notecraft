@@ -901,6 +901,7 @@ mod tests {
                 100,
                 true,
                 false,
+                true,
                 &crate::update::Status::Idle,
                 &mut CopyChoice::default(),
                 &mut AccountChoice::default(),
