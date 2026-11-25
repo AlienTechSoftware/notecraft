@@ -112,7 +112,7 @@ const INSTALL_MARKER: &str = "first-use.pending";
 
 /// Acknowledge the installer marker in per-user settings before trying to remove it. A normal
 /// user cannot necessarily delete files in the install directory. A retained marker must not
-/// clear completed setup on every launch. A replaced marker starts a new installation cycle.
+/// clear completed setup on every launch. A replaced marker can request setup again.
 fn take_install_marker(install_dir: &std::path::Path, settings: &Settings) -> Result<bool, String> {
     let marker = install_dir.join(INSTALL_MARKER);
     let metadata = match std::fs::metadata(&marker) {
@@ -127,7 +127,9 @@ fn take_install_marker(install_dir: &std::path::Path, settings: &Settings) -> Re
     if settings.get("first_use_install_marker").as_deref() == Some(identity.as_str()) {
         return Ok(false);
     }
-    settings.set("privacy_welcome_seen", "").map_err(|error| format!("Could not save first-use preferences: {error}"))?;
+    if settings.welcome_notebook_update_prompt() {
+        settings.set("privacy_welcome_seen", "").map_err(|error| format!("Could not save first-use preferences: {error}"))?;
+    }
     settings.set("first_use_install_marker", &identity).map_err(|error| format!("Could not acknowledge this installation: {error}"))?;
     // Cleanup is optional once this user has acknowledged the marker.
     let _ = std::fs::remove_file(&marker);
@@ -448,6 +450,38 @@ mod tests {
         let settings = Settings::at(t.path().join("settings.toml"));
         assert!(!take_install_marker(t.path(), &settings).expect("read marker"));
         assert!(!t.path().join(INSTALL_MARKER).exists());
+    }
+
+    #[test]
+    fn welcome_update_opt_out_survives_new_install_markers() {
+        let t = notecraft_store::testing::TempDir::new("welcome-update-opt-out");
+        let marker = t.path().join(INSTALL_MARKER);
+        let settings = Settings::at(t.path().join("settings.toml"));
+        settings.set("privacy_welcome_seen", "true").expect("finish setup");
+        settings.set_welcome_notebook_update_prompt(false).expect("opt out");
+
+        let settings = Settings::at(settings.path());
+        for contents in ["first upgrade", "next upgrade"] {
+            std::fs::write(&marker, contents).expect("installer marker");
+            assert!(take_install_marker(t.path(), &settings).expect("acknowledge marker"));
+            assert!(!settings.first_use_pending(), "completed setup stays completed");
+        }
+
+        settings.set_welcome_notebook_update_prompt(true).expect("opt back in");
+        std::fs::write(&marker, "another upgrade").expect("installer marker");
+        assert!(take_install_marker(t.path(), &settings).expect("acknowledge marker"));
+        assert!(settings.first_use_pending(), "a later upgrade prompts after opting back in");
+    }
+
+    #[test]
+    fn welcome_update_opt_out_keeps_pending_first_use() {
+        let t = notecraft_store::testing::TempDir::new("welcome-update-first-use");
+        let settings = Settings::at(t.path().join("settings.toml"));
+        settings.set_welcome_notebook_update_prompt(false).expect("opt out");
+        std::fs::write(t.path().join(INSTALL_MARKER), "").expect("installer marker");
+
+        assert!(take_install_marker(t.path(), &settings).expect("acknowledge marker"));
+        assert!(settings.first_use_pending(), "first-use setup is still pending");
     }
 
     #[test]

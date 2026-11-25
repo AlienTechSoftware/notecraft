@@ -951,6 +951,8 @@
 @id	ui.check_for_updates_hint	NoteCraft her başladığında ve Güncellemeleri denetle düğmesine bastığınızda GitHub'da daha yeni bir sürümü denetler. Yalnızca Güncelle ve yeniden başlat düğmesine basınca indirir ve kurar.
 @id	ui.update_check_off_at_start	Başlangıçta güncellemeleri denetleme
 @id	ui.update_check_not_saved	Güncelleme ayarı kaydedilemedi: {error}
+@id	ui.welcome_notebook_update_prompt	Uygulama yükseltildikten sonra Hoş Geldiniz not defterini güncellemeyi sor
+@id	ui.welcome_notebook_update_prompt_not_saved	Hoş Geldiniz not defterini güncelleme tercihi kaydedilemedi: {error}
 @id	ui.update_prompt.newest_available	{app} {version} mevcut en yeni sürüm.
 @id	ui.open_the_releases_page	Sürümler sayfasını aç
 @id	ui.update_checking	Daha yeni bir sürüm aranıyor…

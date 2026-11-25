@@ -801,6 +801,8 @@
 @id	ui.check_for_updates_hint	Проверяет GitHub на более новую версию при каждом запуске NoteCraft и при нажатии «Проверить обновления». Загрузка и установка начинаются только после нажатия «Обновить и перезапустить».
 @id	ui.update_check_off_at_start	Не проверять обновления при запуске
 @id	ui.update_check_not_saved	Не удалось сохранить настройку обновлений: {error}
+@id	ui.welcome_notebook_update_prompt	Предлагать обновить приветственный блокнот после обновления приложения
+@id	ui.welcome_notebook_update_prompt_not_saved	Не удалось сохранить настройку обновления приветственного блокнота: {error}
 @id	ui.update_prompt.newest_available	{app} {version} — самая новая доступная версия.
 @id	ui.update_prompt.by_developer	от {developer}
 @id	ui.update_prompt.version_change	с v{from} на {to}

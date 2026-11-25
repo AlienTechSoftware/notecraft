@@ -801,6 +801,8 @@
 @id	ui.check_for_updates_hint	NoteCraft کے ہر آغاز پر، اور جب آپ اپ ڈیٹس چیک کریں دبائیں تو GitHub پر نیا ریلیز دیکھا جاتا ہے۔ ڈاؤن لوڈ اور انسٹال صرف اس وقت ہوتا ہے جب آپ اپ ڈیٹ اور دوبارہ شروع کریں دبائیں۔
 @id	ui.update_check_off_at_start	شروع پر اپ ڈیٹس نہ چیک کریں
 @id	ui.update_check_not_saved	اپ ڈیٹ کی ترتیب محفوظ نہیں ہو سکی: {error}
+@id	ui.welcome_notebook_update_prompt	ایپ اپ گریڈ ہونے پر پوچھیں کہ خوش آمدید نوٹ بک اپ ڈیٹ کرنی ہے یا نہیں
+@id	ui.welcome_notebook_update_prompt_not_saved	خوش آمدید نوٹ بک کی اپ ڈیٹ کی ترجیح محفوظ نہیں ہو سکی: {error}
 @id	ui.update_prompt.newest_available	{app} {version} دستیاب سب سے نیا ورژن ہے۔
 @id	ui.update_prompt.by_developer	{developer} کی جانب سے
 @id	ui.update_prompt.version_change	v{from} سے {to}

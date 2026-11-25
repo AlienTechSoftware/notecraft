@@ -801,6 +801,8 @@
 @id	ui.check_for_updates_hint	NoteCraft の起動時と「アップデートを確認」を押したときに、GitHub で新しいリリースを確認します。「アップデートして再起動」を押すまでダウンロードもインストールもしません。
 @id	ui.update_check_off_at_start	起動時にアップデートを確認しない
 @id	ui.update_check_not_saved	アップデートの設定を保存できませんでした: {error}
+@id	ui.welcome_notebook_update_prompt	アプリの更新後にようこそノートブックの更新を確認する
+@id	ui.welcome_notebook_update_prompt_not_saved	ようこそノートブックの更新設定を保存できませんでした: {error}
 @id	ui.update_prompt.newest_available	{app} {version} は利用可能な最新バージョンです。
 @id	ui.update_prompt.by_developer	{developer} 提供
 @id	ui.update_prompt.version_change	v{from} から {to}
