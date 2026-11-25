@@ -633,6 +633,8 @@ impl Lab {
             font_size: None,
             text_colour: None,
             text_highlight: None,
+            // No page, so Home's text controls are shown as unavailable.
+            text_editable: false,
         }
     }
 
