@@ -1632,6 +1632,11 @@ fn table(
                                     out.response.request_focus();
                                     caret.focus = false;
                                 }
+                                // A cell the keyboard has just gone to, from a container above.
+                                let reveal = reveal_caret_id(ui.ctx());
+                                if ui.data_mut(|d| d.remove_temp::<bool>(reveal)).unwrap_or(false) {
+                                    out.response.scroll_to_me(Some(egui::Align::Center));
+                                }
                                 if let Some(range) = out.cursor_range {
                                     caret.selection = (range.primary.index.0, range.secondary.index.0);
                                 }
@@ -2857,10 +2862,14 @@ pub fn show_blocks(
                 let restore_id = restore_selection_id(ui.ctx());
                 ui.data_mut(|d| d.remove::<(usize, usize, usize)>(restore_id));
             }
-            // Brought into view when the keyboard has just sent the caret here from afar.
+            // Brought into view when the keyboard has just sent the caret here from afar: the
+            // caret's own line, which in a long block is not the block's middle.
             let reveal = reveal_caret_id(ui.ctx());
             if ui.data_mut(|d| d.remove_temp::<bool>(reveal)).unwrap_or(false) {
-                resp.scroll_to_me(Some(egui::Align::Center));
+                match input_caret {
+                    Some(line) => ui.scroll_to_rect(line.expand2(vec2(0.0, 24.0)), Some(egui::Align::Center)),
+                    None => resp.scroll_to_me(Some(egui::Align::Center)),
+                }
             }
             if resp.changed() {
                 // What was typed goes into the block at once, so the page and the file
@@ -3597,10 +3606,10 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
         let at = c.place.take().unwrap_or_else(|| c.text.chars().count()).min(c.text.chars().count());
         c.selection = (at, at);
     }
+    // Brought into view when the keyboard has just sent the caret here: done where the caret is
+    // drawn, below, so it is the caret's line that is shown.
     let reveal = reveal_caret_id(ui.ctx());
-    if ui.data_mut(|d| d.remove_temp::<bool>(reveal)).unwrap_or(false) {
-        resp.scroll_to_me(Some(egui::Align::Center));
-    }
+    let reveal_now = ui.data_mut(|d| d.remove_temp::<bool>(reveal)).unwrap_or(false);
     let restore_id = restore_selection_id(ui.ctx());
     let wanted = ui.data(|d| d.get_temp::<(usize, usize, usize)>(restore_id));
     if let Some((block, primary, secondary)) = wanted
@@ -3748,6 +3757,15 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
             })
             .collect();
         ui.painter().set(behind, egui::Shape::Vec(shapes));
+    }
+    if reveal_now {
+        match crate::bidi::caret(ui, &c.text, &pieces, at, size, width, page) {
+            Some(bar) => {
+                let bar = egui::Rect::from_min_max(rect.min + bar.min.to_vec2(), rect.min + bar.max.to_vec2());
+                ui.scroll_to_rect(bar.expand2(vec2(0.0, 24.0)), Some(egui::Align::Center));
+            }
+            None => resp.scroll_to_me(Some(egui::Align::Center)),
+        }
     }
     // The caret itself, drawn where parley says it belongs on the line.
     if resp.has_focus()

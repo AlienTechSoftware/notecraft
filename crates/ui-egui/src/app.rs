@@ -802,9 +802,12 @@ fn band_title_centre(centre: f32, start: f32, end: f32, width: f32) -> f32 {
 /// Where a search result is (issue #370): the titles of its notebook, any section groups and
 /// its section, from the tree already in memory, joined with " > ". A sub-page's parent pages
 /// are left out; the section is the place. Empty when the page is not in the tree.
-/// The first place in a page's blocks that has `words` in it, ignoring case: the block, and
-/// where the words start and end in it, counted in characters (issue #529).
-fn find_words_in_blocks(blocks: &[notecraft_formats::Block], words: &str) -> Option<(usize, usize, usize)> {
+/// Where to put the caret for a search result (issue #529): the block, and where the words
+/// found start and end in it, counted in characters. The words as one phrase first, ignoring
+/// case; else, as the search itself matches them, any of the query's words: in the block that has
+/// the most of them, the first one. A heading that only repeats the title shown above the page
+/// (`shown_title`) is not drawn, so it is passed over.
+fn find_words_in_blocks(blocks: &[notecraft_formats::Block], words: &str, shown_title: &str) -> Option<(usize, usize, usize)> {
     // Compared a character at a time, each lowered on its own, so the place found is a place in
     // the text as written even where lowering changes a letter's length.
     let lower = |c: char| c.to_lowercase().next().unwrap_or(c);
@@ -812,7 +815,12 @@ fn find_words_in_blocks(blocks: &[notecraft_formats::Block], words: &str) -> Opt
     if needle.is_empty() {
         return None;
     }
-    blocks.iter().enumerate().filter(|(_, b)| pageedit::is_writable(b) && !matches!(b, notecraft_formats::Block::Table { .. })).find_map(|(at, b)| {
+    let shown = || {
+        blocks.iter().enumerate().filter(|(at, b)| {
+            pageedit::is_writable(b) && !matches!(b, notecraft_formats::Block::Table { .. }) && !pageedit::is_title_echo(blocks, *at, shown_title)
+        })
+    };
+    let phrase = shown().find_map(|(at, b)| {
         let text: Vec<char> = pageedit::caret_text(b).chars().collect();
         (0..text.len()).find_map(|start| {
             let mut i = start;
@@ -826,7 +834,25 @@ fn find_words_in_blocks(blocks: &[notecraft_formats::Block], words: &str) -> Opt
             }
             Some((at, start, i))
         })
-    })
+    });
+    if phrase.is_some() {
+        return phrase;
+    }
+    // The words apart, by the search's own word rules: the block with the most different words
+    // of the query, the first such block when two have as many.
+    let mut best: Option<(usize, usize, usize, usize)> = None;
+    for (at, b) in shown() {
+        let text = pageedit::caret_text(b);
+        let ranges = notecraft_store::search::snippet_matches(&text, words);
+        let Some(first) = ranges.first() else { continue };
+        let distinct: std::collections::HashSet<String> = ranges.iter().map(|r| text[r.clone()].to_lowercase()).collect();
+        if best.is_none_or(|(count, ..)| distinct.len() > count) {
+            let start = text[..first.start].chars().count();
+            let end = start + text[first.clone()].chars().count();
+            best = Some((distinct.len(), at, start, end));
+        }
+    }
+    best.map(|(_, at, start, end)| (at, start, end))
 }
 
 /// The note containers in the order the keyboard goes through them (issue #560): from the top
@@ -3947,9 +3973,13 @@ impl NoteCraftApp {
             self.say(crate::tl_id!("ui.that_note_container_has_nothing_to_write_in"));
             return;
         };
-        let text = pageedit::text_for_caret(&ed.blocks, block);
+        // A container that starts with a table is gone into at its first cell.
+        let (text, cell) = match pageedit::cell_text(&ed.blocks[block], (0, 0)) {
+            Some(text) if matches!(ed.blocks[block], notecraft_formats::Block::Table { .. }) => (text, Some((0, 0))),
+            _ => (pageedit::text_for_caret(&ed.blocks, block), None),
+        };
         ed.across = None;
-        ed.caret = Some(pageedit::Caret { block, text, focus: true, selection: (0, 0), place: Some(0), cell: None, span: None, inline: None });
+        ed.caret = Some(pageedit::Caret { block, text, focus: true, selection: (0, 0), place: Some(0), cell, span: None, inline: None });
         pageedit::reveal_caret(ctx);
     }
 
@@ -9783,8 +9813,10 @@ impl NoteCraftApp {
         // own words again.
         // Not while another text box has the keyboard (the font size, a search): its Ctrl+A is
         // its own.
-        let text_box_elsewhere =
-            ctx.memory(|m| m.focused()).is_some_and(|id| egui::TextEdit::load_state(ctx, id).is_some()) && !self.page_text_has_focus(ctx);
+        // The page's title is drawn on the page, and its Ctrl+A is its own too.
+        let focused = ctx.memory(|m| m.focused());
+        let text_box_elsewhere = focused == Some(page_title_id(ctx))
+            || (focused.is_some_and(|id| egui::TextEdit::load_state(ctx, id).is_some()) && !self.page_text_has_focus(ctx));
         if all && !text_box_elsewhere && self.widen_selection() {
             ctx.input_mut(|i| {
                 i.consume_key(Modifiers::COMMAND, Key::A);
@@ -10349,7 +10381,11 @@ impl NoteCraftApp {
 
     fn refresh_search(&mut self) {
         self.searched.clone_from(&self.search);
-        let mut query = params(&[("q", &self.search), ("limit", "20")]);
+        // The best matches are the first twenty the search ranks. Another order is of every match
+        // there is, as far as the search goes, so its first rows are the first by that order
+        // (issue #573).
+        let limit = if self.search_sort == SearchSort::Best { "20" } else { "500" };
+        let mut query = params(&[("q", &self.search), ("limit", limit)]);
         // A section group chosen as the scope, and the section open now in none: the section
         // is searched, rather than every notebook (issue #528).
         if self.search_scope == SearchScope::Group && self.current_group().is_none() {
@@ -10444,17 +10480,23 @@ impl NoteCraftApp {
     /// leave the page as it opened.
     fn apply_find_on_open(&mut self, ctx: &Context) {
         let Some((page, words)) = self.find_on_open.clone() else { return };
-        let Some(ed) = self.editor.as_mut() else { return };
-        if ed.dir != page {
-            // Still coming from a synced folder: wait for it. Anything else open means the
-            // person went elsewhere.
-            if self.opening.as_ref().is_none_or(|o| o.dir != page) {
-                self.find_on_open = None;
-            }
+        // Still coming from a synced folder, the page already shown included (it is read again
+        // when its files are in): wait for it.
+        if self.opening.as_ref().is_some_and(|o| o.dir == page) {
             return;
         }
+        let hide_title = self.hide_title;
+        let Some(ed) = self.editor.as_mut() else {
+            self.find_on_open = None;
+            return;
+        };
         self.find_on_open = None;
-        let Some((block, start, end)) = find_words_in_blocks(&ed.blocks, &words) else { return };
+        // Anything else open means the person went elsewhere.
+        if ed.dir != page {
+            return;
+        }
+        let shown_title = if hide_title { String::new() } else { ed.title.clone() };
+        let Some((block, start, end)) = find_words_in_blocks(&ed.blocks, &words, &shown_title) else { return };
         let Some(b) = ed.blocks.get(block) else { return };
         ed.caret = Some(pageedit::Caret {
             block,
@@ -10631,15 +10673,10 @@ impl NoteCraftApp {
                 ctx.memory_mut(|memory| memory.request_focus(field_id));
             }
         } else if sort != self.search_sort {
-            // The same query in the same scope, put in the other order (issue #573). The best
-            // matches first is asked of the search again, since it is the search's own order.
+            // The same query in the same scope, put in the other order (issue #573).
+            // Asked again, for the twenty best or for every match to put in order.
             self.search_sort = sort;
-            if sort == SearchSort::Best {
-                self.refresh_search();
-            } else {
-                self.sort_hits();
-                self.search_pick = None;
-            }
+            self.refresh_search();
         } else if outside {
             self.dismiss_search();
         }
@@ -11032,6 +11069,10 @@ impl NoteCraftApp {
         Self::remember_edit(ed);
         self.save_block_marks(marks);
         self.save_now();
+        // A save that did not happen keeps the page open and changed, and its own message.
+        if self.is_dirty() {
+            return;
+        }
         self.say(crate::tl_id!("ui.summary_page_created"));
     }
 
@@ -18159,5 +18200,34 @@ mod tabs_layout_tests {
         }
         let open = h.state().editor.as_ref().map(|e| e.dir.clone()).expect("a page open");
         assert!(open.starts_with(&section), "a tab opens a page of its section: {open:?}");
+    }
+}
+
+#[cfg(test)]
+mod search_hit_tests {
+    use super::find_words_in_blocks;
+    use notecraft_formats::{Block, Span};
+
+    fn para(text: &str) -> Block {
+        Block::Paragraph(vec![Span { text: text.into(), ..Default::default() }], Vec::new())
+    }
+
+    /// Issue #529, from review: the phrase when the page has it; else the query's words apart, as
+    /// the search matches them, in the block with the most of them; and never in a heading that
+    /// only repeats the title shown above the page.
+    #[test]
+    fn a_search_hit_is_found_as_a_phrase_or_word_by_word() {
+        let blocks = vec![
+            Block::Heading { level: 1, spans: vec![Span { text: "Marker notes".into(), ..Default::default() }], emoji: Vec::new() },
+            para("Only a marker here."),
+            para("Distant objects carry a Marker."),
+            para("The distant marker itself."),
+        ];
+        assert_eq!(find_words_in_blocks(&blocks, "distant marker", "Marker notes"), Some((3, 4, 18)), "the phrase first");
+        let apart = &blocks[..3];
+        assert_eq!(find_words_in_blocks(apart, "distant marker", "Marker notes"), Some((2, 0, 7)), "the block with both words, its first");
+        assert_eq!(find_words_in_blocks(&blocks[..2], "marker", "Marker notes"), Some((1, 7, 13)), "the title's echo is passed over");
+        assert_eq!(find_words_in_blocks(&blocks[..2], "marker", ""), Some((0, 0, 6)), "a title not shown is the page's own heading");
+        assert_eq!(find_words_in_blocks(&blocks, "absent", ""), None);
     }
 }

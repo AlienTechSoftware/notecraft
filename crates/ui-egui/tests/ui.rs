@@ -18466,6 +18466,22 @@ fn search_looks_in_the_section_group_and_sorts_its_results() {
     let recent = hits(&mut h);
     assert_eq!(recent.first().map(|(t, _)| t.as_str()), Some("Level notes"), "the page changed last comes first: {recent:?}");
     assert_eq!(recent.len(), titled.len(), "the same results, in another order");
+
+    // Ordered, every match is listed, not only the twenty the search ranks best.
+    for i in 0..24 {
+        ask(&mut h, "engine.execute", json!({"command": "node.create", "params": {"parent": s.md_page.parent().expect("section").to_string_lossy(), "kind": "page", "title": format!("Level {i:02}")}}))
+            .expect("page");
+    }
+    h.get_by_label("Best match").click();
+    settle(&mut h);
+    assert_eq!(hits(&mut h).len(), 20, "the twenty best");
+    h.get_by_label("Page title").click();
+    settle(&mut h);
+    let every = hits(&mut h);
+    assert!(every.len() > 20, "every match, in title order: {}", every.len());
+    let mut sorted = every.clone();
+    sorted.sort_by_key(|(t, trail)| (t.to_lowercase(), trail.to_lowercase()));
+    assert_eq!(every, sorted);
     h.get_by_label("Best match").click();
     settle(&mut h);
     assert_eq!(look_at(&mut h).pointer("/search/sort").and_then(Value::as_str), Some("best"));
@@ -18541,6 +18557,21 @@ fn ctrl_a_again_takes_the_container_and_then_the_page() {
     let copied = board.clone().text().unwrap_or_default();
     assert!(copied.contains("Alpha one") && copied.contains("Beta two"), "{copied:?}");
 
+    // The title's own Ctrl+A is the title's: the paragraph picked in the page is left as it is.
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("away");
+    settle(&mut h);
+    ask(&mut h, "ui.open", json!({"path": page.clone()})).expect("back");
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": first_beta})).expect("caret");
+    settle(&mut h);
+    press(&mut h);
+    #[allow(deprecated)]
+    let title = egui::Id::new(("page-title-box", h.ctx.viewport_id()));
+    h.ctx.memory_mut(|m| m.request_focus(title));
+    settle(&mut h);
+    let v = press(&mut h);
+    assert!(v.pointer("/page/across").is_none_or(Value::is_null), "Ctrl+A in the title does not widen the page's selection: {v}");
+
     // One container: the paragraph, then the page.
     let one = page_of(&mut h, &s, "One box", "First line\n\nSecond line");
     let _ = one;
@@ -18587,6 +18618,17 @@ fn alt_down_and_up_go_between_note_containers() {
     assert!(v["status"]["text"].as_str().unwrap_or_default().contains("last note container"), "{} {}", v["status"], v["page"]["caret"]);
     key(&mut h, false);
     assert_eq!(caret_text(&mut h), "Top left", "Alt+Up goes back");
+
+    // A container that starts with a table is gone into at its first cell.
+    let table = page_of(&mut h, &s, "Table box", "Words first\n\n| Cell one | Cell two |\n|---|---|\n| a | b |");
+    let blocks = look_at(&mut h).pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let line = format!("0,0,240,{}; 0,300,400,1", blocks - 1);
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": table.clone(), "boxes": line}})).expect("arrange");
+    ask(&mut h, "ui.open", json!({"path": table})).expect("open");
+    settle(&mut h);
+    key(&mut h, true);
+    key(&mut h, true);
+    assert_eq!(caret_text(&mut h), "Cell one", "the caret is in the table's first cell");
 }
 
 /// Issue #538: Print and Print Preview can be put on the Quick Access Toolbar, are kept across a

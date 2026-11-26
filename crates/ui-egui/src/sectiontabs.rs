@@ -210,10 +210,13 @@ pub fn show(
                     }
                     // Over another tab while one is carried: before it or after it, by the half
                     // of the tab the pointer is in, read the way the row runs.
+                    // Only a tab that can be seen: one scrolled out of the row is no place to land.
+                    let visible = resp.rect.intersect(ui.clip_rect());
                     if let (Some(from), Some(at)) = (carried.as_ref(), pointer)
                         && *from != t_.path
-                        && resp.rect.x_range().contains(at.x)
-                        && resp.rect.y_range().expand(12.0).contains(at.y)
+                        && visible.is_positive()
+                        && visible.x_range().contains(at.x)
+                        && visible.y_range().expand(12.0).contains(at.y)
                     {
                         let first_half = at.x < resp.rect.center().x;
                         let before = first_half != rtl;
