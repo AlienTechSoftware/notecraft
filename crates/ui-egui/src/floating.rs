@@ -68,6 +68,13 @@ pub fn row_menu<R>(resp: &Response, add: impl FnOnce(&mut Ui) -> R) -> Option<eg
 /// A round button, `size` points across, with one glyph in it: an opener such as a picture's (>). The
 /// corner radius is more than half the size, so it is a true circle at any size. `enabled` greys it.
 pub fn round_button(ui: &mut Ui, glyph: &str, size: f32, enabled: bool) -> Response {
+    round_button_shown(ui, glyph, size, enabled, true)
+}
+
+/// The same round button, drawn only when `shown`. When not shown it still takes its place and its
+/// clicks, so the layout and the hit area do not change; it just has no look (for a button that appears
+/// only near the pointer).
+pub fn round_button_shown(ui: &mut Ui, glyph: &str, size: f32, enabled: bool, shown: bool) -> Response {
     // The same sized button as before, so the layout is unchanged; it is made transparent and the circle
     // and glyph are painted over it. A frame's own corners are not round at small sizes.
     let button = egui::Button::new("").fill(egui::Color32::TRANSPARENT).stroke(egui::Stroke::NONE);
@@ -75,6 +82,9 @@ pub fn round_button(ui: &mut Ui, glyph: &str, size: f32, enabled: bool) -> Respo
     let rect = response.rect;
     let visuals = if enabled { *ui.style().interact(&response) } else { ui.style().visuals.widgets.noninteractive };
     let radius = size / 2.0 - visuals.bg_stroke.width / 2.0;
+    if !shown {
+        return response;
+    }
     ui.painter().circle(rect.center(), radius, visuals.weak_bg_fill, visuals.bg_stroke);
     // Centred on the glyph's ink, not on its text box: emoji fonts leave space below the glyph.
     let galley = ui.painter().layout_no_wrap(glyph.to_string(), egui::FontId::proportional(size * 0.6), visuals.text_color());
