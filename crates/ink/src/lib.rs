@@ -407,62 +407,81 @@ impl Drawing {
     }
 }
 
-/// The runs of a stroke's readings that lie outside a circle, for the point eraser. A line
-/// from one reading to the next that passes through the circle is cut where it goes in and
-/// where it comes out, so a fast stroke with readings far apart is still cut where the
-/// eraser crossed it. A run of one reading is no line, and is dropped; a stroke that was a
-/// single dot outside the circle is kept as it was.
+/// The runs of a stroke's readings that lie outside a circle, for the point eraser. Each line
+/// from one reading to the next is followed in small steps, and where it goes into the circle
+/// or comes out of it the run is cut at the edge itself, found by halving, so a stroke rubbed
+/// at its very end is shortened rather than lost, and a fast stroke with readings far apart is
+/// cut where the eraser crossed it. A run of one reading is no line, and is dropped; a stroke
+/// that was a single dot outside the circle is kept as it was.
 fn cut_round(stroke: &Stroke, x: f32, y: f32, reach: f32) -> Vec<Vec<Dab>> {
     let inside = |d: Dab| (d.x - x).hypot(d.y - y) <= reach;
     if let [only] = stroke.dabs.as_slice() {
         return if inside(*only) { Vec::new() } else { vec![vec![*only]] };
     }
+    let lerp =
+        |a: Dab, b: Dab, t: f32| Dab { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, pressure: a.pressure + (b.pressure - a.pressure) * t };
+    // The place on the line from `out` (outside) to `inn` (inside) nearest the edge, outside.
+    let edge = |out: Dab, inn: Dab| {
+        let (mut lo, mut hi) = (out, inn);
+        for _ in 0..20 {
+            let mid = lerp(lo, hi, 0.5);
+            if inside(mid) {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        lo
+    };
     let step = (reach / 3.0).max(0.25);
     let mut pieces = Vec::new();
     let mut run: Vec<Dab> = Vec::new();
-    let mut finish = |run: &mut Vec<Dab>| {
+    let finish = |run: &mut Vec<Dab>, pieces: &mut Vec<Vec<Dab>>| {
         if run.len() >= 2 {
             pieces.push(std::mem::take(run));
         } else {
             run.clear();
         }
     };
+    let push = |run: &mut Vec<Dab>, d: Dab| {
+        if run.last().is_none_or(|last| last.distance_to(d) > 0.01) {
+            run.push(d);
+        }
+    };
     let mut previous: Option<Dab> = None;
     for &d in &stroke.dabs {
-        if let Some(a) = previous {
-            let steps = ((a.distance_to(d) / step).ceil() as usize).clamp(1, 512);
-            // The last place on this line found outside the circle, while outside it.
-            let mut out_at = (!inside(a)).then_some(a);
-            for k in 1..steps {
-                let t = k as f32 / steps as f32;
-                let p = Dab { x: a.x + (d.x - a.x) * t, y: a.y + (d.y - a.y) * t, pressure: a.pressure + (d.pressure - a.pressure) * t };
-                match (inside(p), out_at) {
-                    // Going in: the run ends at the last place outside.
-                    (true, Some(o)) => {
-                        if o != a {
-                            run.push(o);
+        match previous {
+            None => {
+                if !inside(d) {
+                    run.push(d);
+                }
+            }
+            Some(a) => {
+                let steps = ((a.distance_to(d) / step).ceil() as usize).clamp(1, 512);
+                let (mut last, mut last_in) = (a, inside(a));
+                for k in 1..=steps {
+                    let p = if k == steps { d } else { lerp(a, d, k as f32 / steps as f32) };
+                    let p_in = inside(p);
+                    match (last_in, p_in) {
+                        // Going in: the run ends at the edge.
+                        (false, true) => {
+                            push(&mut run, edge(last, p));
+                            finish(&mut run, &mut pieces);
                         }
-                        finish(&mut run);
-                        out_at = None;
+                        // Coming out: a new run starts at the edge.
+                        (true, false) => push(&mut run, edge(p, last)),
+                        _ => {}
                     }
-                    // Coming out: a new run starts here.
-                    (false, None) => {
-                        run.push(p);
-                        out_at = Some(p);
+                    if k == steps && !p_in {
+                        push(&mut run, d);
                     }
-                    (false, Some(_)) => out_at = Some(p),
-                    (true, None) => {}
+                    (last, last_in) = (p, p_in);
                 }
             }
         }
-        if inside(d) {
-            finish(&mut run);
-        } else {
-            run.push(d);
-        }
         previous = Some(d);
     }
-    finish(&mut run);
+    finish(&mut run, &mut pieces);
     pieces
 }
 
@@ -495,6 +514,15 @@ mod tests {
         assert!(d.erase_points_at(200.0, 150.0, 5.0));
         assert_eq!(d.strokes.len(), 3);
         assert!(d.strokes[2].dabs.iter().all(|p| p.x < 196.0));
+        // Rubbed just past its last reading, which alone is under it: shortened, not lost.
+        let mut d2 = Drawing::new(300.0, 300.0);
+        let mut line = Stroke::new(Tool::Pen, Rgb::BLACK, 2.0);
+        line.dabs = vec![Dab::new(0.0, 50.0, 1.0), Dab::new(200.0, 50.0, 1.0)];
+        d2.add(line);
+        assert!(d2.erase_points_at(202.4, 50.0, 1.5));
+        assert_eq!(d2.strokes.len(), 1, "the line is still there");
+        let end = d2.strokes[0].dabs.last().copied().expect("an end");
+        assert!(end.x > 199.0 && end.x < 200.0, "cut at the edge: {end:?}");
         // A dot under it goes.
         let mut dot = Stroke::new(Tool::Pen, Rgb::BLACK, 2.0);
         dot.dabs = vec![Dab::new(250.0, 250.0, 0.5)];

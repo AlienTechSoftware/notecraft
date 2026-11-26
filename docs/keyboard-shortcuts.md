@@ -73,8 +73,9 @@ and the bar says which of how many it is.
 | Close the bar, the caret on the current place with its words picked | `Escape` | `Escape` |
 
 With the bar closed, `F3` opens it again with the words last looked for. The words are matched as a
-phrase, across marks such as bold and across a line break, letter case aside. Places in tables
-and in a line that mixes the two directions of writing are found and gone to, but not lit.
+phrase, across marks such as bold and across a line break, letter case aside, in the page's words
+and in each cell of its tables. Places in table cells and in a line that mixes the two directions
+of writing are found and gone to, and Escape puts the caret there, but they are not lit.
 
 ## Page view
 

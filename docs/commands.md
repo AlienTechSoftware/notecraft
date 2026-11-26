@@ -117,6 +117,7 @@ Parameters:
 
 - path (required): the section whose pages move
 - into (required): the section they go into
+- Returns JSON: `into`, and `moved`, each page as [its folder name before, its folder name now]
 
 ## `page.from_template`
 

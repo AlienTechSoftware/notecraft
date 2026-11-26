@@ -475,8 +475,12 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   the pages there and in their order; the emptied section goes. The pages keep their ids, so a
   link to one still finds it, and a page whose folder name is taken there gets the next free
   name, its title as it was. Before anything moves, a copy of the section as it was goes to the
-  notebook's recycle bin, which is how the merge is undone; if a page cannot be moved, those
-  moved go back and nothing else changes. The engine command is `section.merge`.
+  notebook's recycle bin, which is how the merge is undone. Each page's move is noted as it is
+  made, so if any step fails the pages moved go back to their places, across drives too, and the
+  section is left as it was. A page that is a link to a folder elsewhere is not moved: the merge
+  is refused. Pages a sync tool brings in while it runs are moved as well, and the section is
+  only taken away once no page is left in it. The engine command is `section.merge`, which
+  reports where each page went.
 - **Copy link to page**, **to section** and **to notebook** are on the tree's menus, as in OneNote
   (a section's tab in the Tabs layout has its section's menu too). A section's or notebook's link
   opens it at the page last open there, else its first page. The link

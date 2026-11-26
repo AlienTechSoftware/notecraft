@@ -19536,7 +19536,7 @@ fn find_on_this_page_lights_and_goes_through_every_place() {
     let mut h = sized_harness(app, LIGHT, egui::vec2(1500.0, 900.0));
     notecraft_store::page::save_body(
         &s.md_page,
-        "First parity marker here.\n\nA **parity** marker in bold, and another parity\nmarker after it.\n\nNothing to see.\n",
+        "First parity marker here.\n\nA **parity** marker in bold, and another parity\nmarker after it.\n\n| Col | Note |\n|---|---|\n| a | parity marker |\n\nNothing to see.\n",
     )
     .expect("fixture");
     h.state_mut().open_path(&s.md_page.to_string_lossy());
@@ -19548,25 +19548,39 @@ fn find_on_this_page_lights_and_goes_through_every_place() {
     settle(&mut h);
     let find = |h: &mut Harness<'_, NoteCraftApp>| look_at(h)["pageFind"].clone();
     let f = find(&mut h);
-    assert_eq!(f["count"].as_u64(), Some(3), "across bold and a line break: {f}");
+    assert_eq!(f["count"].as_u64(), Some(4), "across bold, a line break and in a table cell: {f}");
     assert_eq!(f["current"].as_u64(), Some(0));
-    assert!(h.query_all_by_label("1 of 3").count() >= 1, "the bar says which of how many");
+    assert!(h.query_all_by_label("1 of 4").count() >= 1, "the bar says which of how many");
     assert!(look_at(&mut h).pointer("/page/caret").is_none_or(Value::is_null), "the caret is put down while finding");
-    for want in [1, 2, 0] {
+    for want in [1, 2, 3, 0] {
         ask(&mut h, "ui.key", json!({"key": "F3"})).expect("F3");
         settle(&mut h);
         assert_eq!(find(&mut h)["current"].as_u64(), Some(want), "F3 goes round");
     }
     ask(&mut h, "ui.key", json!({"key": "F3", "shift": true})).expect("Shift+F3");
     settle(&mut h);
-    assert_eq!(find(&mut h)["current"].as_u64(), Some(2), "Shift+F3 goes back round");
+    assert_eq!(find(&mut h)["current"].as_u64(), Some(3), "Shift+F3 goes back round");
     h.get_by_label("Next Match").click();
     settle(&mut h);
     assert_eq!(find(&mut h)["current"].as_u64(), Some(0));
     h.get_by_label("Previous Match").click();
     settle(&mut h);
+    assert_eq!(find(&mut h)["current"].as_u64(), Some(3));
+    assert!(h.query_all_by_label("4 of 4").count() >= 1);
+    // Escape on the place in the table: the caret in its cell.
+    let in_table = find(&mut h)["found"][3].clone();
+    assert_eq!(in_table[3], json!([1, 1]), "in the cell it is in: {in_table}");
+    ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
+    settle(&mut h);
+    let caret = look_at(&mut h).pointer("/page/caret").cloned().unwrap_or(Value::Null);
+    assert_eq!((caret["block"].clone(), caret["cell"].clone()), (in_table[0].clone(), json!([1, 1])), "{caret}");
+    ask(&mut h, "ui.key", json!({"key": "F3"})).expect("F3 opens it again");
+    settle(&mut h);
+    for _ in 0..2 {
+        h.get_by_label("Next Match").click();
+        settle(&mut h);
+    }
     assert_eq!(find(&mut h)["current"].as_u64(), Some(2));
-    assert!(h.query_all_by_label("3 of 3").count() >= 1);
     // Escape: the caret on the current place, its words picked.
     let found = find(&mut h)["found"][2].clone();
     ask(&mut h, "ui.key", json!({"key": "Escape"})).expect("Escape");
@@ -19580,7 +19594,7 @@ fn find_on_this_page_lights_and_goes_through_every_place() {
     // Other words, typed in the bar.
     ask(&mut h, "ui.key", json!({"key": "F3"})).expect("F3 opens it again");
     settle(&mut h);
-    assert_eq!(find(&mut h)["count"].as_u64(), Some(3));
+    assert_eq!(find(&mut h)["count"].as_u64(), Some(4));
     let field = h.get_by_label("Find on page:");
     field.focus();
     h.run();
@@ -19596,4 +19610,41 @@ fn find_on_this_page_lights_and_goes_through_every_place() {
     h.get_by_label("Close Find").click();
     settle(&mut h);
     assert!(find(&mut h).is_null());
+}
+
+/// Issue #526: with the find bar's field focused, a paste goes into the field, once, and never
+/// into the page, however the paste arrives.
+#[test]
+fn a_paste_in_the_find_bar_goes_into_its_field_and_not_the_page() {
+    let board = MemoryBoard::new();
+    let (_t, app, s) = sample_app("ui-find-paste");
+    let mut h = sized_harness(app.with_clipboard(Box::new(board.clone())), LIGHT, egui::vec2(1500.0, 900.0));
+    notecraft_store::page::save_body(&s.md_page, "Some words here.\n\nMore words.\n").expect("fixture");
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    search_for(&mut h, "words");
+    h.get_all_by_label("Find on this page").next().expect("the scope").click();
+    settle(&mut h);
+    h.get_by_label_contains("Format ideas (My Notebook > Ideas)").click();
+    settle(&mut h);
+    let before = h.state().body().expect("page body").to_owned();
+    for path in ["key-only", "queued", "queued-with-event"] {
+        h.get_by_label("Find on page:").focus();
+        h.run();
+        ask(&mut h, "ui.key", json!({"key": "A", "ctrl": true})).expect("select the field");
+        pump(&mut h);
+        board.put_text("More");
+        if path == "key-only" {
+            ask(&mut h, "ui.key", json!({"key": "V", "ctrl": true})).expect("Ctrl+V");
+        } else {
+            h.state_mut().queue_keyboard_paste();
+            if path == "queued-with-event" {
+                h.event(egui::Event::Paste("More".into()));
+            }
+        }
+        settle(&mut h);
+        assert_eq!(h.state().body().expect("page body"), before, "{path} pasted into the page");
+        assert_eq!(look_at(&mut h)["pageFind"]["words"].as_str(), Some("More"), "{path}: into the field, once");
+        assert_eq!(look_at(&mut h)["pageFind"]["count"].as_u64(), Some(1));
+    }
 }

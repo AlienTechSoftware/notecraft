@@ -2589,6 +2589,12 @@ pub fn show_blocks(
             if let Some(what) = table(ui, &block, i, caret, t, page, cols, &mut changed, zoom, true) {
                 action = Some(what);
             }
+            // A place found in one of its cells is brought into view (issue #526).
+            if found.as_ref().is_some_and(|f| f.reveal == Some(i)) {
+                let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().min.y.max(top + 1.0));
+                ui.scroll_to_rect(rect, Some(egui::Align::Center));
+                ui.data_mut(|d| d.get_temp_mut_or_default::<FindMarks>(find_marks_id()).reveal = None);
+            }
             frame_block(ui, top, editing, t, zoom);
             continue;
         }

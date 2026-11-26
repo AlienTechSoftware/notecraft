@@ -642,7 +642,7 @@ struct PinnedSearch {
 struct PageFind {
     page: PathBuf,
     words: String,
-    found: Vec<(usize, usize, usize)>,
+    found: Vec<FoundAt>,
     current: usize,
     seen_body: String,
     /// The bar's field asks for the keyboard on its next frame.
@@ -927,22 +927,24 @@ fn find_words_in_blocks(blocks: &[notecraft_formats::Block], words: &str, shown_
     best.map(|(_, at, start, end)| (at, start, end))
 }
 
-/// Every place on the page the words are, in reading order (issue #526): (block, start, end)
-/// in the characters the caret counts. The words are matched as a phrase, letter case and the
-/// kind of space between them aside, in the blocks the page shows as words; the title's own
-/// echo below the title and tables are passed over, as the search's first find is.
-fn find_all_in_blocks(blocks: &[notecraft_formats::Block], words: &str, shown_title: &str) -> Vec<(usize, usize, usize)> {
+/// A place on the page the words were found (issue #526): the block, the table cell for one
+/// found in a table, and where they start and end in the characters the caret counts.
+type FoundAt = (usize, Option<(usize, usize)>, usize, usize);
+
+/// Every place on the page the words are, in reading order (issue #526). The words are matched
+/// as a phrase, letter case and the kind of space between them aside, in the blocks the page
+/// shows as words and in each cell of its tables, row by row; the title's own echo below the
+/// title is passed over, as the search's first find is.
+fn find_all_in_blocks(blocks: &[notecraft_formats::Block], words: &str, shown_title: &str) -> Vec<FoundAt> {
     let lower = |c: char| c.to_lowercase().next().unwrap_or(c);
     let needle: Vec<char> = words.split_whitespace().collect::<Vec<_>>().join(" ").chars().map(lower).collect();
     let mut found = Vec::new();
     if needle.is_empty() {
         return found;
     }
-    for (at, b) in blocks.iter().enumerate() {
-        if !pageedit::is_writable(b) || matches!(b, notecraft_formats::Block::Table { .. }) || pageedit::is_title_echo(blocks, at, shown_title) {
-            continue;
-        }
-        let text: Vec<char> = pageedit::caret_text(b).chars().collect();
+    let places = |text: &str| -> Vec<(usize, usize)> {
+        let text: Vec<char> = text.chars().collect();
+        let mut out = Vec::new();
         let mut start = 0;
         while start + needle.len() <= text.len() {
             let fits = needle.iter().enumerate().all(|(k, want)| {
@@ -950,12 +952,28 @@ fn find_all_in_blocks(blocks: &[notecraft_formats::Block], words: &str, shown_ti
                 (if have.is_whitespace() && *want == ' ' { ' ' } else { lower(have) }) == *want
             });
             if fits {
-                found.push((at, start, start + needle.len()));
+                out.push((start, start + needle.len()));
                 start += needle.len();
             } else {
                 start += 1;
             }
         }
+        out
+    };
+    for (at, b) in blocks.iter().enumerate() {
+        if let Some((rows, columns)) = pageedit::table_size(b) {
+            for row in 0..rows {
+                for column in 0..columns {
+                    let Some(text) = pageedit::cell_text(b, (row, column)) else { continue };
+                    found.extend(places(&text).into_iter().map(|(s, e)| (at, Some((row, column)), s, e)));
+                }
+            }
+            continue;
+        }
+        if !pageedit::is_writable(b) || pageedit::is_title_echo(blocks, at, shown_title) {
+            continue;
+        }
+        found.extend(places(&pageedit::caret_text(b)).into_iter().map(|(s, e)| (at, None, s, e)));
     }
     found
 }
@@ -3619,22 +3637,23 @@ impl NoteCraftApp {
         if self.is_dirty() {
             return;
         }
-        // The pages moved keep their ids: that is how they are found again where they went.
-        let ids: Vec<(PathBuf, String)> = notecraft_store::tree::child_dirs(from)
-            .into_iter()
-            .filter_map(|p| notecraft_store::tree::read_node(&p).filter(|n| n.kind == NodeKind::Page).map(|n| (p, n.id)))
-            .collect();
         let editor_path = self.editor.as_ref().map(|editor| editor.dir.clone());
         let title = notecraft_store::tree::read_node(from).map(|n| n.title).unwrap_or_default();
         let place = notecraft_store::tree::read_node(into).map(|n| n.title).unwrap_or_default();
-        if self.run("section.merge", &params(&[("path", &path_str(from)), ("into", &path_str(into))])).is_none() {
+        let Some(Output::Text(report)) = self.run("section.merge", &params(&[("path", &path_str(from)), ("into", &path_str(into))])) else {
             return;
-        }
-        let now: Vec<(String, PathBuf)> =
-            notecraft_store::tree::child_dirs(into).into_iter().filter_map(|p| notecraft_store::tree::read_node(&p).map(|n| (n.id, p))).collect();
+        };
+        // Where each page went, as the store moved it, by folder name: followed exactly, a
+        // name taken there and given the next free one included.
+        let moved: Vec<(PathBuf, PathBuf)> = serde_json::from_str::<serde_json::Value>(&report)
+            .ok()
+            .and_then(|v| v.get("moved").and_then(|m| m.as_array()).cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|pair| Some((from.join(pair.get(0)?.as_str()?), into.join(pair.get(1)?.as_str()?))))
+            .collect();
         let mut opened = false;
-        for (old, id) in &ids {
-            let Some((_, new)) = now.iter().find(|(i, _)| i == id) else { continue };
+        for (old, new) in &moved {
             self.nav.relocate(old, new);
             let remap = |candidate: &Path| candidate.strip_prefix(old).map_or_else(|_| candidate.to_path_buf(), |suffix| new.join(suffix));
             self.open = self.open.iter().map(|branch| remap(branch)).collect();
@@ -3651,7 +3670,7 @@ impl NoteCraftApp {
         }
         self.say(crate::i18n::format_message_id(
             "ui.section_merged",
-            &[("title", title.as_str()), ("place", place.as_str()), ("count", &ids.len().to_string())],
+            &[("title", title.as_str()), ("place", place.as_str()), ("count", &moved.len().to_string())],
         ));
     }
 
@@ -11176,11 +11195,14 @@ impl NoteCraftApp {
         let id = pageedit::find_marks_id();
         match self.page_find.as_ref() {
             Some(find) => {
-                let current = (!find.found.is_empty()).then_some(find.current);
-                let reveal = if reveal { current.and_then(|c| find.found.get(c)).map(|f| f.0) } else { None };
+                let now = find.found.get(find.current).copied();
+                let reveal = if reveal { now.map(|f| f.0) } else { None };
+                // Places in the words are lit; one in a table cell is gone to, not lit.
+                let lit: Vec<(usize, usize, usize)> = find.found.iter().filter(|f| f.1.is_none()).map(|&(b, _, s, e)| (b, s, e)).collect();
+                let current = now.filter(|f| f.1.is_none()).and_then(|f| lit.iter().position(|&(b, s, e)| (b, s, e) == (f.0, f.2, f.3)));
                 ctx.data_mut(|d| {
                     let marks = d.get_temp_mut_or_default::<pageedit::FindMarks>(id);
-                    marks.found.clone_from(&find.found);
+                    marks.found = lit;
                     marks.current = current;
                     if reveal.is_some() {
                         marks.reveal = reveal;
@@ -11212,8 +11234,23 @@ impl NoteCraftApp {
         let Some(find) = self.page_find.take() else { return };
         self.publish_find(ctx, false);
         let Some(ed) = self.editor.as_mut().filter(|ed| ed.dir == find.page) else { return };
-        let Some(&(block, start, end)) = find.found.get(find.current) else { return };
+        let Some(&(block, cell, start, end)) = find.found.get(find.current) else { return };
         let Some(b) = ed.blocks.get(block) else { return };
+        if let Some(cell) = cell {
+            let Some(text) = pageedit::cell_text(b, cell) else { return };
+            ed.caret = Some(pageedit::Caret {
+                block,
+                text,
+                focus: true,
+                selection: (end, start),
+                place: Some(end),
+                cell: Some(cell),
+                span: None,
+                inline: None,
+            });
+            pageedit::reveal_caret(ctx);
+            return;
+        }
         ed.caret = Some(pageedit::Caret {
             block,
             text: pageedit::caret_text(b),
@@ -15985,7 +16022,7 @@ impl NoteCraftApp {
                 "words": f.words,
                 "count": f.found.len(),
                 "current": (!f.found.is_empty()).then_some(f.current),
-                "found": f.found.iter().map(|(b, s, e)| json!([b, s, e])).collect::<Vec<_>>(),
+                "found": f.found.iter().map(|(b, cell, s, e)| json!([b, s, e, cell])).collect::<Vec<_>>(),
             })),
             "tagsSummary": self.tags_pane.as_ref().map(|p| json!({
                 "scope": p.scope.id(),
@@ -16101,7 +16138,7 @@ impl NoteCraftApp {
                 "writable": e.writable,
                 // `selection` is (where the caret is, where the selection began), in
                 // characters: the two are equal when nothing is selected.
-                "caret": e.caret.as_ref().map(|c| json!({"block": c.block, "text": c.text, "at": c.selection.0, "anchor": c.selection.1})),
+                "caret": e.caret.as_ref().map(|c| json!({"block": c.block, "text": c.text, "at": c.selection.0, "anchor": c.selection.1, "cell": c.cell})),
                 // A selection dragged across more than one block, as block and byte at each
                 // end. Null for the ordinary selection inside one block, which `caret` has.
                 "across": e.across.map(|a| json!({"from": [a.from.0, a.from.1], "to": [a.to.0, a.to.1]})),
@@ -16335,7 +16372,10 @@ impl NoteCraftApp {
         let modal = self.own_modal_open();
         // So does the search box when it has the keyboard: Ctrl+V there was pasted into the page
         // (issue #498).
-        let search_focused = ctx.memory(|memory| memory.has_focus(search_id));
+        // And the find bar's field (issue #526): the caret is put down while it is open, and a
+        // paste meant for the field went into the page.
+        let find_field = Id::new(("page-find-field", ctx.viewport_id()));
+        let search_focused = ctx.memory(|memory| memory.has_focus(search_id) || memory.has_focus(find_field));
         if emoji_picker_open {
             self.paste_into_emoji_search(ctx, queued_paste);
         } else if modal {
@@ -16408,7 +16448,7 @@ impl NoteCraftApp {
         // Not while a dialog is open: it owns the keyboard, and the page behind it must not
         // change unseen (issue #262: Ctrl+Z undid and saved an edit behind Insert symbol). A
         // text box in the dialog keeps its own undo.
-        let page_keys = self.dialog.is_none() && !self.own_modal_open() && !emoji_picker_open && !ctx.memory(|memory| memory.has_focus(search_id));
+        let page_keys = self.dialog.is_none() && !self.own_modal_open() && !emoji_picker_open && !search_focused;
         if page_keys && ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
             // The ink's as well as the page's, whichever Undo took back.
             self.redo();
