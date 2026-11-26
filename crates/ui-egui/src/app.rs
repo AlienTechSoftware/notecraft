@@ -3658,12 +3658,18 @@ impl NoteCraftApp {
             let remap = |candidate: &Path| candidate.strip_prefix(old).map_or_else(|_| candidate.to_path_buf(), |suffix| new.join(suffix));
             self.open = self.open.iter().map(|branch| remap(branch)).collect();
             self.selected = self.selected.as_deref().map(remap);
+            // A page held by Cut or Copy is held where it went, cut or copied as it was.
+            if let Some((held, _)) = self.held_page.as_mut() {
+                *held = remap(held);
+            }
             if let Some(editor_path) = editor_path.as_ref().filter(|p| p.starts_with(old)) {
                 self.open_page_inner(&remap(editor_path));
                 opened = true;
             }
         }
         self.open.retain(|p| !p.starts_with(from));
+        // The section the pages went to is shown, with the groups it is in opened.
+        self.expand_to(into);
         self.open.insert(into.to_path_buf());
         if !opened && self.selected.as_deref().is_some_and(|p| p.starts_with(from)) {
             self.selected = Some(into.to_path_buf());

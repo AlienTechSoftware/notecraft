@@ -375,8 +375,9 @@ pub fn merge_section(source: &Path, dest: &Path) -> Result<Merged> {
                         placed = Some(Ok((target, whole)));
                         break;
                     }
-                    Err(e) if target.exists() => placed = Some(Err(e)),
-                    Err(e) => {
+                    // Only a name something else took first is tried again under another.
+                    Err(MoveError::Taken(e)) => placed = Some(Err(e)),
+                    Err(MoveError::Failed(e)) => {
                         placed = Some(Err(e));
                         break;
                     }
@@ -427,6 +428,10 @@ fn merge_pages(section: &Path) -> Result<Vec<(PathBuf, u32)>> {
         if linked || !inside {
             return Err(StoreError::invalid(format!("{} is a link to a folder elsewhere; the section was not merged", child.display())));
         }
+        // A link inside a page would not survive a move across drives, nor be in the copy kept.
+        if let Some(odd) = unsupported_entry(&child) {
+            return Err(StoreError::invalid(format!("{} is a link or other special file; the section was not merged", odd.display())));
+        }
         if let Some(info) = read_node(&child).filter(|n| n.kind == NodeKind::Page) {
             pages.push((child, info.order));
         }
@@ -434,20 +439,42 @@ fn merge_pages(section: &Path) -> Result<Vec<(PathBuf, u32)>> {
     Ok(pages)
 }
 
+/// Why [`relocate`] did not move a folder.
+enum MoveError {
+    /// Something else had the name first: nothing was written, and another name may be tried.
+    Taken(StoreError),
+    /// The move failed; the error says whether anything was left half made, and where.
+    Failed(StoreError),
+}
+
+impl MoveError {
+    fn into_error(self) -> StoreError {
+        match self {
+            MoveError::Taken(e) | MoveError::Failed(e) => e,
+        }
+    }
+}
+
 /// Moves a folder to `to`: renamed where it can be, else copied whole and the old one taken
 /// away once the copy is complete. `to` must not be there yet: it is made here, so a folder
 /// that something else put there in the meantime is never written into or taken away. A copy
-/// left incomplete is taken away again, being this move's own. Once the copy is complete it is
-/// kept whatever happens: if the old folder then cannot be taken away whole, `Ok(false)` says
-/// some of it is left behind, the page itself being whole in its new place.
-fn relocate(from: &Path, to: &Path) -> Result<bool> {
+/// left incomplete is taken away again, being this move's own; should that fail too, the error
+/// names it. Once the copy is complete it is kept whatever happens: if the old folder then
+/// cannot be taken away whole, `Ok(false)` says some of it is left behind, the page itself
+/// being whole in its new place.
+fn relocate(from: &Path, to: &Path) -> std::result::Result<bool, MoveError> {
+    let taken = || MoveError::Taken(StoreError::io("move", to, std::io::Error::from(std::io::ErrorKind::AlreadyExists)));
     if to.exists() {
-        return Err(StoreError::io("move", to, std::io::Error::from(std::io::ErrorKind::AlreadyExists)));
+        return Err(taken());
     }
     if fs::rename(from, to).is_ok() {
         return Ok(true);
     }
-    fs::create_dir(to).map_err(|e| StoreError::io("create", to, e))?;
+    match fs::create_dir(to) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Err(taken()),
+        Err(e) => return Err(MoveError::Failed(StoreError::io("create", to, e))),
+    }
     let copied = (|| -> std::io::Result<()> {
         for entry in fs::read_dir(from)? {
             let entry = entry?;
@@ -462,8 +489,14 @@ fn relocate(from: &Path, to: &Path) -> Result<bool> {
         Ok(())
     })();
     if let Err(e) = copied {
-        let _ = remove_tree(to);
-        return Err(StoreError::io("copy", to, e));
+        if let Err(left) = remove_tree(to) {
+            return Err(MoveError::Failed(StoreError::invalid(format!(
+                "copying {} failed ({e}), and the part copied to {} could not be taken away ({left})",
+                from.display(),
+                to.display()
+            ))));
+        }
+        return Err(MoveError::Failed(StoreError::io("copy", to, e)));
     }
     if let Err(e) = remove_tree(from) {
         log::warn!("moved a page, but its old folder could not be taken away whole: from={from:?} to={to:?} error={e}");
@@ -472,13 +505,30 @@ fn relocate(from: &Path, to: &Path) -> Result<bool> {
     Ok(true)
 }
 
+/// The first thing in `dir`, at any depth, that is neither a file nor a folder (a link, say),
+/// which a copy across drives would not carry.
+fn unsupported_entry(dir: &Path) -> Option<PathBuf> {
+    let entries = fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let Ok(kind) = entry.file_type() else { return Some(entry.path()) };
+        if kind.is_dir() {
+            if let Some(found) = unsupported_entry(&entry.path()) {
+                return Some(found);
+            }
+        } else if !kind.is_file() {
+            return Some(entry.path());
+        }
+    }
+    None
+}
+
 /// Puts back the pages a merge had moved, last first, each in its old place with its old order,
 /// and says what went wrong, and which pages could not be put back if any.
 fn undo_merge(source: &Path, dest: &Path, moved: &[(PathBuf, PathBuf, u32)], cause: StoreError) -> StoreError {
     let mut stuck = Vec::new();
     for (from, to, was) in moved.iter().rev() {
         let back = if from.exists() { unique_child(source, &tree::folder_name(from)) } else { from.clone() };
-        match relocate(to, &back) {
+        match relocate(to, &back).map_err(MoveError::into_error) {
             Ok(_) => {
                 let _ = set_node_order(&back, *was);
             }
@@ -966,10 +1016,10 @@ mod tests {
         fs::write(from.join("a.txt"), "mine").expect("file");
         fs::create_dir_all(&to).expect("someone else's");
         fs::write(to.join("b.txt"), "theirs").expect("file");
-        assert!(relocate(&from, &to).is_err(), "the name is taken");
+        assert!(matches!(relocate(&from, &to), Err(MoveError::Taken(_))), "the name is taken");
         assert!(from.join("a.txt").is_file() && to.join("b.txt").is_file(), "both as they were");
         let free = t.path().join("free");
-        assert!(relocate(&from, &free).expect("moved"), "a whole move");
+        assert!(relocate(&from, &free).map_err(MoveError::into_error).expect("moved"), "a whole move");
         assert!(!from.exists() && free.join("a.txt").is_file());
     }
 
@@ -1016,6 +1066,11 @@ mod tests {
             let here = create_node(&other, "Here", NodeKind::Page, None, &st).expect("here");
             assert!(merge_section(&other, &into).is_err(), "refused");
             assert!(far.is_dir() && here.is_dir() && other.is_dir(), "nothing moved");
+            // A link inside a page: refused too, before anything moves.
+            fs::remove_file(other.join("far")).expect("unlink");
+            std::os::unix::fs::symlink(far.join("x"), here.join("link.png")).expect("asset link");
+            assert!(merge_section(&other, &into).is_err(), "refused for a link inside a page");
+            assert!(here.join("link.png").symlink_metadata().is_ok() && here.is_dir(), "nothing moved");
         }
     }
 

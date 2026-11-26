@@ -19505,6 +19505,11 @@ fn a_section_is_merged_into_another_from_its_menu() {
     let moving = titles(&ideas);
     let before = titles(&projects);
     assert!(!moving.is_empty());
+    // A page held by Copy before the merge.
+    h.get_all_by_label("Format ideas").next().expect("page row").click_secondary();
+    settle(&mut h);
+    h.query_all_by_label("Copy").last().expect("Copy on the page's menu").click();
+    settle(&mut h);
     h.get_all_by_label("Ideas").next().expect("section row").click_secondary();
     settle(&mut h);
     h.get_by_label("Merge into Another Section…").click();
@@ -19525,6 +19530,13 @@ fn a_section_is_merged_into_another_from_its_menu() {
     let notebook = ideas.parent().expect("notebook");
     let bin = notecraft_store::recycle::list(notebook).expect("bin");
     assert!(bin.iter().any(|r| r.title == "Ideas"), "a copy in the recycle bin: {bin:?}");
+    // The page held is held where it went: pasting it makes a copy.
+    h.get_all_by_label("Projects").next().expect("section row").click_secondary();
+    settle(&mut h);
+    h.get_by_label("Paste page").click();
+    settle(&mut h);
+    assert!(!h.state().status().contains("no longer there"), "{}", h.state().status());
+    assert_eq!(titles(&projects).iter().filter(|t| *t == "Format ideas").count(), 2, "{:?}", titles(&projects));
 }
 
 /// Issue #526: Find on this page lights every place the words are, says which of how many is
