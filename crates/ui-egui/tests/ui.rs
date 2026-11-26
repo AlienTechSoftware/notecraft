@@ -18954,7 +18954,9 @@ fn quick_notes_open_from_the_navigator_and_their_section_is_chosen_in_options() 
     // made before stays where it was.
     let next = ask(&mut h, "engine.execute", json!({"command": "window.quick-note", "params": {}})).expect("quick note");
     let next = PathBuf::from(next.as_str().or_else(|| next.pointer("/path").and_then(Value::as_str)).unwrap_or_default());
-    assert_eq!(next.parent(), s.md_page.parent(), "made in Ideas");
+    // Compared as the system names them: Windows may give one with a `\\?\` prefix.
+    let ideas = s.md_page.parent().and_then(|p| std::fs::canonicalize(p).ok());
+    assert_eq!(next.parent().and_then(|p| std::fs::canonicalize(p).ok()), ideas, "made in Ideas");
     assert!(made.exists(), "the first stays where it was saved");
     h.state_mut().close_backstage();
     settle(&mut h);
@@ -19025,6 +19027,14 @@ fn a_section_can_keep_a_template_for_its_new_pages() {
     let sub = PathBuf::from(sub.as_str().or_else(|| sub.pointer("/path").and_then(Value::as_str)).unwrap_or_default());
     let text = std::fs::read_to_string(notecraft_store::tree::page_file(&sub).expect("page").1).expect("read");
     assert!(text.contains("This week"), "the subpage is from the template: {text}");
+    // Ctrl+N on that subpage makes another beside it, and says the section's template.
+    ask(&mut h, "ui.open", json!({"path": sub.to_string_lossy()})).expect("open the subpage");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "N", "ctrl": true})).expect("Ctrl+N");
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert!(v["status"]["text"].as_str().unwrap_or_default().contains("To Do List"), "the subpage's section template is said: {}", v["status"]);
+    assert!(h.state().body().unwrap_or_default().contains("This week"));
     // One with its own title is not.
     let titled = ask(
         &mut h,

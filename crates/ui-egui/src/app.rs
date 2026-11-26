@@ -3690,7 +3690,10 @@ impl NoteCraftApp {
 
     /// Says a new page in `section` was made: from the section's template when it has one
     /// (issue #519), and when that template is gone, that the page is a blank one instead.
-    fn say_new_page(&mut self, section: &Path) {
+    fn say_new_page(&mut self, parent: &Path) {
+        // The template comes from the section that holds the new page, as in `node.create`: a
+        // subpage made under a page says the template of that page's section.
+        let section = parent.ancestors().find(|a| notecraft_store::tree::read_node(a).is_some_and(|n| n.kind != NodeKind::Page)).unwrap_or(parent);
         let Some(id) = notecraft_store::ops::default_template(section) else {
             self.say(crate::tl_id!("ui.new_page"));
             return;
