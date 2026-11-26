@@ -88,23 +88,6 @@ pub fn show(ui: &mut Ui, body: egui::Rect, page: &Path, acts: &mut Vec<Act>, t: 
     let mut picked = false;
     let Some(menu) = floating::point_menu(ui.ctx(), id(), egui::Rect::from_pos(at), |ui| {
         floating::menu_heading(ui, crate::tl_id!("ui.this_picture"), t);
-        // The universal clipboard rows, as on the page's menu: Cut, Copy and Paste work on a picture too.
-        let block = ui.data(|d| d.get_temp::<usize>(block_id()));
-        if let Some(block) = block {
-            if floating::menu_row(ui, Some(Glyph::Mark(Mark::Cut)), crate::tl_id!("ui.cut"), t).clicked() {
-                acts.push(Act::PictureClipboard { src: src.clone(), block, cut: true });
-                picked = true;
-            }
-            if floating::menu_row(ui, Some(Glyph::Mark(Mark::Copy)), crate::tl_id!("ui.copy"), t).clicked() {
-                acts.push(Act::PictureClipboard { src: src.clone(), block, cut: false });
-                picked = true;
-            }
-        }
-        if floating::menu_row(ui, Some(Glyph::Mark(Mark::Paste)), crate::tl_id!("ui.paste"), t).clicked() {
-            acts.push(Act::Paste);
-            picked = true;
-        }
-        floating::menu_separator(ui, t);
         if floating::menu_row(ui, Some(Glyph::Icon(Icon::Picture)), crate::tl_id!("ui.save_picture_as"), t).clicked() {
             acts.push(Act::SavePictureAs(src.clone()));
             picked = true;
@@ -131,6 +114,23 @@ pub fn show(ui: &mut Ui, body: egui::Rect, page: &Path, acts: &mut Vec<Act>, t: 
         {
             ui.data_mut(|d| d.insert_temp(crate::containers::unbox_request_id(), block));
             ui.ctx().request_repaint();
+            picked = true;
+        }
+        // The clipboard rows of the page's menu, added below the picture's own entries so their
+        // order and keyboard focus are unchanged. Cut and Copy act on this picture.
+        let block = ui.data(|d| d.get_temp::<usize>(block_id()));
+        if let Some(block) = block {
+            if floating::menu_row(ui, Some(Glyph::Mark(Mark::Cut)), crate::tl_id!("ui.cut"), t).clicked() {
+                acts.push(Act::PictureClipboard { src: src.clone(), block, cut: true });
+                picked = true;
+            }
+            if floating::menu_row(ui, Some(Glyph::Mark(Mark::Copy)), crate::tl_id!("ui.copy"), t).clicked() {
+                acts.push(Act::PictureClipboard { src: src.clone(), block, cut: false });
+                picked = true;
+            }
+        }
+        if floating::menu_row(ui, Some(Glyph::Mark(Mark::Paste)), crate::tl_id!("ui.paste"), t).clicked() {
+            acts.push(Act::Paste);
             picked = true;
         }
         floating::menu_separator(ui, t);
