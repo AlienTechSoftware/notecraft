@@ -458,10 +458,22 @@ pub fn show(
         if let Some(first) = first_drawn {
             let row = Rect::from_min_size(pos2(at.x + PAD * zoom, at.y - head), vec2(b.width * zoom, head));
             let mut head_ui = ui.new_child(egui::UiBuilder::new().max_rect(row));
-            let emoji = blocks[first].emoji().to_vec();
-            if let Some(next) = crate::block_emoji::header(&mut head_ui, page_dir, first, &emoji, true, zoom) {
-                blocks[first].set_emoji(next);
-                out.changed.blocks = true;
+            // A picture's header is its (>) menu; any other block's header is its emoji row.
+            let picture = match blocks.get(first) {
+                Some(Block::Image { src, .. }) => Some(page_dir.join(src)),
+                _ => None,
+            };
+            if let Some(picture) = picture {
+                // The caller decides what the chosen action does.
+                if let Some(action) = crate::image_text::header(&mut head_ui, page_dir, first, &picture, t, zoom) {
+                    crate::image_text::apply(head_ui.ctx(), page_dir, first, action);
+                }
+            } else {
+                let emoji = blocks[first].emoji().to_vec();
+                if let Some(next) = crate::block_emoji::header(&mut head_ui, page_dir, first, &emoji, true, zoom) {
+                    blocks[first].set_emoji(next);
+                    out.changed.blocks = true;
+                }
             }
         }
         let pad = PAD * zoom;
@@ -746,7 +758,6 @@ pub fn show(
                         crate::image_text::paint(ui.painter(), object_rect, [w, h], &boxes, t.accent);
                     }
                 }
-                crate::image_text::menu(ui, object_rect, page_dir, *block, &picture, t);
             }
             let image_rect = object_rect;
             let size = resize_handle_size;

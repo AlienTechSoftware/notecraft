@@ -65,11 +65,34 @@ pub fn row_menu<R>(resp: &Response, add: impl FnOnce(&mut Ui) -> R) -> Option<eg
     shown
 }
 
+/// One row of an action menu: its label, whether it can be chosen, and the action it stands for.
+pub struct MenuItem<A> {
+    pub label: &'static str,
+    pub enabled: bool,
+    pub action: A,
+}
+
+/// A menu opened from `opener` with one row per item. The menu performs nothing itself: it returns the
+/// action of the row that was chosen, and the caller decides what that action does.
+pub fn action_menu<A: Clone>(opener: &Response, items: &[MenuItem<A>], t: &Tokens) -> Option<A> {
+    row_menu(opener, |ui| {
+        let mut chosen = None;
+        for item in items {
+            if menu_row_if(ui, item.enabled, None, item.label, t).clicked() {
+                chosen = Some(item.action.clone());
+                ui.close();
+            }
+        }
+        chosen
+    })
+    .and_then(|shown| shown.inner)
+}
+
 /// A round button, `size` points across, with one glyph in it: an opener such as a picture's (>). The
 /// corner radius is more than half the size, so it is a true circle at any size. `enabled` greys it.
 pub fn round_button(ui: &mut Ui, glyph: &str, size: f32, enabled: bool) -> Response {
-    let button = egui::Button::new(glyph).corner_radius(egui::CornerRadius::same(u8::MAX)).min_size(vec2(size, size));
-    ui.add_enabled(enabled, button)
+    let button = egui::Button::new(glyph).corner_radius(egui::CornerRadius::same(u8::MAX));
+    ui.add_enabled_ui(enabled, |ui| ui.add_sized([size, size], button)).inner
 }
 
 /// Where a menu that opens at a point goes (issue #380): under and after the point, and, when that

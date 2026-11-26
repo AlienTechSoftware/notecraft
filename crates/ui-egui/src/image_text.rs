@@ -1,10 +1,12 @@
-//! The (>) menu on a picture: detected text as an overlay. This is view state only: it changes how the
-//! picture is shown, not what the page contains, so it stays off the undo history. The boxes come from
-//! the picture's `.lines` file, which the page's OCR writes beside the picture.
+//! The (>) header of a picture, and its detected text overlay. The header is the same row the blocks
+//! use for their emoji: a round (>) where the "+" is, and the popup menu in place of the emoji chips.
+//! The overlay is view state only: it changes how the picture is shown, not what the page contains, so
+//! it stays off the undo history. The boxes come from the picture's `.lines` file, which the page's OCR
+//! writes beside the picture.
 
 use crate::floating;
 use crate::theme::Tokens;
-use egui::{Color32, Id, Pos2, Rect, Stroke, pos2, vec2};
+use egui::{Color32, Id, Pos2, Rect, Stroke, pos2};
 use std::path::{Path, PathBuf};
 
 /// The `.lines` file beside a picture: its full file name with `.lines` added.
@@ -54,29 +56,31 @@ fn set_showing(ctx: &egui::Context, page: &Path, block: usize, on: bool) {
     ctx.data_mut(|d| d.insert_temp(overlay_id(page, block), on));
 }
 
-/// The (>) button above a picture's top left corner, and its menu. The menu only changes the overlay
-/// state. "Detect text" is offered once the picture has a `.lines` file to show.
-pub fn menu(ui: &mut egui::Ui, picture_rect: Rect, page: &Path, block: usize, picture: &Path, t: &Tokens) {
-    // Above the picture's top left corner, in the row the frames use for their emoji.
-    let at = picture_rect.left_top() + vec2(0.0, -24.0);
-    egui::Area::new(Id::new(("image-text-menu", page.to_path_buf(), block))).fixed_pos(at).order(egui::Order::Foreground).show(ui.ctx(), |ui| {
-        let opener = floating::round_button(ui, ">", 20.0, true);
-        floating::row_menu(&opener, |ui| {
-            let boxes = read_boxes(&lines_path(picture));
-            if showing(ui.ctx(), page, block) {
-                if floating::menu_row(ui, None, crate::tl_id!("ui.image_text_hide"), t).clicked() {
-                    set_showing(ui.ctx(), page, block, false);
-                    ui.close();
-                }
-            } else if floating::menu_row_if(ui, !boxes.is_empty(), None, crate::tl_id!("ui.image_text_detect"), t).clicked() {
-                set_showing(ui.ctx(), page, block, true);
-                ui.close();
-            }
-            if boxes.is_empty() {
-                ui.small(crate::tl_id!("ui.image_text_none_yet"));
-            }
-        });
-    });
+/// The header row of a picture: the round (>) where a block's "+" would be, and its popup menu. The
+/// menu only changes the overlay state. "Detect text" is offered once the picture has a `.lines` file.
+/// What the picture's menu can ask for. The header only reports the choice; the caller applies it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Action {
+    DetectText,
+    HideText,
+}
+
+/// Applies a chosen action to a picture's overlay. Only the overlay state changes.
+pub fn apply(ctx: &egui::Context, page: &Path, block: usize, action: Action) {
+    set_showing(ctx, page, block, action == Action::DetectText);
+}
+
+/// The header row of a picture: the round (>) where a block's "+" would be, and its menu. It returns the
+/// action the person chose, if any, and changes nothing itself.
+pub fn header(ui: &mut egui::Ui, page: &Path, block: usize, picture: &Path, t: &Tokens, zoom: f32) -> Option<Action> {
+    let opener = floating::round_button(ui, ">", 18.0 * zoom, true);
+    let has_text = !read_boxes(&lines_path(picture)).is_empty();
+    let on = showing(ui.ctx(), page, block);
+    let items = [
+        floating::MenuItem { label: crate::tl_id!("ui.image_text_detect"), enabled: has_text && !on, action: Action::DetectText },
+        floating::MenuItem { label: crate::tl_id!("ui.image_text_hide"), enabled: on, action: Action::HideText },
+    ];
+    floating::action_menu(&opener, &items, t)
 }
 
 #[cfg(test)]
