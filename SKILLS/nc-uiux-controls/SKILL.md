@@ -38,11 +38,19 @@ the control, and a neighboring control. Add a regression test for every hit-test
 occurred. Check light/dark themes and narrow windows. For embedded objects, test isolated,
 adjacent, and overlapping images, including selecting the back object and dragging it.
 
-## Reuse before writing a control
+## Reuse first: shared controls over one-off hacks
 
-Check these first, and extend them rather than copying their code:
-- `floating::round_button`: a true circle with one glyph (the (>) opener on pictures). The block header's
-  "+" (`block_emoji::header`) draws its own round button; move it to `round_button` when that code is next changed.
-- `floating::row_menu(&response, add)`: a menu opened from a control, with keyboard and Escape handling.
-- `floating::menu_row`, `menu_row_if`, `menu_row_danger`, `menu_separator`: the menu's rows.
-- `floating::point_menu`: a menu at a point on the page.
+This is a rule, not a suggestion. When the same interaction is needed in two places, it becomes one shared control, and the places use it.
+
+- **Same look, same behaviour, two places = one control.** Examples: the round opener (the block's emoji "+" and the picture's (>)) and the popup menu opened from it.
+- **Do not add a second copy** of a control to fit one screen. Extend the shared control with a parameter instead.
+- **The control performs no action.** It reports what the user chose, and the caller decides what that means. The caller sets the handler, the control stays generic.
+- **Specialised code is the exception.** Write it only when the behaviour truly differs, and say why in the code.
+
+Shared controls in `crates/ui-egui/src/floating.rs`:
+- `round_button`: a true circle with one glyph. The block's emoji "+" and the picture's (>) both use it.
+- `button_menu(opener, add)`: a menu opened by a left click on a button.
+- `row_menu(response, add)`: a menu opened from a row, by right click or the keyboard.
+- `menu_row`, `menu_row_if`, `menu_row_danger`, `menu_separator`: the rows of a menu.
+- `point_menu`: a menu at a point on the page.
+- `action_menu` (when present): a menu that returns the chosen action.
