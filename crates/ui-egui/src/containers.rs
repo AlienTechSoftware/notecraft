@@ -610,8 +610,14 @@ pub fn show(
         });
         // A picture's (>) is drawn whether or not the picture is selected. A click on the (>) is a click off
         // the picture, which would deselect it and close the menu before it opens.
-        if standalone_image && let Some(Block::Image { src, .. }) = blocks.get(range.start) {
-            crate::image_text::menu(ui, image_rect, page_dir, range.start, &page_dir.join(src), t);
+        // Embedded pictures too: each image in the box, at the rectangle the layout reports for it.
+        let object_hits = ui.data(|d| d.get_temp::<Vec<(usize, Rect, String)>>(crate::preview::object_hits_id())).unwrap_or_default();
+        for block in range.clone() {
+            let Some(Block::Image { src, .. }) = blocks.get(block) else { continue };
+            let Some(rect) = object_hits.iter().find(|(at, _, kind)| *at == block && kind == "image").map(|(_, rect, _)| *rect) else {
+                continue;
+            };
+            crate::image_text::menu(ui, rect, page_dir, block, &page_dir.join(src), t);
         }
         // A picture among other blocks in one box (a page that was never arranged is one box
         // holding everything). It is moved by its body like any picture, which takes it out of
