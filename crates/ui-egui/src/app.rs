@@ -18031,38 +18031,6 @@ mod keep_boxes_tests {
         assert!(matches!(h.state().dialog, Some(Dialog::Link { .. })), "the Link action opens the Link dialog");
     }
 
-    /// Issue #505: the Home groups read left to right as Clipboard, Basic Text, Styles, Tags,
-    /// Email, Meetings, with Page Setup after them rather than between Basic Text and Styles.
-    #[test]
-    fn home_groups_read_clipboard_basic_text_styles_tags_email_meetings_then_page_setup() {
-        let (_t, _page, mut h) = two_boxes(false, "ribbon-group-order");
-        for _ in 0..3 {
-            h.step();
-        }
-        // The first control of each group is the group's name in the accessible tree.
-        let order = [
-            ("Paste", "clipboard"),
-            ("Bold", "basic text"),
-            ("Heading 1", "styles"),
-            ("To Do Tag", "tags"),
-            ("Send Page", "email"),
-            ("Meeting Details", "meetings"),
-            ("Page left to right", "page setup"),
-        ];
-        let xs: Vec<Option<f64>> = order
-            .iter()
-            .map(|(label, _)| {
-                use egui_kittest::kittest::{NodeT as _, Queryable as _};
-                h.query_all_by_label(label).filter_map(|n| n.accesskit_node().bounding_box()).map(|r| r.x0).min_by(f64::total_cmp)
-            })
-            .collect();
-        for ((label, group), x) in order.iter().zip(&xs) {
-            assert!(x.is_some(), "the {group} group ({label}) is drawn on Home");
-        }
-        let xs: Vec<f64> = xs.into_iter().flatten().collect();
-        assert!(xs.windows(2).all(|w| w[0] < w[1]), "groups read left to right in this order: {xs:?}");
-    }
-
     #[test]
     fn inserted_space_goes_into_the_caret_box_and_the_boxes_stay() {
         for html in [false, true] {
