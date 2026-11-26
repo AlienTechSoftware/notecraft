@@ -1629,7 +1629,7 @@ impl Lab {
             ui.separator();
             let font = egui::FontId::monospace(13.0);
             let plain = ui.visuals().text_color();
-            egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 ui.label(crate::json_view::job(text, font, plain));
             });
             return;
