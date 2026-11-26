@@ -370,6 +370,36 @@ impl Drawing {
         before - self.strokes.len()
     }
 
+    /// The point eraser (issue #545): takes out only the ink within `radius` of (`x`, `y`),
+    /// cutting a stroke in two where the eraser crosses it, rather than the whole stroke as
+    /// [`Drawing::erase_at`] does. The pieces left keep the stroke's pen, colour, width, gain
+    /// and place in the order; a piece too short to be a line is dropped with what was
+    /// erased. Returns whether any ink changed.
+    pub fn erase_points_at(&mut self, x: f32, y: f32, radius: f32) -> bool {
+        if !x.is_finite() || !y.is_finite() || !radius.is_finite() {
+            return false;
+        }
+        let mut changed = false;
+        let mut kept = Vec::with_capacity(self.strokes.len());
+        for stroke in std::mem::take(&mut self.strokes) {
+            if !shape::touches(&stroke, x, y, radius) {
+                kept.push(stroke);
+                continue;
+            }
+            let pieces = cut_round(&stroke, x, y, radius.max(0.0) + stroke.width / 2.0);
+            if pieces.len() == 1 && pieces[0] == stroke.dabs {
+                kept.push(stroke);
+                continue;
+            }
+            changed = true;
+            for dabs in pieces {
+                kept.push(Stroke { dabs, ..stroke.clone() });
+            }
+        }
+        self.strokes = kept;
+        changed
+    }
+
     /// The box all the ink covers, which may be larger than the sheet if a stroke ran over
     /// the edge. `None` for a drawing with no ink in it.
     pub fn bounds(&self) -> Option<(f32, f32, f32, f32)> {
@@ -377,9 +407,139 @@ impl Drawing {
     }
 }
 
+/// The runs of a stroke's readings that lie outside a circle, for the point eraser. Each line
+/// from one reading to the next is followed in small steps, and where it goes into the circle
+/// or comes out of it the run is cut at the edge itself, found by halving, so a stroke rubbed
+/// at its very end is shortened rather than lost, and a fast stroke with readings far apart is
+/// cut where the eraser crossed it. A run of one reading is no line, and is dropped; a stroke
+/// that was a single dot outside the circle is kept as it was.
+fn cut_round(stroke: &Stroke, x: f32, y: f32, reach: f32) -> Vec<Vec<Dab>> {
+    let inside = |d: Dab| (d.x - x).hypot(d.y - y) <= reach;
+    if let [only] = stroke.dabs.as_slice() {
+        return if inside(*only) { Vec::new() } else { vec![vec![*only]] };
+    }
+    let lerp =
+        |a: Dab, b: Dab, t: f32| Dab { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, pressure: a.pressure + (b.pressure - a.pressure) * t };
+    // The place on the line from `out` (outside) to `inn` (inside) nearest the edge, outside.
+    let edge = |out: Dab, inn: Dab| {
+        let (mut lo, mut hi) = (out, inn);
+        for _ in 0..20 {
+            let mid = lerp(lo, hi, 0.5);
+            if inside(mid) {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        lo
+    };
+    let step = (reach / 3.0).max(0.25);
+    let mut pieces = Vec::new();
+    let mut run: Vec<Dab> = Vec::new();
+    let finish = |run: &mut Vec<Dab>, pieces: &mut Vec<Vec<Dab>>| {
+        if run.len() >= 2 {
+            pieces.push(std::mem::take(run));
+        } else {
+            run.clear();
+        }
+    };
+    // A reading in the same place as the one before is kept when its pressure differs, as
+    // `Stroke::add` keeps it: that is a press, and it shows.
+    let push = |run: &mut Vec<Dab>, d: Dab| {
+        if run.last().is_none_or(|last| last.distance_to(d) > 0.01 || (last.pressure - d.pressure).abs() >= 0.02) {
+            run.push(d);
+        }
+    };
+    let mut previous: Option<Dab> = None;
+    for &d in &stroke.dabs {
+        match previous {
+            None => {
+                if !inside(d) {
+                    run.push(d);
+                }
+            }
+            Some(a) => {
+                let steps = ((a.distance_to(d) / step).ceil() as usize).clamp(1, 512);
+                let (mut last, mut last_in) = (a, inside(a));
+                for k in 1..=steps {
+                    let p = if k == steps { d } else { lerp(a, d, k as f32 / steps as f32) };
+                    let p_in = inside(p);
+                    match (last_in, p_in) {
+                        // Going in: the run ends at the edge.
+                        (false, true) => {
+                            push(&mut run, edge(last, p));
+                            finish(&mut run, &mut pieces);
+                        }
+                        // Coming out: a new run starts at the edge.
+                        (true, false) => push(&mut run, edge(p, last)),
+                        _ => {}
+                    }
+                    if k == steps && !p_in {
+                        push(&mut run, d);
+                    }
+                    (last, last_in) = (p, p_in);
+                }
+            }
+        }
+        previous = Some(d);
+    }
+    finish(&mut run, &mut pieces);
+    pieces
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #545: the point eraser cuts a stroke where it crosses it, even between readings
+    /// far apart, keeps the pieces' pen and order, and leaves ink it does not reach alone; at
+    /// either end it shortens the stroke, and a dot under it goes.
+    #[test]
+    fn the_point_eraser_cuts_only_what_it_touches() {
+        let mut d = Drawing::new(300.0, 300.0);
+        let mut long = Stroke::new(Tool::Pencil, Rgb(10, 20, 30), 2.0);
+        // Two readings 200 points apart: the line between them is crossed in the middle.
+        long.dabs = vec![Dab::new(0.0, 50.0, 0.5), Dab::new(200.0, 50.0, 0.5)];
+        d.add(long.clone());
+        let mut other = Stroke::new(Tool::Pen, Rgb::BLACK, 2.0);
+        other.dabs = vec![Dab::new(0.0, 150.0, 0.5), Dab::new(200.0, 150.0, 0.5)];
+        d.add(other.clone());
+        assert!(d.erase_points_at(100.0, 50.0, 5.0), "it crossed the long line");
+        assert_eq!(d.strokes.len(), 3, "two pieces and the line it missed: {:?}", d.strokes);
+        let (left, right) = (&d.strokes[0], &d.strokes[1]);
+        assert_eq!((left.tool, left.colour, left.width), (Tool::Pencil, Rgb(10, 20, 30), 2.0));
+        assert!(left.dabs.iter().all(|p| p.x < 95.0) && left.dabs.last().is_some_and(|p| p.x > 90.0), "{:?}", left.dabs);
+        assert!(right.dabs.iter().all(|p| p.x > 105.0) && right.dabs.first().is_some_and(|p| p.x < 110.0), "{:?}", right.dabs);
+        assert_eq!(d.strokes[2], other, "the other line is as it was, after the pieces");
+        assert!(!d.erase_points_at(100.0, 250.0, 5.0), "nothing there");
+        // At the end: the stroke is shorter, not cut.
+        assert!(d.erase_points_at(200.0, 150.0, 5.0));
+        assert_eq!(d.strokes.len(), 3);
+        assert!(d.strokes[2].dabs.iter().all(|p| p.x < 196.0));
+        // Rubbed just past its last reading, which alone is under it: shortened, not lost.
+        let mut d2 = Drawing::new(300.0, 300.0);
+        let mut line = Stroke::new(Tool::Pen, Rgb::BLACK, 2.0);
+        line.dabs = vec![Dab::new(0.0, 50.0, 1.0), Dab::new(200.0, 50.0, 1.0)];
+        d2.add(line);
+        assert!(d2.erase_points_at(202.4, 50.0, 1.5));
+        assert_eq!(d2.strokes.len(), 1, "the line is still there");
+        let end = d2.strokes[0].dabs.last().copied().expect("an end");
+        assert!(end.x > 199.0 && end.x < 200.0, "cut at the edge: {end:?}");
+        // A press in one place, away from the rub, keeps its readings as they were.
+        let mut d3 = Drawing::new(300.0, 300.0);
+        let mut pressed = Stroke::new(Tool::Pen, Rgb::BLACK, 2.0);
+        pressed.dabs = vec![Dab::new(0.0, 50.0, 0.2), Dab::new(0.0, 50.0, 1.0), Dab::new(200.0, 50.0, 1.0)];
+        d3.add(pressed);
+        assert!(d3.erase_points_at(100.0, 50.0, 3.0));
+        let left = &d3.strokes[0].dabs;
+        assert!(left.len() >= 3 && (left[0].pressure - 0.2).abs() < 1e-6 && (left[1].pressure - 1.0).abs() < 1e-6, "{left:?}");
+        // A dot under it goes.
+        let mut dot = Stroke::new(Tool::Pen, Rgb::BLACK, 2.0);
+        dot.dabs = vec![Dab::new(250.0, 250.0, 0.5)];
+        d.add(dot);
+        assert!(d.erase_points_at(250.0, 250.0, 3.0));
+        assert_eq!(d.strokes.len(), 3);
+    }
 
     #[test]
     fn a_colour_goes_to_a_file_and_comes_back() {

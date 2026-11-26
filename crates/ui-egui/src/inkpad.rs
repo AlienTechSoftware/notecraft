@@ -31,11 +31,73 @@ pub struct Pen {
     /// Draw > Automatic Shapes is on: a plain line, box, ellipse or triangle drawn by hand
     /// is redrawn clean when the pen is lifted (issue #294).
     pub auto_shapes: bool,
+    /// Which eraser the eraser is (issue #545).
+    pub eraser: Eraser,
 }
 
 impl Default for Pen {
     fn default() -> Self {
-        Self { pointer: crate::ribbon::Pointer::Write, tool: Tool::Pen, colour: Rgb::BLACK, width: 3.0, gain: 1.0, auto_shapes: false }
+        Self {
+            pointer: crate::ribbon::Pointer::Write,
+            tool: Tool::Pen,
+            colour: Rgb::BLACK,
+            width: 3.0,
+            gain: 1.0,
+            auto_shapes: false,
+            eraser: Eraser::Stroke,
+        }
+    }
+}
+
+/// Which eraser the Draw tab's eraser is (issue #545): one that takes away every stroke it
+/// touches, as OneNote's Stroke Eraser does, or one that rubs out only the ink under it, in
+/// three sizes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Eraser {
+    #[default]
+    Stroke,
+    Small,
+    Medium,
+    Large,
+}
+
+impl Eraser {
+    /// In the order the eraser's menu lists them, as OneNote's does.
+    pub const ALL: [Eraser; 4] = [Eraser::Small, Eraser::Medium, Eraser::Large, Eraser::Stroke];
+
+    /// What the settings keep.
+    pub fn id(self) -> &'static str {
+        match self {
+            Eraser::Stroke => "stroke",
+            Eraser::Small => "small",
+            Eraser::Medium => "medium",
+            Eraser::Large => "large",
+        }
+    }
+
+    pub fn parse(id: &str) -> Option<Eraser> {
+        Eraser::ALL.into_iter().find(|e| e.id() == id.trim())
+    }
+
+    /// Its name, as the menu and the status line give it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Eraser::Stroke => crate::tl_id!("ui.eraser_stroke"),
+            Eraser::Small => crate::tl_id!("ui.eraser_small"),
+            Eraser::Medium => crate::tl_id!("ui.eraser_medium"),
+            Eraser::Large => crate::tl_id!("ui.eraser_large"),
+        }
+    }
+
+    /// How far from the pointer it reaches, in page points. The stroke eraser follows the pen
+    /// in hand, as it always has, with a floor so a fine pen still finds a line.
+    pub fn radius(self, pen_width: f32) -> f32 {
+        match self {
+            Eraser::Stroke => pen_width.max(6.0) / 2.0,
+            Eraser::Small => 1.5,
+            Eraser::Medium => 4.0,
+            Eraser::Large => 9.0,
+        }
     }
 }
 
@@ -466,6 +528,17 @@ impl Pad {
         pick::bounds(&self.drawing, &all).map(|(x0, y0, x1, y1)| [x0, y0, x1, y1])
     }
 
+    /// Turns or mirrors the held ink as one group about the middle of the box round it, so it
+    /// stays where it was (issue #544). One step for undo. False when no ink is held.
+    pub fn turn_held(&mut self, turn: pick::Turn) -> bool {
+        let Some((x0, y0, x1, y1)) = pick::bounds(&self.drawing, &self.held) else { return false };
+        pick::turn_about(&mut self.drawing, &self.held, (x0 + x1) / 2.0, (y0 + y1) / 2.0, turn);
+        self.dirty = true;
+        self.touched = true;
+        self.settle();
+        true
+    }
+
     /// Throws away the held ink and says whether any went.
     pub fn delete_held(&mut self) -> bool {
         let went = pick::remove(&mut self.drawing, &self.held) > 0;
@@ -741,6 +814,14 @@ pub fn show(
         _ => egui::CursorIcon::Crosshair,
     });
 
+    // The eraser shows how far it reaches, so the size picked is seen where it works (#545).
+    if pen.pointer == Pointer::Erase
+        && let Some(p) = ui.ctx().pointer_hover_pos().filter(|p| body.contains(*p))
+    {
+        let r = pen.eraser.radius(pen.width) * zoom;
+        let colour = ui.visuals().text_color().gamma_multiply(0.6);
+        painter.circle_stroke(p, r.max(1.5), egui::Stroke::new(1.0, colour));
+    }
     // Not egui's drag, which only begins once the pointer has travelled far enough: a pen
     // put down and lifted in one place is a dot, and a dot is ink.
     let down = resp.is_pointer_button_down_on();
@@ -749,7 +830,11 @@ pub fn show(
     match pen.pointer {
         Pointer::Erase => {
             if let Some((x, y)) = at.filter(|_| down) {
-                changed = pad.drawing.erase_at(x, y, pen.width.max(6.0) / 2.0) > 0;
+                let radius = pen.eraser.radius(pen.width);
+                changed = match pen.eraser {
+                    Eraser::Stroke => pad.drawing.erase_at(x, y, radius) > 0,
+                    _ => pad.drawing.erase_points_at(x, y, radius),
+                };
             }
         }
         Pointer::Draw => {

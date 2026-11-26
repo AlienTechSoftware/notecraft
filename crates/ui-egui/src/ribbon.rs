@@ -153,6 +153,9 @@ fn paint_mic(painter: &egui::Painter, center: egui::Pos2, colour: egui::Color32)
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Act {
     NewWindow,
+    /// View > New Docked Window: the open page in a second window docked to the side of the
+    /// screen, this one left where it is (issue #554).
+    NewDockedWindow,
     /// Lock the page open in the editor read only, or unlock it (issue #441).
     SetReadOnly(bool),
     QuickNote,
@@ -216,6 +219,10 @@ pub enum Act {
         src: String,
         block: usize,
     },
+    /// Draw > Rotate: turn or mirror the ink picked up (issue #544).
+    TurnInk(notecraft_ink::pick::Turn),
+    /// The eraser's menu: which eraser it is (issue #545).
+    InkEraser(crate::inkpad::Eraser),
     /// Copy Text from Picture (issue #274): the picture's source, and whether every page of the
     /// printout it belongs to is read rather than this page alone.
     CopyTextFromPicture {
@@ -698,6 +705,10 @@ pub struct View<'a> {
     pub can_redo: bool,
     /// Whether the drawing has a stroke that Undo stroke took back, for Draw > Redo stroke.
     pub can_ink_redo: bool,
+    /// Whether ink is picked up, which is when Draw > Rotate can turn it (issue #544).
+    pub ink_held: bool,
+    /// Which eraser the eraser is (issue #545).
+    pub eraser: crate::inkpad::Eraser,
     /// How readily the pen answers pressure, 0 to 100.
     pub sensitivity: u8,
     /// Whether the current input path has reported a pressure-capable pen.
@@ -3376,6 +3387,26 @@ fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts:
 }
 
 /// OneNote's Add button: a new tool of whatever kind, put on the end of the rack.
+/// Draw > Rotate (issue #544): a quarter turn either way or a mirror either way for the ink
+/// picked up, as one group about its middle. Offered only while ink is held.
+fn rotate_ink_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
+    let resp = big_menu(ui, Icon::Redo, crate::tl_id!("ui.rotate_ink"), crate::tl_id!("ui.rotate_ink_tip"), t);
+    use notecraft_ink::pick::Turn;
+    egui::Popup::menu(&resp).show(|ui| {
+        for (label, how) in [
+            (crate::tl_id!("ui.rotate_right_90"), Turn::Right),
+            (crate::tl_id!("ui.rotate_left_90"), Turn::Left),
+            (crate::tl_id!("ui.flip_horizontal"), Turn::FlipHorizontal),
+            (crate::tl_id!("ui.flip_vertical"), Turn::FlipVertical),
+        ] {
+            if ui.button(label).clicked() {
+                acts.push(Act::TurnInk(how));
+                ui.close();
+            }
+        }
+    });
+}
+
 fn add_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
     let resp = big_menu(ui, Icon::Plus, crate::tl_id!("ui.add"), crate::tl_id!("ui.put_another_tool_on_the_rack"), t);
     let id = egui::Id::new("ribbon-add-pen");
@@ -3803,10 +3834,12 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
 
 /// The eraser, racked beside the pens because that is where a hand reaches for it, and
 /// drawn like them: a pale sleeve a hand holds, and the worn rubber below it.
-fn eraser_on_rack(ui: &mut Ui, chosen: bool, t: &Tokens) -> egui::Response {
+fn eraser_on_rack(ui: &mut Ui, chosen: bool, eraser: crate::inkpad::Eraser, t: &Tokens, acts: &mut Vec<Act>) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(27.0, GROUP_H - 20.0), Sense::click());
     let enabled = ui.is_enabled();
     resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, chosen, crate::tl_id!("ui.eraser")));
+    // Which eraser it is, said where it is pointed at (issue #545).
+    let resp = resp.on_hover_text(crate::i18n::format_message_id("ui.eraser_now", &[("eraser", crate::tl!(eraser.label()))]));
     let painter = ui.painter_at(rect);
     if chosen {
         painter.rect_filled(rect, 4.0, crate::theme::mix(t.panel, t.accent, 0.10));
@@ -3841,9 +3874,40 @@ fn eraser_on_rack(ui: &mut Ui, chosen: bool, t: &Tokens) -> egui::Response {
         egui::Stroke::new(1.2, egui::Color32::from_white_alpha(120)),
     );
     painter.rect_stroke(whole, 2.0, egui::Stroke::new(0.9, body_edge), egui::StrokeKind::Inside);
-    if chosen {
-        chevron(&painter, egui::pos2(rect.center().x, rect.max.y - 5.0), t.muted);
+    // A point eraser shows its size on the rubber: a dot as wide as it, so the one in hand
+    // reads at a glance (issue #545). The stroke eraser keeps the plain block.
+    let dot = match eraser {
+        crate::inkpad::Eraser::Stroke => 0.0,
+        crate::inkpad::Eraser::Small => 1.4,
+        crate::inkpad::Eraser::Medium => 2.4,
+        crate::inkpad::Eraser::Large => 3.6,
+    };
+    if dot > 0.0 {
+        painter.circle_filled(egui::pos2(cx, (top + band) / 2.0), dot, body_edge);
     }
+    // The chevron on the eraser in hand opens its menu of erasers, as a pen's opens its
+    // editor; a right click opens the same menu (issue #545).
+    let mut menu_from = None;
+    if chosen {
+        let chev = egui::Rect::from_center_size(egui::pos2(rect.center().x, rect.max.y - 5.0), vec2(14.0, 11.0));
+        let hit = ui.interact(chev, resp.id.with("eraser-chevron"), Sense::click());
+        chevron(&painter, chev.center(), if hit.hovered() || hit.has_focus() { t.accent } else { t.muted });
+        hit.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, crate::tl_id!("ui.eraser_options")));
+        let hit = hit.on_hover_text(crate::tl_id!("ui.eraser_options"));
+        menu_from = Some(hit);
+    }
+    let pick = |ui: &mut Ui, acts: &mut Vec<Act>| {
+        for e in crate::inkpad::Eraser::ALL {
+            if ui.add(egui::Button::selectable(e == eraser, crate::tl!(e.label()))).clicked() {
+                acts.push(Act::InkEraser(e));
+                ui.close();
+            }
+        }
+    };
+    if let Some(hit) = &menu_from {
+        egui::Popup::menu(hit).show(|ui| pick(ui, acts));
+    }
+    floating::row_menu(&resp, |ui| pick(ui, acts));
     resp.on_hover_text(crate::tl_id!("ui.rub_out_whatever_the_pointer_passes_over"))
 }
 
@@ -4179,6 +4243,12 @@ fn draw_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         {
             acts.push(Act::InkPointer(Pointer::Lasso));
         }
+        // Offered while ink is picked up, as OneNote's picture tools are while a picture is: the
+        // tab is already wider than most windows, and a control greyed out the rest of the time
+        // would fold another group away for nothing.
+        if view.ink_held {
+            rotate_ink_menu(ui, t, acts);
+        }
         // OneNote has no such button: there, the pointer is always the caret until a pen
         // is picked up. Ours needs one, because picking ink up and writing words are both
         // things a plain click does, and only the person knows which they meant.
@@ -4196,7 +4266,7 @@ fn draw_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         }
     });
     group(ui, crate::tl_id!("ui.drawing_tools"), t, |ui| {
-        if eraser_on_rack(ui, view.pointer == Pointer::Erase, t).clicked() {
+        if eraser_on_rack(ui, view.pointer == Pointer::Erase, view.eraser, t, acts).clicked() {
             acts.push(Act::InkPointer(Pointer::Erase));
         }
         for (i, nib) in view.rack.iter().enumerate() {
@@ -4573,6 +4643,13 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             }
             if small_labeled_icon(ui, Icon::Page, crate::tl_id!("ui.new_quick_note"), crate::tl_id!("ui.window_quick_tip"), t).clicked() {
                 acts.push(Act::QuickNote);
+            }
+        });
+        // A second column, so the first keeps its rows above the group's name (issue #554).
+        rows(ui, |ui| {
+            if small_labeled_icon(ui, Icon::PageStack, crate::tl_id!("ui.new_docked_window"), crate::tl_id!("ui.new_docked_window_tip"), t).clicked()
+            {
+                acts.push(Act::NewDockedWindow);
             }
         });
     });

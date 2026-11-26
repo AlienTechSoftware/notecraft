@@ -51,6 +51,12 @@ impl NoteCraftApp {
     }
 
     pub(super) fn request_window(&mut self, quick: bool) {
+        self.request_window_with(quick, false);
+    }
+
+    /// Another window on the open page; `docked` asks it to dock itself to the side of the
+    /// screen as it opens, leaving this one where it is (View > New Docked Window, issue #554).
+    pub(super) fn request_window_with(&mut self, quick: bool, docked: bool) {
         if cfg!(any(target_arch = "wasm32", target_os = "android", target_os = "ios")) {
             self.say(crate::tl_id!("ui.window_native_only"));
             return;
@@ -62,7 +68,7 @@ impl NoteCraftApp {
         let p = self.current_page().map(|p| params(&[("path", &path_str(p))])).unwrap_or_default();
         let id = if quick { "window.quick-note" } else { "window.new" };
         match self.session.run(id, &if quick { Params::new() } else { p }) {
-            Ok(Output::Path(path)) => self.window_requests.push(crate::windows::Request { path, quick }),
+            Ok(Output::Path(path)) => self.window_requests.push(crate::windows::Request { path, quick, docked }),
             Ok(_) => {}
             Err(e) => self.fail(&e),
         }
@@ -80,6 +86,7 @@ impl NoteCraftApp {
             child.full_page = true;
             child.ribbon_collapsed = true;
         }
+        child.dock_when_shown = request.docked.then_some(0);
         if notecraft_store::tree::page_file(&request.path).is_some() {
             child.open_path(&path_str(&request.path));
             if child.status_is_error {

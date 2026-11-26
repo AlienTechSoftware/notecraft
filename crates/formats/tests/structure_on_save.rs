@@ -26,6 +26,20 @@ fn a_windows_folder_link_stays_a_link() {
     }
 }
 
+/// Issue #540: a web address made into a link when a space followed it keeps its link, with the
+/// address as both its words and its target, after the page is saved in either format.
+#[test]
+fn an_autolinked_web_address_stays_a_link() {
+    let line = "see [https://example.test/a](https://example.test/a)";
+    let spans = markdown::parse_inline(line);
+    let link = spans.iter().find(|s| s.link.is_some()).unwrap_or_else(|| panic!("no link in {line:?}: {spans:?}"));
+    assert_eq!((link.text.as_str(), link.link.as_deref()), ("https://example.test/a", Some("https://example.test/a")));
+    for format in PageFormat::ALL {
+        let blocks = vec![Block::Paragraph(spans.clone(), Vec::new())];
+        assert_eq!(reopened(format, &blocks, None).0, blocks, "{format:?}");
+    }
+}
+
 #[test]
 fn bullet_text_that_looks_like_a_task_box_stays_text() {
     for format in PageFormat::ALL {

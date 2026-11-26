@@ -1695,3 +1695,31 @@
 @id	ui.close_the_pinned_results	$$$Close the pinned results@@@
 @id	ui.pinned_results_about	$$$“{query}” in {scope}: {count} found@@@
 @id	ui.image_text_read_failed	$$$Could not read the text of the pictures. Try again.@@@
+@id	ui.eraser_stroke	$$$Stroke Eraser@@@
+@id	ui.eraser_small	$$$Small Eraser@@@
+@id	ui.eraser_medium	$$$Medium Eraser@@@
+@id	ui.eraser_large	$$$Large Eraser@@@
+@id	ui.eraser_now	$$$Eraser: {eraser}@@@
+@id	ui.eraser_options	$$$Eraser options@@@
+@id	ui.eraser_chosen	$$${eraser} in hand.@@@
+@id	ui.rotate_ink	$$$Rotate@@@
+@id	ui.rotate_ink_tip	$$$Turn or mirror the ink picked up@@@
+@id	ui.ink_turned	$$$The ink picked up is turned.@@@
+@id	ui.pick_up_ink_first	$$$Pick up some ink with Select or Lasso Select first.@@@
+@id	ui.new_docked_window	$$$New docked window@@@
+@id	ui.new_docked_window_tip	$$$Open this page in a second window docked to the side of the screen, and leave this window as it is@@@
+@id	ui.merge_into_another_section	$$$Merge into Another Section…@@@
+@id	ui.merge_section	$$$Merge Section@@@
+@id	ui.merge_section_into	$$$Merge the pages of {title} into:@@@
+@id	ui.merge_section_note	$$$They go after the pages there, in their order, and {title} is then taken away. A copy of it as it was goes to the recycle bin.@@@
+@id	ui.section_merged	$$${title} merged into {place}. Pages moved: {count}.@@@
+@id	ui.find_no_matches	$$$No matches on this page@@@
+@id	ui.find_count	$$${current} of {count}@@@
+@id	ui.find_on_page_hint	$$$Words to find@@@
+@id	ui.find_on_page_field	$$$Find on page:@@@
+@id	ui.find_previous	$$$Previous Match@@@
+@id	ui.find_previous_tip	$$$The place found before this one (Shift+F3)@@@
+@id	ui.find_next	$$$Next Match@@@
+@id	ui.find_next_tip	$$$The next place found (F3)@@@
+@id	ui.find_close	$$$Close Find@@@
+@id	ui.find_close_tip	$$$Close the find bar and go back to the page (Escape)@@@

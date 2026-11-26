@@ -5,6 +5,10 @@ Navigation, page zoom, selection and the page history belong to each window.
 Closing one note window leaves the others open. If the original window closes first,
 the application keeps a hidden event-loop window until the final note window closes.
 
+View > New docked window does the same and docks the new window to the side of the screen, as
+Dock to Desktop does, once the new window knows which screen it is on; the window it was opened
+from stays as it is (issue #554). Undocking the new window is View > Dock to desktop in it.
+
 View > New quick note (Ctrl+Shift+M) creates an ordinary untitled page and opens a compact
 editor. Notes autosave to the Quick Notes section in the Quick Notes notebook under the
 configured notebooks folder. They remain after closing the window. Quick Notes, under the

@@ -523,6 +523,61 @@ pub fn dir_of(spans: &[Span], page: Option<Dir>) -> Dir {
     notecraft_model::direction_in(&text_of(spans), page)
 }
 
+thread_local! {
+    /// The places found on the page (issue #526) in the block being drawn: drawn bytes, and
+    /// whether each is the current one. Set round one block's drawing by [`light_found`].
+    static FOUND: std::cell::RefCell<Vec<(usize, usize, bool)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Lights the places found in the block about to be drawn, until the guard is dropped.
+pub(crate) fn light_found(found: Vec<(usize, usize, bool)>) -> FoundGuard {
+    FOUND.with(|f| *f.borrow_mut() = found);
+    FoundGuard
+}
+
+/// Puts the lit places away when the block is drawn.
+pub(crate) struct FoundGuard;
+
+impl Drop for FoundGuard {
+    fn drop(&mut self) {
+        FOUND.with(|f| f.borrow_mut().clear());
+    }
+}
+
+/// Gives the places found a background behind their words, the current one stronger. Only
+/// when the job's words are the spans' words, so a place is never lit in the wrong spot.
+fn light_job(job: &mut egui::text::LayoutJob, spans: &[Span]) {
+    let found = FOUND.with(|f| f.borrow().clone());
+    if found.is_empty() || job.text != text_of(spans) {
+        return;
+    }
+    let mut sections = Vec::with_capacity(job.sections.len() + found.len() * 2);
+    for section in job.sections.drain(..) {
+        let range = section.byte_range.start.0..section.byte_range.end.0;
+        let mut cuts = vec![range.start, range.end];
+        cuts.extend(found.iter().flat_map(|(a, b, _)| [*a, *b]).filter(|c| *c > range.start && *c < range.end));
+        cuts.sort_unstable();
+        cuts.dedup();
+        for pair in cuts.windows(2) {
+            let mut piece = section.clone();
+            piece.byte_range = egui::text::ByteIndex(pair[0])..egui::text::ByteIndex(pair[1]);
+            if pair[0] != range.start {
+                piece.leading_space = 0.0;
+            }
+            if let Some((_, _, current)) = found.iter().find(|(a, b, _)| *a <= pair[0] && pair[1] <= *b) {
+                piece.format.background = if *current { FOUND_CURRENT } else { FOUND_OTHER };
+            }
+            sections.push(piece);
+        }
+    }
+    job.sections = sections;
+}
+
+/// The colours behind the places found: a pale yellow for each, an orange for the current one,
+/// see-through enough that the words read on a light or a dark page.
+pub(crate) const FOUND_OTHER: egui::Color32 = egui::Color32::from_rgba_premultiplied(110, 92, 0, 110);
+pub(crate) const FOUND_CURRENT: egui::Color32 = egui::Color32::from_rgba_premultiplied(170, 85, 0, 170);
+
 /// Draws spans as wrapped text. A paragraph with inline math flows text and formulas
 /// together; one without math is a single label. Right-to-left text hangs from the right
 /// edge, which is where a reader of Arabic or Hebrew starts.
@@ -572,6 +627,7 @@ fn draw_spans(
         }
         let mut job = job(ui, spans, size, color, tokens, page);
         crate::pagetext::floor_lines(ui.ctx(), &mut job, floor);
+        light_job(&mut job, spans);
         // Latin has no joins to stretch, so a left-to-right paragraph is justified the way
         // egui does it, by widening the spaces. The strength is about kashidas and has
         // nothing to say here.
@@ -1404,6 +1460,40 @@ mod tests {
         assert_eq!(super::picture_max_height("assets/photo.png", 1.0), 480.0);
         assert_eq!(super::picture_max_height("assets/photo.png", 0.5), 240.0);
         assert_eq!(super::picture_max_height("assets/printout.png", 1.0), 480.0);
+    }
+
+    /// Issue #526: the places found get a background behind just their words, the current one
+    /// its own, across the marks of a span; a job whose words are not the spans' is left alone.
+    #[test]
+    fn the_places_found_are_lit_behind_their_words() {
+        use egui::text::{ByteIndex, LayoutJob, TextFormat};
+        let span = |text: &str, bold: bool| notecraft_formats::markdown::Span { text: text.into(), bold, ..Default::default() };
+        let spans = vec![span("a parity ", false), span("marker", true), span(" and parity marker", false)];
+        let mut job = LayoutJob::default();
+        for s in &spans {
+            job.append(&s.text, 0.0, TextFormat { italics: s.bold, ..Default::default() });
+        }
+        let _lit = super::light_found(vec![(2, 15, true), (20, 33, false)]);
+        super::light_job(&mut job, &spans);
+        let lit: Vec<(String, egui::Color32)> = job
+            .sections
+            .iter()
+            .filter(|s| s.format.background != egui::Color32::TRANSPARENT)
+            .map(|s| (job.text[s.byte_range.start.0..s.byte_range.end.0].to_string(), s.format.background))
+            .collect();
+        assert_eq!(
+            lit,
+            [
+                ("parity ".to_string(), super::FOUND_CURRENT),
+                ("marker".to_string(), super::FOUND_CURRENT),
+                ("parity marker".to_string(), super::FOUND_OTHER)
+            ]
+        );
+        let _ = ByteIndex(0);
+        let mut other = LayoutJob::default();
+        other.append("something else", 0.0, TextFormat::default());
+        super::light_job(&mut other, &spans);
+        assert_eq!(other.sections.len(), 1, "words that are not the spans' are not lit");
     }
 
     #[test]
