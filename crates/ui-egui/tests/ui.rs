@@ -18515,6 +18515,21 @@ fn a_search_result_opens_with_its_words_selected_in_view() {
     assert_eq!(picked, "Distant Marker", "the words are selected, as written: {caret}");
     assert!(v.pointer("/page/scrolled").and_then(Value::as_f64).unwrap_or(0.0) > 200.0, "the page scrolled down to them: {v}");
     let _ = page;
+
+    // One long paragraph with the words at its end: the caret's line is shown, not the
+    // paragraph's middle.
+    let mut long = "Plenty of ordinary words to fill a very long paragraph indeed. ".repeat(400);
+    long.push_str("Then the Faraway Beacon at last.");
+    page_of(&mut h, &s, "One long paragraph", &long);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    search_for(&mut h, "faraway beacon");
+    h.get_all_by_label_contains("One long paragraph (").next().expect("the result").click();
+    settle(&mut h);
+    let v = look_at(&mut h);
+    let words = h.state().page_rect().expect("the page's words");
+    let scrolled = v.pointer("/page/scrolled").and_then(Value::as_f64).unwrap_or(0.0) as f32;
+    assert!(scrolled > words.height() * 0.7, "scrolled to the end of the paragraph, where the words are: {scrolled} of {}", words.height());
 }
 
 /// Issue #536: Ctrl+A takes the paragraph, again the note container it is in, and again the
