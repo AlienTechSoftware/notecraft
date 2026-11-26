@@ -2,6 +2,8 @@
 //! picture is shown, not what the page contains, so it stays off the undo history. The boxes come from
 //! the picture's `.lines` file, which the page's OCR writes beside the picture.
 
+use crate::floating;
+use crate::theme::Tokens;
 use egui::{Color32, Id, Pos2, Rect, Stroke, pos2, vec2};
 use std::path::{Path, PathBuf};
 
@@ -52,51 +54,28 @@ fn set_showing(ctx: &egui::Context, page: &Path, block: usize, on: bool) {
     ctx.data_mut(|d| d.insert_temp(overlay_id(page, block), on));
 }
 
-/// The (>) button on a picture, at its top right, and its menu. Returns nothing: the menu only changes
-/// the overlay state. "Detect text" is offered once the picture has a `.lines` file to show.
-pub fn menu(ui: &mut egui::Ui, picture_rect: Rect, page: &Path, block: usize, picture: &Path) {
+/// The (>) button above a picture's top left corner, and its menu. The menu only changes the overlay
+/// state. "Detect text" is offered once the picture has a `.lines` file to show.
+pub fn menu(ui: &mut egui::Ui, picture_rect: Rect, page: &Path, block: usize, picture: &Path, t: &Tokens) {
     // Above the picture's top left corner, in the row the frames use for their emoji.
     let at = picture_rect.left_top() + vec2(0.0, -24.0);
-    let open_id = Id::new(("image-text-open", page.to_path_buf(), block));
-    let ctx = ui.ctx().clone();
-    let is_open = |ctx: &egui::Context| ctx.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
-    egui::Area::new(Id::new(("image-text-menu", page.to_path_buf(), block))).fixed_pos(at).order(egui::Order::Foreground).show(&ctx, |ui| {
-        // A round button: the corner radius is more than half the size, so it is a circle.
-        let size = 20.0;
-        // i18n-exempt: ">" is the glyph of the button, not a word.
-        let button = egui::Button::new(">").corner_radius(egui::CornerRadius::same(255)).min_size(vec2(size, size));
-        let response = ui.add(button);
-        if response.clicked() {
-            let now = is_open(ui.ctx());
-            ui.ctx().data_mut(|d| d.insert_temp(open_id, !now));
-        }
-        if is_open(ui.ctx()) {
+    egui::Area::new(Id::new(("image-text-menu", page.to_path_buf(), block))).fixed_pos(at).order(egui::Order::Foreground).show(ui.ctx(), |ui| {
+        let opener = floating::round_button(ui, ">", 20.0, true);
+        floating::row_menu(&opener, |ui| {
             let boxes = read_boxes(&lines_path(picture));
-            let on = showing(ui.ctx(), page, block);
-            egui::Area::new(open_id.with("items")).fixed_pos(response.rect.left_bottom() + vec2(0.0, 2.0)).order(egui::Order::Foreground).show(
-                ui.ctx(),
-                |ui| {
-                    egui::Frame::popup(ui.style()).show(ui, |ui| {
-                        let mut close = false;
-                        if on {
-                            if ui.button(crate::tl_id!("ui.image_text_hide")).clicked() {
-                                set_showing(ui.ctx(), page, block, false);
-                                close = true;
-                            }
-                        } else if ui.add_enabled(!boxes.is_empty(), egui::Button::new(crate::tl_id!("ui.image_text_detect"))).clicked() {
-                            set_showing(ui.ctx(), page, block, true);
-                            close = true;
-                        }
-                        if boxes.is_empty() {
-                            ui.small(crate::tl_id!("ui.image_text_none_yet"));
-                        }
-                        if close {
-                            ui.ctx().data_mut(|d| d.insert_temp(open_id, false));
-                        }
-                    });
-                },
-            );
-        }
+            if showing(ui.ctx(), page, block) {
+                if floating::menu_row(ui, None, crate::tl_id!("ui.image_text_hide"), t).clicked() {
+                    set_showing(ui.ctx(), page, block, false);
+                    ui.close();
+                }
+            } else if floating::menu_row_if(ui, !boxes.is_empty(), None, crate::tl_id!("ui.image_text_detect"), t).clicked() {
+                set_showing(ui.ctx(), page, block, true);
+                ui.close();
+            }
+            if boxes.is_empty() {
+                ui.small(crate::tl_id!("ui.image_text_none_yet"));
+            }
+        });
     });
 }
 

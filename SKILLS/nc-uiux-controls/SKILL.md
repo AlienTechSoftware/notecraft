@@ -37,3 +37,12 @@ Test the exact pointer locations: center of the main action, center of the arrow
 the control, and a neighboring control. Add a regression test for every hit-testing bug that has
 occurred. Check light/dark themes and narrow windows. For embedded objects, test isolated,
 adjacent, and overlapping images, including selecting the back object and dragging it.
+
+## Reuse before writing a control
+
+Check these first, and extend them rather than copying their code:
+- `floating::round_button`: a true circle with one glyph (the (>) opener on pictures). The block header's
+  "+" (`block_emoji::header`) draws its own round button; move it to `round_button` when that code is next changed.
+- `floating::row_menu(&response, add)`: a menu opened from a control, with keyboard and Escape handling.
+- `floating::menu_row`, `menu_row_if`, `menu_row_danger`, `menu_separator`: the menu's rows.
+- `floating::point_menu`: a menu at a point on the page.

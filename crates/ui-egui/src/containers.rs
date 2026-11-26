@@ -746,7 +746,7 @@ pub fn show(
                         crate::image_text::paint(ui.painter(), object_rect, [w, h], &boxes, t.accent);
                     }
                 }
-                crate::image_text::menu(ui, object_rect, page_dir, *block, &picture);
+                crate::image_text::menu(ui, object_rect, page_dir, *block, &picture, t);
             }
             let image_rect = object_rect;
             let size = resize_handle_size;

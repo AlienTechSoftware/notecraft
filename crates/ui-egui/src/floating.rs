@@ -65,6 +65,13 @@ pub fn row_menu<R>(resp: &Response, add: impl FnOnce(&mut Ui) -> R) -> Option<eg
     shown
 }
 
+/// A round button, `size` points across, with one glyph in it: an opener such as a picture's (>). The
+/// corner radius is more than half the size, so it is a true circle at any size. `enabled` greys it.
+pub fn round_button(ui: &mut Ui, glyph: &str, size: f32, enabled: bool) -> Response {
+    let button = egui::Button::new(glyph).corner_radius(egui::CornerRadius::same(u8::MAX)).min_size(vec2(size, size));
+    ui.add_enabled(enabled, button)
+}
+
 /// Where a menu that opens at a point goes (issue #380): under and after the point, and, when that
 /// would run past the window, before it or above it instead, so its last row is never cut off by
 /// the window's edge. The first frame measures the menu; the next one places it.
