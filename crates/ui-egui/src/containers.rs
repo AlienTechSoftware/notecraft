@@ -614,6 +614,14 @@ pub fn show(
         let object_hits = ui.data(|d| d.get_temp::<Vec<(usize, Rect, String)>>(crate::preview::object_hits_id())).unwrap_or_default();
         for block in range.clone() {
             let Some(Block::Image { src, .. }) = blocks.get(block) else { continue };
+            // Only raster pictures get the (>). An attachment card is not a picture and keeps its own clicks.
+            let raster = std::path::Path::new(src)
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| ["png", "jpg", "jpeg", "gif", "webp", "bmp"].iter().any(|ext| e.eq_ignore_ascii_case(ext)));
+            if !raster {
+                continue;
+            }
             let Some(rect) = object_hits.iter().find(|(at, _, kind)| *at == block && kind == "image").map(|(_, rect, _)| *rect) else {
                 continue;
             };

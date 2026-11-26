@@ -58,7 +58,7 @@ fn set_showing(ctx: &egui::Context, page: &Path, block: usize, on: bool) {
 /// state. "Detect text" is offered once the picture has a `.lines` file to show.
 pub fn menu(ui: &mut egui::Ui, picture_rect: Rect, page: &Path, block: usize, picture: &Path, t: &Tokens) {
     // Above the picture's top left corner, in the row the frames use for their emoji.
-    let at = picture_rect.left_top() + vec2(6.0, 6.0);
+    let at = picture_rect.left_top() + vec2(0.0, -24.0);
     egui::Area::new(Id::new(("image-text-menu", page.to_path_buf(), block))).fixed_pos(at).order(egui::Order::Foreground).show(ui.ctx(), |ui| {
         let opener = floating::round_button(ui, ">", 20.0, true);
         floating::row_menu(&opener, |ui| {
