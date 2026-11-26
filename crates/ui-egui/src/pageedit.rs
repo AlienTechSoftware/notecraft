@@ -3176,6 +3176,15 @@ pub fn show_blocks(
                     }
                 }
             }
+            // Over a link the pointer is a hand, as in a browser: a click follows the link.
+            if resp.hovered()
+                && is_writable(&block)
+                && !contains_inline_image(&block)
+                && let Some(p) = resp.hover_pos()
+                && link_under(ui, &block, &resp, p, t, page, zoom).is_some()
+            {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
             if let Some(done) = out.task_set {
                 action = Some(Action::SetTask(i, done));
             } else if (resp.clicked() || resp.double_clicked()) && is_writable(&block) {

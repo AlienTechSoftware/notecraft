@@ -13907,9 +13907,14 @@ impl NoteCraftApp {
                 let places = link_places(self.session.tree());
                 let mut picked: Option<(String, String)> = None;
                 let usable = pageedit::linkable_address(address);
-                egui::Window::new(crate::tl_id!("ui.link")).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(
-                    ctx,
-                    |ui| {
+                egui::Window::new(crate::tl_id!("ui.link"))
+                    .collapsible(false)
+                    .resizable(false)
+                    .title_bar(false)
+                    .frame(modal_frame(&self.tokens))
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .show(ctx, |ui| {
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.link"));
                         egui::Grid::new("link-dialog").num_columns(2).spacing(vec2(8.0, 6.0)).show(ui, |ui| {
                             ui.label(crate::tl_id!("ui.text_to_display"));
                             let words = ui.add(egui::TextEdit::singleline(text).desired_width(320.0));
@@ -13986,8 +13991,7 @@ impl NoteCraftApp {
                                 go = true;
                             }
                         });
-                    },
-                );
+                    });
                 // A place picked: its link is the address, and its name the words when there are none.
                 if let Some((link, title)) = picked {
                     *address = link;
