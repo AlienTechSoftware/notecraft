@@ -54,3 +54,8 @@ Shared controls in `crates/ui-egui/src/floating.rs`:
 - `menu_row`, `menu_row_if`, `menu_row_danger`, `menu_separator`: the rows of a menu.
 - `point_menu`: a menu at a point on the page.
 - `action_menu` (when present): a menu that returns the chosen action.
+
+## Glyph decisions
+
+- **Text recognition (OCR) opener on a picture: 👁️.** Considered 🔤 (characters) and chose 👁️ ("seeing"
+  the text): it reads as recognising text in the picture. The block's emoji opener is 😀.

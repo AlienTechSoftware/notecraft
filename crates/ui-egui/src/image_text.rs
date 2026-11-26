@@ -1,6 +1,6 @@
 //! The (>) menu on a picture: detected text as an overlay. This is view state only: it changes how the
 //! picture is shown, not what the page contains, so it stays off the undo history. The boxes come from
-//! the picture's `.lines` file, which the page's OCR writes beside the picture.
+//! the picture's `.ocr.json` file, which the page's OCR writes beside the picture.
 
 use crate::floating;
 use crate::ribbon::Act;
@@ -8,28 +8,29 @@ use crate::theme::Tokens;
 use egui::{Color32, Id, Pos2, Rect, Stroke, pos2, vec2};
 use std::path::{Path, PathBuf};
 
-/// The `.lines` file beside a picture: its full file name with `.lines` added.
-pub fn lines_path(picture: &Path) -> PathBuf {
-    let name = picture.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    picture.with_file_name(format!("{name}.lines"))
-}
-
-/// The boxes in a `.lines` file. Each row is `x0,y0,...,y3<TAB>text`, with the four corners in picture
-/// pixels. A row that cannot be read is skipped.
-pub fn read_boxes(lines: &Path) -> Vec<[[f32; 2]; 4]> {
-    let Ok(text) = std::fs::read_to_string(lines) else { return Vec::new() };
-    text.lines()
-        .filter_map(|row| {
-            let coords = row.split('\t').next()?;
-            let v: Vec<f32> = coords.split(',').map(|s| s.trim().parse::<f32>()).collect::<Result<_, _>>().ok()?;
-            if v.len() != 8 || v.iter().any(|x| !x.is_finite()) {
-                return None;
-            }
-            Some([[v[0], v[1]], [v[2], v[3]], [v[4], v[5]], [v[6], v[7]]])
+/// The boxes of a picture's saved OCR file (`<picture>.ocr.json`), in picture pixels: four corners
+/// each. Empty when the picture has no saved file.
+pub fn read_boxes(picture: &Path) -> Vec<[[f32; 2]; 4]> {
+    let Ok(text) = std::fs::read_to_string(ocr_json_path(picture)) else { return Vec::new() };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(text.trim_start_matches('\u{feff}')) else { return Vec::new() };
+    let Some(lines) = value.get("lines").and_then(|l| l.as_array()) else { return Vec::new() };
+    lines
+        .iter()
+        .filter_map(|item| {
+            let corners: Option<Vec<[f32; 2]>> =
+                item.get("polygon")?.as_array()?.iter().map(|c| Some([c.get(0)?.as_f64()? as f32, c.get(1)?.as_f64()? as f32])).collect();
+            let corners = corners.filter(|c| c.len() == 4 && c.iter().all(|p| p[0].is_finite() && p[1].is_finite()))?;
+            Some([corners[0], corners[1], corners[2], corners[3]])
         })
         .collect()
 }
 
+/// The OCR file beside a picture: `<picture>.ocr.json`.
+fn ocr_json_path(picture: &Path) -> PathBuf {
+    let mut name = picture.file_name().unwrap_or_default().to_os_string();
+    name.push(".ocr.json");
+    picture.with_file_name(name)
+}
 /// Draws the boxes over a picture shown at `rect`. `size` is the picture's size in pixels.
 pub fn paint(painter: &egui::Painter, rect: Rect, size: [u32; 2], boxes: &[[[f32; 2]; 4]], colour: Color32) {
     let sx = rect.width() / size[0].max(1) as f32;
@@ -66,9 +67,9 @@ pub fn menu(ui: &mut egui::Ui, picture_rect: Rect, page: &Path, block: usize, pi
         return;
     }
     egui::Area::new(Id::new(("image-text-menu", page.to_path_buf(), block))).fixed_pos(at).order(egui::Order::Foreground).show(ui.ctx(), |ui| {
-        let opener = floating::round_button(ui, ">", 20.0, true);
+        let opener = floating::round_button(ui, "👁️", 20.0, true);
         floating::button_menu(&opener, |ui| {
-            let boxes = read_boxes(&lines_path(picture));
+            let boxes = read_boxes(picture);
             if showing(ui.ctx(), page, block) {
                 if floating::menu_row(ui, None, crate::tl_id!("ui.image_text_hide"), t).clicked() {
                     set_showing(ui.ctx(), page, block, false);
@@ -102,20 +103,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_lines_file_gives_one_box_per_row_and_skips_bad_rows() {
+    fn the_boxes_are_the_polygons_of_the_saved_ocr_file() {
         let dir = std::env::temp_dir().join(format!("nc-image-text-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("dir");
-        let file = dir.join("p.png.lines");
-        std::fs::write(&file, "1,2,3,2,3,4,1,4\tRye loaf 6.00\nnot,a,box\tx\n20,50,100,50,100,70,20,70\tFlat white\n").expect("write");
-        let boxes = read_boxes(&file);
-        assert_eq!(boxes.len(), 2, "the bad row is skipped");
+        let picture = dir.join("p.png");
+        std::fs::write(&picture, b"picture").expect("picture");
+        let saved = serde_json::json!({
+            "schema": "notecraft.ocr", "version": 1,
+            "picture": { "name": "p.png", "sha256": "x", "width": 4, "height": 4 },
+            "produced": { "at": 0, "by": "test" }, "text": "Rye loaf 6.00\nFlat white",
+            "lines": [
+                { "text": "Rye loaf 6.00", "polygon": [[1.0, 2.0], [3.0, 2.0], [3.0, 4.0], [1.0, 4.0]], "confidence": null },
+                { "text": "bad", "polygon": [[1.0, 2.0]], "confidence": null },
+            ],
+            "bounds": null, "alt": null,
+        });
+        std::fs::write(dir.join("p.png.ocr.json"), saved.to_string()).expect("saved file");
+        let boxes = read_boxes(&picture);
+        assert_eq!(boxes.len(), 1, "the malformed line is skipped");
         assert_eq!(boxes[0], [[1.0, 2.0], [3.0, 2.0], [3.0, 4.0], [1.0, 4.0]]);
         std::fs::remove_dir_all(&dir).expect("clean up");
     }
-
     #[test]
     fn the_lines_file_sits_beside_its_picture() {
-        assert_eq!(lines_path(Path::new("/page/assets/x.png")), PathBuf::from("/page/assets/x.png.lines"));
+        assert_eq!(ocr_json_path(Path::new("/page/assets/x.png")), PathBuf::from("/page/assets/x.png.ocr.json"));
     }
 
     #[test]

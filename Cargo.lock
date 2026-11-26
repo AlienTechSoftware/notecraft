@@ -3786,6 +3786,8 @@ dependencies = [
  "image",
  "ocrs",
  "rten",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -3837,6 +3839,7 @@ dependencies = [
  "notecraft-ink",
  "notecraft-model",
  "notecraft-search",
+ "serde_json",
 ]
 
 [[package]]

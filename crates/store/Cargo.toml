@@ -11,6 +11,7 @@ description = "NoteCraft store: notebooks as plain folders. Reading and writing 
 workspace = true
 
 [dependencies]
+serde_json = { workspace = true }
 notecraft-model = { workspace = true }
 notecraft-formats = { workspace = true }
 notecraft-search = { workspace = true }

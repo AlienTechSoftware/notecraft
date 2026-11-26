@@ -760,7 +760,7 @@ pub fn show(
             {
                 let picture = page_dir.join(src);
                 if crate::image_text::showing(ui.ctx(), page_dir, *block) {
-                    let boxes = crate::image_text::read_boxes(&crate::image_text::lines_path(&picture));
+                    let boxes = crate::image_text::read_boxes(&picture);
                     if let Ok((w, h)) = image::image_dimensions(&picture) {
                         crate::image_text::paint(ui.painter(), object_rect, [w, h], &boxes, t.accent);
                     }

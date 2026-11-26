@@ -74,7 +74,7 @@ pub enum Source {
     Page,
     /// Alt text, read from the `alt` of the picture in the page markup.
     Alt,
-    /// Text read from a picture by OCR (`<picture>.txt`).
+    /// Text read from a picture by OCR (`<picture>.ocr.json`).
     Picture,
 }
 
@@ -100,30 +100,41 @@ struct Piece {
     title: String,
     source: Source,
     text: String,
-    /// For picture text: the picture and its lines with their boxes (from the `.lines` file).
+    /// For picture text: the picture and its lines with their boxes (from the `.ocr.json` file).
     picture: Option<PathBuf>,
     lines: Vec<(String, Quad)>,
 }
 
-/// Reads a picture's `.lines` file: one record per line, `x0,y0,...,y3<TAB>text`.
-fn read_lines_file(path: &Path) -> Vec<(String, Quad)> {
-    let Ok(text) = std::fs::read_to_string(path) else { return Vec::new() };
-    text.lines()
-        .filter_map(|record| {
-            let (coords, words) = record.split_once('\t')?;
-            // A record with a missing, unreadable or non-finite coordinate is not a box: skip it.
-            let nums: Vec<f32> = coords.split(',').filter_map(|n| n.parse().ok()).filter(|n: &f32| n.is_finite()).collect();
-            if nums.len() != 8 {
-                return None;
-            }
-            let quad = [[nums[0], nums[1]], [nums[2], nums[3]], [nums[4], nums[5]], [nums[6], nums[7]]];
-            Some((words.to_string(), quad))
-        })
-        .collect()
+/// Reads a picture's `<picture>.ocr.json` (schema notecraft.ocr): its text, and each line with its
+/// polygon. `None` when the file is missing or is not a file of this format.
+fn read_ocr_json(path: &Path) -> Option<(String, Vec<(String, Quad)>)> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
+    if value.get("schema")?.as_str()? != "notecraft.ocr" || value.get("version")?.as_u64()? != 1 {
+        return None;
+    }
+    let mut lines = Vec::new();
+    for item in value.get("lines")?.as_array()? {
+        let polygon = item.get("polygon")?.as_array()?;
+        // A line without four finite corners is not a box: it is skipped.
+        let corners: Option<Vec<[f32; 2]>> = polygon
+            .iter()
+            .map(|c| {
+                let xy = c.as_array()?;
+                let (x, y) = (xy.first()?.as_f64()? as f32, xy.get(1)?.as_f64()? as f32);
+                (x.is_finite() && y.is_finite()).then_some([x, y])
+            })
+            .collect();
+        let Some(corners) = corners.filter(|c| c.len() == 4) else { continue };
+        let quad = [corners[0], corners[1], corners[2], corners[3]];
+        lines.push((item.get("text")?.as_str()?.to_string(), quad));
+    }
+    let text = value.get("text")?.as_str()?.to_string();
+    Some((text, lines))
 }
 
 /// The texts of one page: its own text, then each picture's alt text and OCR text. A picture's
-/// companion files sit in the page's `assets` folder, named after the picture.
+/// OCR file, `<picture>.ocr.json`, sits in the page's `assets` folder, named after the picture.
 fn pieces_of(dir: &Path) -> Vec<Piece> {
     let title = read_node(dir).map(|i| i.title).unwrap_or_default();
     let mut out = Vec::new();
@@ -150,19 +161,20 @@ fn pieces_of(dir: &Path) -> Vec<Piece> {
     names.sort();
     for file in names {
         let Some(name) = file.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
-        let Some(picture) = name.strip_suffix(".txt") else { continue };
-        let source = Source::Picture;
-        // Only companions of a picture that is there: a text file of the user's own is not one.
+        let Some(picture) = name.strip_suffix(".ocr.json") else { continue };
+        // Only the OCR file of a picture that is there: a file of the user's own is not one.
         if !assets.join(picture).is_file() {
             continue;
         }
-        if let Ok(text) = std::fs::read_to_string(&file) {
-            let (picture, lines) = if source == Source::Picture {
-                (Some(assets.join(picture)), read_lines_file(&assets.join(format!("{picture}.lines"))))
-            } else {
-                (None, Vec::new())
-            };
-            out.push(Piece { page: dir.to_path_buf(), title: title.clone(), source, text, picture, lines });
+        if let Some((text, lines)) = read_ocr_json(&file) {
+            out.push(Piece {
+                page: dir.to_path_buf(),
+                title: title.clone(),
+                source: Source::Picture,
+                text,
+                picture: Some(assets.join(picture)),
+                lines,
+            });
         }
     }
     out
@@ -393,6 +405,24 @@ fn snippet_around(text: &str, wanted: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// The OCR file a picture would have: its lines, each with a four-corner polygon `[x0,y0,...,y3]`.
+    fn ocr_json_for(lines: &[(&str, serde_json::Value)]) -> String {
+        let items: Vec<serde_json::Value> =
+            lines.iter().map(|(text, polygon)| serde_json::json!({ "text": text, "polygon": polygon, "confidence": null })).collect();
+        let joined: Vec<&str> = lines.iter().map(|(text, _)| *text).collect();
+        serde_json::json!({
+            "schema": "notecraft.ocr", "version": 1,
+            "picture": { "name": "receipt.png", "sha256": "test", "width": 0, "height": 0 },
+            "produced": { "at": 0, "by": "test" },
+            "text": joined.join("\n"), "lines": items, "bounds": null, "alt": null,
+        })
+        .to_string()
+    }
+
+    fn corners(c: [f32; 8]) -> serde_json::Value {
+        serde_json::json!([[c[0], c[1]], [c[2], c[3]], [c[4], c[5]], [c[6], c[7]]])
+    }
+
     use super::*;
     use crate::ops;
     use crate::page::save_body;
@@ -504,19 +534,13 @@ mod tests {
         std::fs::create_dir_all(&assets).expect("assets");
         std::fs::write(assets.join("receipt.png"), b"not really a picture").expect("picture");
         std::fs::write(
-            assets.join("receipt.png.txt"),
-            "Sourdough 6.00
-Flat white 4.50
-",
+            assets.join("receipt.png.ocr.json"),
+            ocr_json_for(&[
+                ("Sourdough 6.00", corners([10.0, 20.0, 110.0, 20.0, 110.0, 40.0, 10.0, 40.0])),
+                ("Flat white 4.50", corners([20.0, 50.0, 100.0, 50.0, 100.0, 70.0, 20.0, 70.0])),
+            ]),
         )
-        .expect("ocr text");
-        std::fs::write(
-            assets.join("receipt.png.lines"),
-            "10,20,110,20,110,40,10,40	Sourdough 6.00
-20,50,100,50,100,70,20,70	Flat white 4.50
-",
-        )
-        .expect("boxes");
+        .expect("ocr file");
         std::fs::write(assets.join("notes.txt"), "a text file the user wrote").expect("users own file");
         (root, a)
     }
@@ -593,11 +617,17 @@ Flat white 4.50
         let t = TempDir::new("search-malformed-lines");
         let (root, page) = picture_fixture(&t);
         let assets = page.join("assets");
-        std::fs::write(assets.join("receipt.png.lines"), "NaN,0,110,0,110,40,10,40\tSourdough\ninf,0,1,0,1,1,0,1\tSourdough\n1,2,3\tSourdough\n")
-            .expect("bad boxes");
+        std::fs::write(
+            assets.join("receipt.png.ocr.json"),
+            ocr_json_for(&[
+                ("Sourdough", corners([0.0, 0.0, 110.0, 0.0, 110.0, 40.0, 10.0, 40.0])),
+                ("Sourdough", serde_json::json!([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])),
+            ]),
+        )
+        .expect("bad ocr file");
         let hits = ranked(&root, &[], "sourdough", 10);
         let hit = hits.iter().find(|h| h.path == page).expect("the page is still found from its text");
-        assert!(hit.boxes.is_empty(), "no record with a bad coordinate becomes a box: {:?}", hit.boxes);
+        assert_eq!(hit.boxes.len(), 1, "the valid line is a box, the malformed one is not: {:?}", hit.boxes);
     }
 
     #[test]
@@ -647,7 +677,7 @@ Flat white 4.50
         let t = TempDir::new("search-ranked-derived");
         let (root, page) = picture_fixture(&t);
         assert_eq!(ranked(&root, &[], "sourdough", 10).len(), 1);
-        std::fs::remove_file(page.join("assets").join("receipt.png.txt")).expect("the companion exists");
+        std::fs::remove_file(page.join("assets").join("receipt.png.ocr.json")).expect("the companion exists");
         assert!(ranked(&root, &[], "sourdough", 10).is_empty(), "the index is rebuilt from the files that remain");
     }
 
@@ -740,9 +770,14 @@ Flat white 4.50
         age(&root, 60);
         assert_eq!(ranked(&root, &[], "sourdough", 10).len(), 1);
         let assets = page.join("assets");
-        std::fs::write(assets.join("receipt.png.txt"), "Rye loaf 6.00\nFlat white 4.50\n").expect("new ocr text");
-        std::fs::write(assets.join("receipt.png.lines"), "1,2,3,2,3,4,1,4\tRye loaf 6.00\n20,50,100,50,100,70,20,70\tFlat white 4.50\n")
-            .expect("new boxes");
+        std::fs::write(
+            assets.join("receipt.png.ocr.json"),
+            ocr_json_for(&[
+                ("Rye loaf 6.00", corners([1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 1.0, 4.0])),
+                ("Flat white 4.50", corners([20.0, 50.0, 100.0, 50.0, 100.0, 70.0, 20.0, 70.0])),
+            ]),
+        )
+        .expect("new ocr file");
         age(&assets, 30);
         assert!(ranked(&root, &[], "sourdough", 10).is_empty(), "the old picture text is gone");
         let hits = ranked(&root, &[], "rye", 10);
