@@ -2,9 +2,10 @@
 //! across the top of the page, as OneNote 2016 shows them. The tree in the side panel stays,
 //! so this is a second way to move between sections, not a replacement for the first.
 //!
-//! A section group is a tab of its own that opens a list of what is inside it. A row of tabs
-//! wider than the page scrolls sideways, and in a right-to-left interface it runs from the
-//! right.
+//! A section group is a tab of its own. One click on it goes into the group (issue #511): the row
+//! then shows the group's own sections and groups, after a tab that goes back up, and the group's
+//! section left open last is opened again. A row of tabs wider than the page scrolls sideways, and
+//! in a right-to-left interface it runs from the right.
 
 use crate::theme::Tokens;
 use egui::{Sense, Ui, vec2};
@@ -22,7 +23,22 @@ pub struct Tab {
     pub inside: Option<Vec<Tab>>,
 }
 
-/// The tabs for a notebook: its sections and section groups, in the notebook's order.
+/// What a click in the row of tabs asked for.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Pick {
+    /// A section, to open.
+    Section(PathBuf),
+    /// A section group, to go into (issue #511).
+    Group(PathBuf),
+    /// Back up out of the group the row shows, to the one around it or the notebook.
+    Up,
+    /// A tab dragged to another place in the row (issue #555): before or after the tab it was
+    /// let go on.
+    Move(PathBuf, crate::navdrag::Drop),
+}
+
+/// The tabs for a notebook, or for a section group gone into: its sections and section groups,
+/// in their order.
 pub fn tabs(notebook: &Node) -> Vec<Tab> {
     notebook
         .children
@@ -72,7 +88,7 @@ fn tab(ui: &mut Ui, label: &str, name: &str, group: bool, colour: egui::Color32,
     let chevron = if group { 14.0 } else { 0.0 };
     let width = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.text).size().x + 26.0 + chevron;
     let height = if current { 28.0 } else { 25.0 };
-    let (rect, resp) = ui.allocate_exact_size(vec2(width.clamp(60.0, 240.0), 28.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(width.clamp(60.0, 240.0), 28.0), Sense::click_and_drag());
     let body = egui::Rect::from_min_max(egui::pos2(rect.min.x, rect.max.y - height), rect.max);
     let fill = if current { crate::theme::mix(t.editor, colour, 0.28) } else { crate::theme::mix(t.panel, colour, 0.16) };
     let radius = egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 };
@@ -112,12 +128,24 @@ fn tab(ui: &mut Ui, label: &str, name: &str, group: bool, colour: egui::Color32,
     resp.on_hover_text(label)
 }
 
-/// Draws the row of tabs. `here` is the open page's section. Returns the section chosen.
+/// Draws the row of tabs. `here` is the open page's section. `all` is every tab of the notebook,
+/// for the list at the end of the row; `tabs` the ones the row shows, the notebook's or a
+/// group's. `up` names what is above a group gone into, for the tab that goes back there.
 ///
 /// Issue #369: a button at the end of the row lists every section and group, so a tab that has
 /// scrolled out of sight is still one click away, and the open section's tab is scrolled into
 /// view whenever the open section changes.
-pub fn show(ui: &mut Ui, tabs: &[Tab], here: Option<&Path>, t: &Tokens) -> Option<PathBuf> {
+/// `menu` draws a section's or a group's own menu, for a right click on its tab or Shift+F10 on
+/// it (issue #556): the same menu its row in the notebooks has.
+pub fn show(
+    ui: &mut Ui,
+    tabs: &[Tab],
+    all: &[Tab],
+    up: Option<&str>,
+    here: Option<&Path>,
+    t: &Tokens,
+    menu: &mut dyn FnMut(&mut Ui, &Path),
+) -> Option<Pick> {
     let mut chosen = None;
     let rtl = rtl_interface();
     let layout = if rtl { egui::Layout::right_to_left(egui::Align::Max) } else { egui::Layout::left_to_right(egui::Align::Max) };
@@ -133,48 +161,86 @@ pub fn show(ui: &mut Ui, tabs: &[Tab], here: Option<&Path>, t: &Tokens) -> Optio
         })
     };
     ui.with_layout(outer, |ui| {
-        if let Some(picked) = overflow(ui, tabs, here, t) {
-            chosen = Some(picked);
+        if let Some(picked) = overflow(ui, all, here, t) {
+            chosen = Some(Pick::Section(picked));
         }
         ui.add_space(4.0);
         egui::ScrollArea::horizontal().id_salt("section-tabs").auto_shrink([false, true]).show(ui, |ui| {
             ui.with_layout(layout, |ui| {
                 ui.spacing_mut().item_spacing.x = 3.0;
-                for t_ in tabs {
-                    let colour = colour_of(ui, t_.colour, t);
-                    match &t_.inside {
-                        None => {
-                            let current = here == Some(t_.path.as_path());
-                            let resp = tab(ui, &t_.title, &t_.title, false, colour, current, t);
-                            if current && moved {
-                                resp.scroll_to_me(None);
-                            }
-                            if resp.clicked() {
-                                chosen = Some(t_.path.clone());
-                            }
-                        }
-                        Some(inside) => {
-                            let current = here.is_some_and(|h| h.starts_with(&t_.path));
-                            let name = crate::i18n::format_message_id("ui.section_group_tab", &[("name", &t_.title)]);
-                            let resp = tab(ui, &t_.title, &name, true, colour, current, t);
-                            if current && moved {
-                                resp.scroll_to_me(None);
-                            }
-                            let popup = egui::Popup::menu(&resp).id(ui.id().with(("group-tab", &t_.path)));
-                            popup.show(|ui| {
-                                if inside.is_empty() {
-                                    ui.label(crate::tl_id!("ui.this_group_has_no_sections"));
-                                }
-                                for s in inside {
-                                    if ui.selectable_label(here == Some(s.path.as_path()), &s.title).clicked() {
-                                        chosen = Some(s.path.clone());
-                                        ui.close();
-                                    }
-                                }
-                            });
-                        }
+                // Inside a group: first a way back up, named for where it goes.
+                if let Some(above) = up {
+                    let label = format!("\u{2039} {above}");
+                    let name = crate::i18n::format_message_id("ui.up_to_name", &[("name", above)]);
+                    if tab(ui, &label, &name, false, t.faint, false, t).clicked() {
+                        chosen = Some(Pick::Up);
                     }
                 }
+                // Issue #555: a tab dragged along the row is moved there when let go, with a bar
+                // where it would land while it is carried.
+                let carried_id = ui.id().with("tab-carried");
+                let mut carried: Option<PathBuf> = ui.data(|d| d.get_temp::<PathBuf>(carried_id));
+                let pointer = ui.ctx().pointer_latest_pos();
+                let mut landing: Option<crate::navdrag::Drop> = None;
+                let mut let_go = false;
+                for t_ in tabs {
+                    let colour = colour_of(ui, t_.colour, t);
+                    let (current, resp) = match &t_.inside {
+                        None => {
+                            let current = here == Some(t_.path.as_path());
+                            (current, tab(ui, &t_.title, &t_.title, false, colour, current, t))
+                        }
+                        Some(_) => {
+                            let current = here.is_some_and(|h| h.starts_with(&t_.path));
+                            let name = crate::i18n::format_message_id("ui.section_group_tab", &[("name", &t_.title)]);
+                            (current, tab(ui, &t_.title, &name, true, colour, current, t))
+                        }
+                    };
+                    if current && moved {
+                        resp.scroll_to_me(None);
+                    }
+                    if resp.clicked() {
+                        chosen = Some(if t_.inside.is_some() { Pick::Group(t_.path.clone()) } else { Pick::Section(t_.path.clone()) });
+                    }
+                    if resp.drag_started() {
+                        carried = Some(t_.path.clone());
+                    }
+                    if resp.drag_stopped() && carried.as_deref() == Some(t_.path.as_path()) {
+                        let_go = true;
+                    }
+                    // Over another tab while one is carried: before it or after it, by the half
+                    // of the tab the pointer is in, read the way the row runs.
+                    // Only a tab that can be seen: one scrolled out of the row is no place to land.
+                    let visible = resp.rect.intersect(ui.clip_rect());
+                    if let (Some(from), Some(at)) = (carried.as_ref(), pointer)
+                        && *from != t_.path
+                        && visible.is_positive()
+                        && visible.x_range().contains(at.x)
+                        && visible.y_range().expand(12.0).contains(at.y)
+                    {
+                        let first_half = at.x < resp.rect.center().x;
+                        let before = first_half != rtl;
+                        let x = if first_half { resp.rect.left() - 1.5 } else { resp.rect.right() + 1.5 };
+                        ui.painter()
+                            .line_segment([egui::pos2(x, resp.rect.top()), egui::pos2(x, resp.rect.bottom())], egui::Stroke::new(2.5, t.accent));
+                        landing =
+                            Some(if before { crate::navdrag::Drop::Before(t_.path.clone()) } else { crate::navdrag::Drop::After(t_.path.clone()) });
+                    }
+                    crate::floating::row_menu(&resp, |ui| menu(ui, &t_.path));
+                }
+                if let_go {
+                    if let (Some(from), Some(to)) = (carried.take(), landing) {
+                        chosen = Some(Pick::Move(from, to));
+                    }
+                } else if !ui.input(|i| i.pointer.any_down()) {
+                    carried = None;
+                }
+                ui.data_mut(|d| match &carried {
+                    Some(path) => {
+                        d.insert_temp(carried_id, path.clone());
+                    }
+                    None => d.remove::<PathBuf>(carried_id),
+                });
             });
         });
     });

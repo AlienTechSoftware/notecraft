@@ -37,6 +37,12 @@ pub fn stamp(dir: &Path) -> Option<i64> {
     notecraft_model::time::secs_from_iso(&value)
 }
 
+/// When the page at `dir` was last changed, as Recent Edits reads it: its own stamp, or its
+/// file's modified time when it has none. Seconds since 1970 UTC.
+pub fn changed_at(dir: &Path) -> Option<i64> {
+    stamp(dir).or_else(|| file_time(dir))
+}
+
 fn file_time(dir: &Path) -> Option<i64> {
     let (_, file) = page_file(dir)?;
     let modified = std::fs::metadata(file).ok()?.modified().ok()?;

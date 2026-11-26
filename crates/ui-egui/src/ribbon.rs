@@ -246,6 +246,9 @@ pub enum Act {
     /// words. Its own act rather than `Clipboard("paste")`, because a picture is not a
     /// clipboard operation on the text at all.
     Paste,
+    /// Paste > Keep text only, and Ctrl+Shift+V (issue #535): the clipboard's text alone, as if
+    /// typed, with none of the formatting it came with.
+    PastePlain,
     /// More or less indent on a list item.
     Indent(bool),
     /// Which way the line the caret is in reads. `None` lets the words decide again.
@@ -283,6 +286,8 @@ pub enum Act {
     ToggleReplay,
     /// View > Tabs layout: sections as tabs across the top of the page, or not (#268, #33).
     ToggleTabsLayout,
+    /// View > Page List on the Right, in the tabs layout (issue #534).
+    TogglePagesRight,
     /// View > Immersive Reader: the page as plain, large reading (issue #299).
     ImmersiveReader,
     /// Open the Page Templates pane: new pages from templates, and this page kept as one
@@ -660,6 +665,8 @@ pub struct View<'a> {
     pub replaying: bool,
     /// True while View > Tabs layout shows the sections as tabs (issues #268, #33).
     pub tabs_layout: bool,
+    /// True while the tabs layout has the list of pages on the right (issue #534).
+    pub pages_right: bool,
     /// True while the caret is in a table, which is when the Table tab is offered.
     pub in_table: bool,
     /// Whether the table the caret is in is drawn with lines round its cells.
@@ -707,6 +714,14 @@ pub struct View<'a> {
     /// they are all the same (issue #260). `Some(None)` is Automatic or No Colour.
     pub text_colour: Option<Option<&'a str>>,
     pub text_highlight: Option<Option<&'a str>>,
+    /// The selected words use more than one font colour, or highlight: the pickers say Mixed
+    /// rather than Automatic or No colour (issue #373).
+    pub text_colour_mixed: bool,
+    pub text_highlight_mixed: bool,
+    /// Whether there is a page open for editing. Without one (no page, or a locked page) Home's
+    /// text controls are shown as unavailable (issue #373), rather than looking ready and doing
+    /// nothing; with one and no caret they set what the next words typed look like.
+    pub text_editable: bool,
 }
 
 impl View<'_> {
@@ -1058,18 +1073,130 @@ fn big_menu(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Tokens) -> egui
     big_inner(ui, icon, label, tip, true, false, t)
 }
 
+/// The picture on a split button: one of the ribbon's icons, or one of the marks.
+#[derive(Clone, Copy)]
+enum SplitIcon {
+    Icon(Icon),
+    Mark(Mark),
+}
+
+/// A big button with two parts, as Office draws one (issue #374): the picture does the usual
+/// thing at once, and the name with its chevron opens the other ways. Each part is a button of
+/// its own, so a pointer, the keyboard and a screen reader can tell them apart: the second is
+/// named "<name> options". Hovering one part lights it and draws the line between the two.
+/// Returns the action part and the part that opens the menu.
+// i18n-ui-text: label,tip
+fn big_split(ui: &mut Ui, icon: impl Into<SplitIconArg>, label: &str, tip: &str, t: &Tokens) -> (egui::Response, egui::Response) {
+    let icon = icon.into().0;
+    let label = crate::tl!(label);
+    let tip = crate::tl!(tip);
+    let font = egui::FontId::proportional(12.0);
+    let widest = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.text).size().x;
+    let (rect, _) = ui.allocate_exact_size(vec2(BIG.max(widest + BIG_PAD), GROUP_H - 18.0), Sense::hover());
+    let split_y = rect.min.y + ICON_Y + 15.0;
+    let (top, bottom) =
+        (Rect::from_min_max(rect.min, egui::pos2(rect.max.x, split_y)), Rect::from_min_max(egui::pos2(rect.min.x, split_y), rect.max));
+    let main = ui.interact(top, ui.id().with((label, "split-main")), Sense::click());
+    let open = ui.interact(bottom, ui.id().with((label, "split-open")), Sense::click());
+    let painter = ui.painter_at(rect);
+    let enabled = ui.is_enabled();
+    let lit = |r: &egui::Response| r.hovered() || r.has_focus();
+    if lit(&main) || lit(&open) {
+        // The whole button is faintly lit, the part that will answer more strongly, and the line
+        // between them says there are two.
+        painter.rect_filled(rect, 4.0, t.row_hover.gamma_multiply(0.5));
+        painter.rect_filled(if lit(&main) { top } else { bottom }, 4.0, t.row_hover);
+        painter.hline(rect.min.x + 4.0..=rect.max.x - 4.0, split_y.round() + 0.5, egui::Stroke::new(1.0, crate::theme::mix(t.panel, t.text, 0.18)));
+    }
+    for part in [&main, &open] {
+        if part.has_focus() {
+            painter.rect_stroke(part.rect.shrink(0.5), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+        }
+    }
+    let at = egui::pos2(rect.center().x, rect.min.y + ICON_Y);
+    match icon {
+        SplitIcon::Icon(icon) => {
+            let colour = if enabled { if icon == Icon::Picture { t.ok } else { t.accent } } else { t.muted };
+            icons::paint_ribbon(ui, Rect::from_center_size(at, vec2(28.0, 28.0)), icon, colour);
+        }
+        SplitIcon::Mark(mark) => {
+            let colour = if enabled { mark.color(t.text, t.accent) } else { t.muted };
+            ribbon_icons::paint(&painter, Rect::from_center_size(at, vec2(24.0, 24.0)), mark, colour);
+        }
+    }
+    painter.text(egui::pos2(rect.center().x, rect.min.y + LABEL_Y), Align2::CENTER_CENTER, label, font, t.text);
+    chevron(&painter, egui::pos2(rect.center().x, rect.min.y + LABEL_Y + LINE_H - 1.0), t.muted);
+    let (name, options) = (label.to_string(), crate::i18n::format_message_id("ui.name_options", &[("name", label)]));
+    main.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
+    let options_tip = options.clone();
+    open.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, options.clone()));
+    (main.on_hover_text(tip), open.on_hover_text(options_tip))
+}
+
+/// What [`big_split`] takes for its picture: an [`Icon`] or a [`Mark`].
+struct SplitIconArg(SplitIcon);
+
+impl From<Icon> for SplitIconArg {
+    fn from(icon: Icon) -> Self {
+        SplitIconArg(SplitIcon::Icon(icon))
+    }
+}
+
+impl From<Mark> for SplitIconArg {
+    fn from(mark: Mark) -> Self {
+        SplitIconArg(SplitIcon::Mark(mark))
+    }
+}
+
+/// A picker opened from the keyboard puts the keyboard on its first choice (issue #374), so
+/// Enter or the arrows work at once. `resp` is the button that opened it.
+fn opened_by_keys(resp: &egui::Response) -> bool {
+    resp.clicked() && !resp.clicked_by(egui::PointerButton::Primary)
+}
+
+fn first_choice_id(open_id: egui::Id) -> egui::Id {
+    open_id.with("first-choice")
+}
+
+/// Gives the first choice of the picker `open_id` the keyboard, when it was opened from it.
+fn first_choice(ui: &Ui, open_id: egui::Id, choice: &egui::Response) {
+    if !ui.is_sizing_pass() && ui.data_mut(|d| d.remove_temp::<bool>(first_choice_id(open_id))).unwrap_or(false) {
+        choice.request_focus();
+    }
+}
+
+fn symbols_button_id() -> egui::Id {
+    egui::Id::new("ribbon-symbol-button")
+}
+
+/// The Symbol picker closed with nothing picked: the keyboard goes back to the Symbol button that
+/// opened it (issue #374), not to nowhere.
+pub fn return_focus_from_symbols(ctx: &egui::Context) {
+    if let Some(button) = ctx.data(|d| d.get_temp::<egui::Id>(symbols_button_id())) {
+        ctx.memory_mut(|m| m.request_focus(button));
+    }
+}
+
+/// The title along the top of a picker (issue #374): what the list is for, in the heading style.
+fn picker_title(ui: &mut Ui, title: &str, t: &Tokens) {
+    ui.add(egui::Label::new(egui::RichText::new(title).strong().color(t.text)).selectable(false));
+    ui.add_space(2.0);
+}
+
 fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) -> bool {
-    let response = big_inner(ui, Icon::Picture, crate::tl_id!("ui.pictures"), crate::tl_id!("ui.choose_how_to_insert_a_picture"), true, false, t);
-    let arrow_rect = Rect::from_min_max(egui::pos2(response.rect.left(), response.rect.bottom() - 28.0), response.rect.right_bottom());
-    let arrow = ui.interact(arrow_rect, ui.id().with("pictures-menu-arrow"), Sense::click());
-    if arrow.hovered() {
-        ui.painter().rect_filled(arrow_rect, 3.0, t.row_hover);
-        chevron(&ui.painter_at(arrow_rect), arrow_rect.center(), t.text);
+    let (main, arrow) = big_split(ui, Icon::Picture, crate::tl_id!("ui.pictures"), crate::tl_id!("ui.choose_how_to_insert_a_picture"), t);
+    let popup_id = egui::Popup::default_response_id(&arrow);
+    let was_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+    if opened_by_keys(&arrow) && !was_open {
+        ui.data_mut(|d| d.insert_temp(first_choice_id(popup_id), true));
     }
     egui::Popup::menu(&arrow).show(|ui| {
         egui::Frame::popup(ui.style()).corner_radius(8.0).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
             ui.set_min_width(228.0);
-            if picture_menu_row(ui, Icon::Picture, crate::tl_id!("ui.picture_from_a_file"), t, true).clicked() {
+            picker_title(ui, crate::tl_id!("ui.insert_a_picture_from"), t);
+            let file = picture_menu_row(ui, Icon::Picture, crate::tl_id!("ui.picture_from_a_file"), t, true);
+            first_choice(ui, popup_id, &file);
+            if file.clicked() {
                 acts.push(Act::AddPicture);
                 ui.close();
             }
@@ -1077,15 +1204,23 @@ fn pictures_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) -> bool {
             let _ = picture_menu_row(ui, Icon::Link, crate::tl_id!("ui.from_online"), t, false);
         });
     });
-    response.clicked() && !arrow.clicked()
+    // Escape closes the list and gives the keyboard back to the part that opened it.
+    if was_open && !egui::Popup::is_id_open(ui.ctx(), popup_id) && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        arrow.request_focus();
+    }
+    main.clicked()
 }
 
 // i18n-ui-text: label
 fn picture_menu_row(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens, enabled: bool) -> egui::Response {
     let label = crate::tl!(label);
-    let (rect, response) = ui.allocate_exact_size(vec2(212.0, 36.0), Sense::click());
-    if response.hovered() && enabled {
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, response) = ui.allocate_exact_size(vec2(212.0, 36.0), sense);
+    if (response.hovered() || response.has_focus()) && enabled {
         ui.painter().rect_filled(rect, 6.0, crate::theme::mix(t.panel, t.accent, 0.12));
+    }
+    if response.has_focus() {
+        ui.painter().rect_stroke(rect.shrink(0.5), 6.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     let color = if !enabled {
         t.muted
@@ -1105,7 +1240,8 @@ fn picture_menu_row(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens, enabled: b
         if enabled { t.text } else { t.muted },
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
-    response
+    // A source that is not there yet says so where it is pointed at, briefly (issue #374).
+    if enabled { response } else { response.on_hover_text(crate::i18n::format_message_id("ui.label_not_built_yet", &[("label", label)])) }
 }
 
 /// The small chevron Office puts under anything that opens a menu, and under the tool in
@@ -1129,8 +1265,12 @@ fn big_inner(ui: &mut Ui, icon: Icon, label: &str, tip: &str, menu: bool, on: bo
     if on {
         painter.rect_filled(rect, 4.0, crate::theme::mix(t.panel, t.accent, 0.10));
         painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
-    } else if resp.hovered() {
+    } else if resp.hovered() || resp.has_focus() {
         painter.rect_filled(rect, 4.0, t.row_hover);
+    }
+    // The button the keyboard is on is ringed, as every other control in the ribbon is (#373).
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     let colour = if !ui.is_enabled() {
         t.muted
@@ -1163,6 +1303,26 @@ fn big_inner(ui: &mut Ui, icon: Icon, label: &str, tip: &str, menu: bool, on: bo
     resp.on_hover_text(tip)
 }
 
+/// The back of a small ribbon control (issue #373), the same for every one of them: a control
+/// that is on is filled and edged in the accent, so a pressed Bold reads at a glance and not only
+/// by a faint tint; the one under the pointer is shaded; the one the keyboard is on is ringed.
+fn small_back(painter: &egui::Painter, rect: Rect, resp: &egui::Response, on: bool, t: &Tokens) {
+    if on {
+        painter.rect_filled(rect, 4.0, t.row_selected);
+        painter.rect_stroke(
+            rect.shrink(0.5),
+            4.0,
+            egui::Stroke::new(1.0, crate::theme::mix(t.row_selected, t.accent, 0.7)),
+            egui::StrokeKind::Inside,
+        );
+    } else if resp.hovered() {
+        painter.rect_filled(rect, 4.0, t.row_hover);
+    }
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+    }
+}
+
 /// A small button: an icon, or a letter for the marks that have one.
 /// `big`, with the button shown as the one in use.
 // i18n-ui-text: label,tip
@@ -1183,13 +1343,12 @@ fn small(ui: &mut Ui, icon: Option<Icon>, letter: &str, label: &str, tip: &str, 
     };
     let (rect, resp) = ui.allocate_exact_size(vec2(width.max(SMALL_W), SMALL_H), Sense::click());
     let painter = ui.painter_at(rect);
-    if on || resp.hovered() {
-        painter.rect_filled(rect, 4.0, if on { t.row_selected } else { t.row_hover });
-    }
+    small_back(&painter, rect, &resp, on, t);
+    let live = ui.is_enabled();
     match icon {
-        Some(i) => icons::paint_ribbon(ui, Rect::from_center_size(rect.center(), vec2(17.0, 17.0)), i, t.accent),
+        Some(i) => icons::paint_ribbon(ui, Rect::from_center_size(rect.center(), vec2(16.0, 16.0)), i, if live { t.accent } else { t.muted }),
         None => {
-            painter.text(rect.center(), Align2::CENTER_CENTER, letter, egui::FontId::proportional(12.5), t.strong);
+            painter.text(rect.center(), Align2::CENTER_CENTER, letter, egui::FontId::proportional(12.5), if live { t.strong } else { t.muted });
         }
     }
     let enabled = ui.is_enabled();
@@ -1239,15 +1398,30 @@ fn small_labeled_icon(ui: &mut Ui, icon: Icon, label: &str, tip: &str, t: &Token
     let text = ui.painter().layout_no_wrap(label.to_string(), egui::FontId::proportional(12.0), t.text).size();
     let (rect, resp) = ui.allocate_exact_size(vec2(text.x + 34.0, SMALL_H), Sense::click());
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
-        painter.rect_filled(rect, 4.0, t.row_hover);
-    }
+    small_back(&painter, rect, &resp, false, t);
     icons::paint_ribbon(ui, Rect::from_center_size(egui::pos2(rect.min.x + 13.0, rect.center().y), vec2(18.0, 18.0)), icon, t.accent);
     painter.text(egui::pos2(rect.min.x + 27.0, rect.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), t.text);
     let enabled = ui.is_enabled();
     let name = label.to_string();
     resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, false, name.clone()));
     resp.on_hover_text(tip)
+}
+
+/// The name at the start of a row of choices that act on one thing (issue #373): "Page" or
+/// "Paragraph" before the direction buttons, in a column of its own wide enough for the longer
+/// of the two, so the buttons after them line up and each row says what it changes.
+// i18n-ui-text: text
+fn scope_label(ui: &mut Ui, text: &str, t: &Tokens) {
+    let text = crate::tl!(text);
+    let font = egui::FontId::proportional(11.5);
+    let widest = [crate::tl_id!("ui.page"), crate::tl_id!("ui.paragraph_row")]
+        .iter()
+        .map(|w| ui.painter().layout_no_wrap(crate::tl!(w).to_string(), font.clone(), t.muted).size().x)
+        .fold(0.0_f32, f32::max);
+    let (rect, resp) = ui.allocate_exact_size(vec2(widest + 6.0, SMALL_H), Sense::hover());
+    ui.painter().text(egui::pos2(rect.min.x, rect.center().y), Align2::LEFT_CENTER, text, font, t.muted);
+    let name = text.to_owned();
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Label, true, name.clone()));
 }
 
 /// Rows of small buttons inside a group.
@@ -1299,8 +1473,33 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         });
     });
     group(ui, crate::tl_id!("ui.clipboard"), t, |ui| {
-        if big_mark(ui, Mark::Paste, crate::tl_id!("ui.paste"), crate::tl_id!("ui.ctrl_v_pastes_into_the_page"), t).clicked() {
+        // Paste does the usual paste at once; its options keep the formatting or the text only
+        // (issue #535).
+        let (paste, options) = big_split(ui, Mark::Paste, crate::tl_id!("ui.paste"), crate::tl_id!("ui.ctrl_v_pastes_into_the_page"), t);
+        if paste.clicked() {
             acts.push(Act::Paste);
+        }
+        let popup_id = egui::Popup::default_response_id(&options);
+        let was_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+        if opened_by_keys(&options) && !was_open {
+            ui.data_mut(|d| d.insert_temp(first_choice_id(popup_id), true));
+        }
+        egui::Popup::menu(&options).show(|ui| {
+            picker_title(ui, crate::tl_id!("ui.paste_options"), t);
+            let (rich, plain) = if cfg!(target_os = "macos") { ("Cmd+V", "Cmd+Shift+V") } else { ("Ctrl+V", "Ctrl+Shift+V") };
+            let keep = floating::menu_row_shortcut(ui, Some(Glyph::Mark(Mark::Paste)), crate::tl_id!("ui.keep_source_formatting"), rich, t);
+            first_choice(ui, popup_id, &keep);
+            if keep.clicked() {
+                acts.push(Act::Paste);
+                ui.close();
+            }
+            if floating::menu_row_shortcut(ui, None, crate::tl_id!("ui.keep_text_only"), plain, t).clicked() {
+                acts.push(Act::PastePlain);
+                ui.close();
+            }
+        });
+        if was_open && !egui::Popup::is_id_open(ui.ctx(), popup_id) && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            options.request_focus();
         }
         rows(ui, |ui| {
             if mark_row(ui, Mark::Cut, crate::tl_id!("ui.cut"), crate::tl_id!("ui.cut_the_selection"), t).clicked() {
@@ -1320,7 +1519,13 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
             }
         });
     });
+    // Issue #373: the font and its size share the top row; the marks and the colours the second;
+    // lists, indentation, alignment and quote the third. Every small control is one size and
+    // takes the keyboard the same way, and with nothing to format they are all unavailable.
     group(ui, crate::tl_id!("ui.basic_text"), t, |ui| {
+        if !view.text_editable {
+            ui.disable();
+        }
         rows(ui, |ui| {
             ui.horizontal(|ui| {
                 // The font name: the same combo box as the size, listing the installed fonts.
@@ -1448,26 +1653,41 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 if let Some(size) = size_out.chosen.and_then(|typed| typed.parse::<u8>().ok()) {
                     acts.push(Act::FontSize(size));
                 }
+                if mark_button(ui, Mark::ClearFormat, crate::tl_id!("ui.clear_formatting_2"), crate::tl_id!("ui.take_the_marks_off"), false, t)
+                    .clicked()
+                {
+                    acts.push(Act::ClearFormatting);
+                }
+            });
+            ui.horizontal(|ui| {
                 if mark_button(ui, Mark::Bold, crate::tl_id!("ui.bold"), crate::tl_id!("ui.bold_ctrl_b"), view.marks.bold, t).clicked() {
                     acts.push(Act::Mark("bold"));
                 }
                 if mark_button(ui, Mark::Italic, crate::tl_id!("ui.italic"), crate::tl_id!("ui.italic_ctrl_i"), view.marks.italic, t).clicked() {
                     acts.push(Act::Mark("italic"));
                 }
+                if mark_button(ui, Mark::Underline, crate::tl_id!("ui.underline"), crate::tl_id!("ui.underline"), view.marks.underline, t).clicked() {
+                    acts.push(Act::Mark("underline"));
+                }
                 if mark_button(ui, Mark::Strike, crate::tl_id!("ui.strikethrough"), crate::tl_id!("ui.strike_through"), view.marks.strike, t)
                     .clicked()
                 {
                     acts.push(Act::Mark("strike"));
                 }
+                // i18n-exempt: x2 is the compact mathematical symbol for subscript.
+                if small(ui, None, "x2", crate::tl_id!("ui.subscript"), crate::tl_id!("ui.subscript"), view.marks.subscript, t).clicked() {
+                    acts.push(Act::Mark("subscript"));
+                }
+                // i18n-exempt: x^2 is the compact mathematical symbol for superscript.
+                if small(ui, None, "x^2", crate::tl_id!("ui.superscript"), crate::tl_id!("ui.superscript"), view.marks.superscript, t).clicked() {
+                    acts.push(Act::Mark("superscript"));
+                }
                 if small(ui, Some(Icon::Code), "", crate::tl_id!("ui.code_2"), crate::tl_id!("ui.code_in_one_line"), false, t).clicked() {
                     acts.push(Act::Mark("code"));
                 }
-                if small(ui, Some(Icon::Link), "", crate::tl_id!("ui.link"), crate::tl_id!("ui.a_link"), false, t).clicked() {
-                    acts.push(Act::Insert("link"));
-                }
-                // Last in the row, so the controls before it keep their places (#260).
-                colour_palette(ui, false, view.text_colour, t, acts);
-                colour_palette(ui, true, view.text_highlight, t, acts);
+                // The colours last in the row, so the controls before them keep their places (#260).
+                colour_palette(ui, false, view.text_colour, view.text_colour_mixed, t, acts);
+                colour_palette(ui, true, view.text_highlight, view.text_highlight_mixed, t, acts);
             });
             ui.horizontal(|ui| {
                 if small(ui, Some(Icon::ListBullet), "", crate::tl_id!("ui.bullets"), crate::tl_id!("ui.a_bullet_list"), false, t).clicked() {
@@ -1497,23 +1717,8 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 if small(ui, Some(Icon::Quote), "", crate::tl_id!("ui.quote_2"), crate::tl_id!("ui.quote_this_paragraph"), false, t).clicked() {
                     acts.push(Act::Block("quote"));
                 }
-                if mark_button(ui, Mark::ClearFormat, crate::tl_id!("ui.clear_formatting_2"), crate::tl_id!("ui.take_the_marks_off"), false, t)
-                    .clicked()
-                {
-                    acts.push(Act::ClearFormatting);
-                }
-            });
-            ui.horizontal(|ui| {
-                if mark_button(ui, Mark::Underline, crate::tl_id!("ui.underline"), crate::tl_id!("ui.underline"), view.marks.underline, t).clicked() {
-                    acts.push(Act::Mark("underline"));
-                }
-                // i18n-exempt: x2 is the compact mathematical symbol for subscript.
-                if small(ui, None, "x2", crate::tl_id!("ui.subscript"), crate::tl_id!("ui.subscript"), view.marks.subscript, t).clicked() {
-                    acts.push(Act::Mark("subscript"));
-                }
-                // i18n-exempt: x^2 is the compact mathematical symbol for superscript.
-                if small(ui, None, "x^2", crate::tl_id!("ui.superscript"), crate::tl_id!("ui.superscript"), view.marks.superscript, t).clicked() {
-                    acts.push(Act::Mark("superscript"));
+                if small(ui, Some(Icon::Link), "", crate::tl_id!("ui.link"), crate::tl_id!("ui.a_link"), false, t).clicked() {
+                    acts.push(Act::Insert("link"));
                 }
             });
         });
@@ -1526,7 +1731,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     group(ui, crate::tl_id!("ui.page_setup"), t, |ui| {
         rows(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(crate::tl_id!("ui.page")).size(11.5).color(t.muted));
+                scope_label(ui, crate::tl_id!("ui.page"), t);
                 if small(
                     ui,
                     Some(Icon::DirLtr),
@@ -1568,7 +1773,7 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 }
             });
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(crate::tl_id!("ui.para")).size(11.5).color(t.muted));
+                scope_label(ui, crate::tl_id!("ui.paragraph_row"), t);
                 if small(
                     ui,
                     Some(Icon::ParaLtr),
@@ -1756,15 +1961,23 @@ fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &m
         })
         .response
         .rect;
-    // The arrow that opens the whole gallery.
-    let (rect, resp) = ui.allocate_exact_size(vec2(16.0, height), Sense::click());
+    // The button that opens the whole gallery (issue #373): edged as part of the box, with
+    // Office's "more" mark (a bar over a chevron), lit under the pointer and ringed for the keyboard,
+    // so it reads as the way into the full list and not as a stray strip.
+    let (rect, resp) = ui.allocate_exact_size(vec2(18.0, height), Sense::click());
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
-        painter.rect_filled(rect, 3.0, t.row_hover);
+    painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.0, t.faint), egui::StrokeKind::Inside);
+    if resp.hovered() || resp.has_focus() {
+        painter.rect_filled(rect.shrink(1.0), 3.0, t.row_hover);
     }
-    let c = egui::pos2(rect.center().x, rect.max.y - 8.0);
-    painter.line_segment([egui::pos2(c.x - 4.0, c.y - 2.0), c], egui::Stroke::new(1.4, t.text));
-    painter.line_segment([c, egui::pos2(c.x + 4.0, c.y - 2.0)], egui::Stroke::new(1.4, t.text));
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+    }
+    let ink = if ui.is_enabled() { t.text } else { t.muted };
+    let c = egui::pos2(rect.center().x, rect.max.y - 9.0);
+    painter.line_segment([egui::pos2(c.x - 4.0, c.y - 5.0), egui::pos2(c.x + 4.0, c.y - 5.0)], egui::Stroke::new(1.4, ink));
+    painter.line_segment([egui::pos2(c.x - 4.0, c.y - 2.0), c], egui::Stroke::new(1.4, ink));
+    painter.line_segment([c, egui::pos2(c.x + 4.0, c.y - 2.0)], egui::Stroke::new(1.4, ink));
     let enabled = ui.is_enabled();
     let name = if which == crate::tl_id!("ui.styles_2") { crate::tl_id!("ui.more_styles") } else { crate::tl_id!("ui.more_tags") };
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
@@ -1775,6 +1988,11 @@ fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &m
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
     if resp.clicked() {
         open = !open;
+        // From the keyboard, the keyboard goes into the list: to the style the caret is in, or
+        // the first row.
+        if open && opened_by_keys(&resp) {
+            ui.data_mut(|d| d.insert_temp(first_choice_id(open_id), true));
+        }
     }
     if open {
         let mut picked = false;
@@ -1786,28 +2004,37 @@ fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &m
                     ui.set_min_width(box_rect.width().max(210.0));
                     ui.spacing_mut().item_spacing = vec2(2.0, 1.0);
                     if which == "styles" {
-                        for (label, kind) in STYLES {
-                            if style_row(ui, label, kind, kind == current, t).clicked() {
+                        picker_title(ui, crate::tl_id!("ui.styles"), t);
+                        let has_current = STYLES.iter().any(|(_, k)| *k == current);
+                        for (n, (label, kind)) in STYLES.into_iter().enumerate() {
+                            let row = style_row(ui, label, kind, kind == current, t);
+                            if kind == current || (!has_current && n == 0) {
+                                first_choice(ui, open_id, &row);
+                            }
+                            if row.clicked() {
                                 acts.push(Act::Block(leak(kind)));
                                 picked = true;
                             }
                         }
-                        ui.separator();
-                        if ui.button(crate::tl_id!("ui.clear_formatting_2")).clicked() {
+                        floating::menu_separator(ui, t);
+                        if floating::menu_row(ui, Some(Glyph::Mark(Mark::ClearFormat)), crate::tl_id!("ui.clear_formatting_2"), t).clicked() {
                             acts.push(Act::ClearFormatting);
                             picked = true;
                         }
                     } else {
-                        ui.label(egui::RichText::new(crate::tl_id!("ui.tags")).strong());
-                        for tag in Tag::all() {
-                            if tag_row(ui, tag, t).clicked() {
+                        picker_title(ui, crate::tl_id!("ui.tags"), t);
+                        for (n, tag) in Tag::all().into_iter().enumerate() {
+                            let row = tag_row(ui, tag, t);
+                            if n == 0 {
+                                first_choice(ui, open_id, &row);
+                            }
+                            if row.clicked() {
                                 acts.push(Act::Tag(tag));
                                 picked = true;
                             }
                         }
-                        ui.separator();
-                        if ui
-                            .button(crate::tl_id!("ui.customize_tags"))
+                        floating::menu_separator(ui, t);
+                        if floating::menu_row(ui, None, crate::tl_id!("ui.customize_tags"), t)
                             .on_hover_text(crate::tl_id!("ui.make_your_own_tags_with_a_name_symbol_and_colour"))
                             .clicked()
                         {
@@ -1855,6 +2082,9 @@ fn equation_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
     if resp.clicked() {
         open = !open;
+        if open && opened_by_keys(&resp) {
+            ui.data_mut(|d| d.insert_temp(first_choice_id(open_id), true));
+        }
     }
     if open {
         let mut picked = false;
@@ -1868,6 +2098,7 @@ fn equation_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.set_min_width(WIDTH - 20.0);
                     ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+                    picker_title(ui, crate::tl_id!("ui.start_from_an_equation"), t);
                     for (name, tex) in EQUATIONS {
                         // The row is the name and the formula; the whole of it is the button.
                         let inner = ui.horizontal(|ui| {
@@ -1877,8 +2108,17 @@ fn equation_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
                             crate::mathview::inline(ui, tex, 15.0, t.text);
                         });
                         let row = ui.interact(inner.response.rect, open_id.with(("row", *name)), Sense::click());
-                        if row.hovered() {
+                        first_choice(ui, open_id, &row);
+                        if row.hovered() || row.has_focus() {
                             ui.painter().rect_filled(inner.response.rect.expand(2.0), 3.0, t.row_hover.gamma_multiply(0.6));
+                        }
+                        if row.has_focus() {
+                            ui.painter().rect_stroke(
+                                inner.response.rect.expand(2.0),
+                                3.0,
+                                egui::Stroke::new(1.5, t.accent),
+                                egui::StrokeKind::Inside,
+                            );
                         }
                         let label = crate::i18n::format_message_id("ui.equation_name", &[("name", crate::tl!(name))]);
                         let (enabled, label) = (ui.is_enabled(), label);
@@ -1906,6 +2146,9 @@ fn sticker_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
     if resp.clicked() {
         open = !open;
+        if open && opened_by_keys(&resp) {
+            ui.data_mut(|d| d.insert_temp(first_choice_id(open_id), true));
+        }
     }
     if open {
         let mut picked = false;
@@ -1918,12 +2161,16 @@ fn sticker_gallery(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
             .fixed_pos(at)
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.label(egui::RichText::new(crate::tl_id!("ui.stickers_gallery")).strong().color(t.text));
+                    picker_title(ui, crate::tl_id!("ui.stickers_gallery"), t);
                     egui::Grid::new(open_id.with("grid")).spacing(vec2(4.0, 4.0)).show(ui, |ui| {
                         for (n, sticker) in crate::stickers::ALL.iter().enumerate() {
                             let (rect, cell) = ui.allocate_exact_size(vec2(CELL, CELL), Sense::click());
-                            if cell.hovered() {
+                            first_choice(ui, open_id, &cell);
+                            if cell.hovered() || cell.has_focus() {
                                 ui.painter().rect_filled(rect, 6.0, t.row_hover);
+                            }
+                            if cell.has_focus() {
+                                ui.painter().rect_stroke(rect.shrink(0.5), 6.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
                             }
                             egui::Image::from_bytes(format!("bytes://sticker-{}.svg", sticker.id), sticker.svg)
                                 .fit_to_exact_size(vec2(CELL - 12.0, CELL - 12.0))
@@ -2086,19 +2333,32 @@ fn run_direction_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
     ui.data_mut(|d| d.insert_temp(open_id, open));
 }
 
+/// How a style's row in the gallery is drawn (issue #373): the page's own sizes for its headings
+/// and words, brought down to fit a row by one scale, so Heading 1 is the biggest, every level
+/// is smaller than the one before, and Normal is the size of ordinary words. Headings take the
+/// page's heading colour, as they do on the page.
+fn style_look(kind: &str, t: &Tokens) -> (f32, Color32, bool) {
+    let fit = |page: f32| 11.5 + (page - crate::preview::BODY_SIZE) * 0.42;
+    match kind {
+        "title" => (fit(30.0), t.strong, false),
+        "h1" => (fit(crate::preview::heading_size(1)), t.strong, false),
+        "h2" => (fit(crate::preview::heading_size(2)), t.strong, false),
+        "h3" => (fit(crate::preview::heading_size(3)), t.strong, false),
+        // The page draws levels 4 to 6 at one size; the gallery keeps them apart by a step.
+        "h4" => (fit(crate::preview::heading_size(4)), t.strong, false),
+        "h5" => (fit(crate::preview::heading_size(5)) - 0.25, t.strong, false),
+        "h6" => (fit(crate::preview::heading_size(6)) - 0.5, t.strong, false),
+        "quote" | "citation" => (fit(crate::preview::BODY_SIZE), t.muted, true),
+        "codeblock" | "codenumbers" => (fit(crate::preview::BODY_SIZE), t.text, false),
+        _ => (fit(crate::preview::BODY_SIZE), t.text, false),
+    }
+}
+
 /// One line of the Styles gallery, drawn the way the style looks.
 // i18n-ui-text: label
 fn style_row(ui: &mut Ui, label: &str, kind: &str, current: bool, t: &Tokens) -> egui::Response {
     let label = crate::tl!(label);
-    let (size, color, italics) = match kind {
-        "h1" | "title" => (17.0, t.accent, false),
-        "h2" => (15.0, t.accent, false),
-        "h3" | "h4" => (13.5, t.muted, kind == "h4"),
-        "h5" | "h6" => (12.5, t.accent, kind == "h6"),
-        "quote" | "citation" => (12.5, t.muted, true),
-        "codeblock" | "codenumbers" => (12.5, t.text, false),
-        _ => (13.0, t.text, false),
-    };
+    let (size, color, italics) = style_look(kind, t);
     let mut text = egui::RichText::new(label).size(size).color(color);
     if italics {
         text = text.italics();
@@ -2113,8 +2373,11 @@ fn style_row(ui: &mut Ui, label: &str, kind: &str, current: bool, t: &Tokens) ->
     if current {
         ui.painter().rect_filled(rect, 3.0, t.row_selected);
         ui.painter().rect_stroke(rect, 3.0, egui::Stroke::new(1.0, t.text), egui::StrokeKind::Inside);
-    } else if resp.hovered() {
+    } else if resp.hovered() || resp.has_focus() {
         ui.painter().rect_filled(rect, 3.0, t.row_hover);
+    }
+    if resp.has_focus() {
+        ui.painter().rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     let at = egui::pos2(rect.left() + 6.0, rect.center().y - galley.size().y / 2.0);
     ui.painter().galley(at, galley, color);
@@ -2129,12 +2392,31 @@ fn tag_row(ui: &mut Ui, tag: Tag, t: &Tokens) -> egui::Response {
     // A fixed width: the gallery box is as wide as its rows, not as wide as the ribbon.
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().clamp(150.0, 230.0), 24.0), Sense::click());
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
+    if resp.hovered() || resp.has_focus() {
         painter.rect_filled(rect, 3.0, t.row_hover);
     }
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+    }
     paint_tag(&painter, Rect::from_min_size(egui::pos2(rect.min.x + 2.0, rect.center().y - 9.0), vec2(18.0, 18.0)), tag, t.text, t.accent);
+    // Issue #373: icon, name and shortcut in three columns, the shortcut right-aligned in the quiet
+    // colour as a menu draws it, so the names line up and the keys can be scanned on their own.
+    // A screen reader still hears the name with its keys.
+    let name_text = crate::tl!(tag.label());
+    let keys = tag.shortcut();
+    let keys_w = keys.map_or(0.0, |k| painter.layout_no_wrap(k.to_string(), egui::FontId::proportional(11.5), t.muted).size().x + 8.0);
+    let name_room = (rect.width() - 26.0 - keys_w - 4.0).max(20.0);
+    painter.with_clip_rect(Rect::from_min_size(egui::pos2(rect.min.x + 26.0, rect.min.y), vec2(name_room, rect.height()))).text(
+        egui::pos2(rect.min.x + 26.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        name_text,
+        egui::FontId::proportional(12.5),
+        t.text,
+    );
+    if let Some(keys) = keys {
+        painter.text(egui::pos2(rect.max.x - 6.0, rect.center().y), Align2::RIGHT_CENTER, keys, egui::FontId::proportional(11.5), t.muted);
+    }
     let label = tag_label(tag);
-    painter.text(egui::pos2(rect.min.x + 26.0, rect.center().y), Align2::LEFT_CENTER, &label, egui::FontId::proportional(12.5), t.text);
     let enabled = ui.is_enabled();
     let name = label;
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
@@ -2198,9 +2480,7 @@ fn mark_row_on(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &To
     let width = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.text).size().x + SMALL_W + 8.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(width, SMALL_H), Sense::click());
     let painter = ui.painter_at(rect);
-    if on || resp.hovered() {
-        painter.rect_filled(rect, 4.0, if on { t.row_selected } else { t.row_hover });
-    }
+    small_back(&painter, rect, &resp, on, t);
     let left = Rect::from_center_size(egui::pos2(rect.min.x + 11.0, rect.center().y), vec2(15.0, 15.0));
     ribbon_icons::paint(&painter, left, mark, mark.color(t.text, t.accent));
     painter.text(egui::pos2(rect.min.x + 23.0, rect.center().y), Align2::LEFT_CENTER, label, font, t.text);
@@ -2213,7 +2493,7 @@ fn mark_row_on(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &To
 /// Home's Font Colour (`highlight` false) or Text Highlight Colour palette (issue #260): a
 /// small button with the letter or the marker and the colour now in use, which opens the
 /// palette: Automatic or No Colour first, then the colours by name.
-fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, t: &Tokens, acts: &mut Vec<Act>) {
+fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, mixed: bool, t: &Tokens, acts: &mut Vec<Act>) {
     let (label, tip) = if highlight {
         (crate::tl_id!("ui.text_highlight_colour"), crate::tl_id!("ui.text_highlight_colour_tip"))
     } else {
@@ -2221,9 +2501,8 @@ fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, t
     };
     let (rect, resp) = ui.allocate_exact_size(vec2(SMALL_W, SMALL_H), Sense::click());
     let painter = ui.painter_at(rect);
-    if resp.hovered() || resp.has_focus() {
-        painter.rect_filled(rect, 4.0, t.row_hover);
-    }
+    small_back(&painter, rect, &resp, false, t);
+    let t = &if ui.is_enabled() { *t } else { Tokens { text: t.muted, ..*t } };
     let bar_colour = current.flatten().and_then(crate::textcolour::parse);
     let glyph = rect.center() - vec2(0.0, 3.0);
     if highlight {
@@ -2254,6 +2533,9 @@ fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, t
             ui.close();
         }
         let list = if highlight { crate::textcolour::highlights().to_vec() } else { crate::textcolour::font_colours().to_vec() };
+        // The name of the colour under the pointer or the keyboard, else of the one in use, is
+        // written under the swatches (issue #373), so a colour is picked by name as well as by look.
+        let mut named: Option<&str> = list.iter().find(|(_, hex)| current.flatten() == Some(*hex)).map(|(name, _)| *name);
         egui::Grid::new(("colour-grid", highlight)).spacing(vec2(4.0, 4.0)).show(ui, |ui| {
             for (i, (name, hex)) in list.iter().enumerate() {
                 let chosen = current.flatten() == Some(*hex);
@@ -2264,6 +2546,9 @@ fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, t
                 ui.painter().rect_stroke(r.shrink(1.0), 3.0, egui::Stroke::new(if chosen { 2.0 } else { 1.0 }, edge), egui::StrokeKind::Inside);
                 let n = (*name).to_string();
                 swatch.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, true, chosen, n.clone()));
+                if swatch.hovered() || swatch.has_focus() {
+                    named = Some(name);
+                }
                 if swatch.on_hover_text(*name).clicked() {
                     let value = Some((*hex).to_string());
                     acts.push(if highlight { Act::TextHighlight(value) } else { Act::TextColour(value) });
@@ -2274,6 +2559,18 @@ fn colour_palette(ui: &mut Ui, highlight: bool, current: Option<Option<&str>>, t
                 }
             }
         });
+        ui.add_space(2.0);
+        // With nothing named: a colour outside the palette by its value, a selection of more than
+        // one colour as Mixed, and otherwise the default.
+        let caption = match (named, current) {
+            (Some(n), _) => crate::tl!(n).to_owned(),
+            (None, Some(Some(hex))) => hex.to_owned(),
+            (None, None) if mixed => crate::tl_id!("ui.mixed").to_owned(),
+            _ => (if highlight { crate::tl_id!("ui.no_colour") } else { crate::tl_id!("ui.automatic_colour") }).to_owned(),
+        };
+        // Painted, not a label: the swatch already carries the name for a screen reader.
+        let (line, _) = ui.allocate_exact_size(vec2(ui.available_width(), 16.0), Sense::hover());
+        ui.painter().text(line.left_center(), Align2::LEFT_CENTER, caption, egui::FontId::proportional(12.0), t.text);
     });
 }
 
@@ -2283,10 +2580,9 @@ fn mark_button(ui: &mut Ui, mark: Mark, label: &str, tip: &str, on: bool, t: &To
     let tip = crate::tl!(tip);
     let (rect, resp) = ui.allocate_exact_size(vec2(SMALL_W, SMALL_H), Sense::click());
     let painter = ui.painter_at(rect);
-    if on || resp.hovered() {
-        painter.rect_filled(rect, 4.0, if on { t.row_selected } else { t.row_hover });
-    }
-    ribbon_icons::paint(&painter, Rect::from_center_size(rect.center(), vec2(16.0, 16.0)), mark, mark.color(t.text, t.accent));
+    small_back(&painter, rect, &resp, on, t);
+    let colour = if ui.is_enabled() { mark.color(t.text, t.accent) } else { t.muted };
+    ribbon_icons::paint(&painter, Rect::from_center_size(rect.center(), vec2(16.0, 16.0)), mark, colour);
     let enabled = ui.is_enabled();
     let name = label.to_string();
     resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, name.clone()));
@@ -2365,25 +2661,40 @@ fn insert_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         soon(ui, Icon::Mic, "Transcribe", t);
         soon(ui, Icon::Video, "Record\nVideo", t);
     });
+    // Issue #374: three similar stamps as one compact stack rather than three large buttons, each
+    // saying on its tip exactly what it puts on the page now.
     group(ui, crate::tl_id!("ui.time_stamp"), t, |ui| {
-        if big(ui, Icon::Calendar, crate::tl_id!("ui.date"), crate::tl_id!("ui.today_s_date"), t).clicked() {
-            acts.push(Act::Insert("date"));
-        }
-        if big(ui, Icon::Clock, crate::tl_id!("ui.time"), crate::tl_id!("ui.the_time_now"), t).clicked() {
-            acts.push(Act::Insert("time"));
-        }
-        if big(ui, Icon::Calendar, crate::tl_id!("ui.date_time_2"), crate::tl_id!("ui.both_as_the_page_s_own_stamp_is_written"), t).clicked() {
-            acts.push(Act::Insert("datetime"));
-        }
+        let now = notecraft_model::time::iso_now();
+        let tip = |what: &str, example: Option<String>| {
+            crate::i18n::format_message_id("ui.stamp_tip_example", &[("what", crate::tl!(what)), ("example", &example.unwrap_or_default())])
+        };
+        rows(ui, |ui| {
+            let date_tip = tip(crate::tl_id!("ui.today_s_date"), notecraft_model::time::date_from_iso(&now));
+            if small_labeled_icon(ui, Icon::Calendar, crate::tl_id!("ui.date"), &date_tip, t).clicked() {
+                acts.push(Act::Insert("date"));
+            }
+            let time_tip = tip(crate::tl_id!("ui.the_time_now"), notecraft_model::time::clock_from_iso(&now));
+            if small_labeled_icon(ui, Icon::Clock, crate::tl_id!("ui.time"), &time_tip, t).clicked() {
+                acts.push(Act::Insert("time"));
+            }
+            let both_tip = tip(crate::tl_id!("ui.both_as_the_page_s_own_stamp_is_written"), notecraft_model::time::long_from_iso(&now));
+            if small_labeled_icon(ui, Icon::Calendar, crate::tl_id!("ui.date_and_time"), &both_tip, t).clicked() {
+                acts.push(Act::Insert("datetime"));
+            }
+        });
     });
     group(ui, crate::tl_id!("ui.pages"), t, |ui| {
-        if big(ui, Icon::PageStack, crate::tl_id!("ui.page_templates"), crate::tl_id!("ui.page_templates_tip"), t).clicked() {
+        // It opens the list of templates beside the page, so it carries the chevron of every
+        // other button that opens a choice rather than acting at once (issue #374).
+        if big_menu(ui, Icon::PageStack, crate::tl_id!("ui.page_templates"), crate::tl_id!("ui.page_templates_tip"), t).clicked() {
             acts.push(Act::PageTemplates);
         }
     });
     group(ui, crate::tl_id!("ui.symbols"), t, |ui| {
         equation_gallery(ui, t, acts);
-        if big_menu(ui, Icon::Symbol, crate::tl_id!("ui.symbol"), crate::tl_id!("ui.insert_a_common_symbol"), t).clicked() {
+        let symbol = big_menu(ui, Icon::Symbol, crate::tl_id!("ui.symbol"), crate::tl_id!("ui.insert_a_common_symbol"), t);
+        if symbol.clicked() {
+            ui.data_mut(|d| d.insert_temp(symbols_button_id(), symbol.id));
             acts.push(Act::Symbols);
         }
     });
@@ -2594,18 +2905,49 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
 
     let resp = big_menu(ui, Icon::Table, crate::tl_id!("ui.table_3"), crate::tl_id!("ui.a_table_pick_its_size"), t);
     let open_id = egui::Id::new("ribbon-insert-table");
+    // The size the grid shows: the last square pointed at or stepped to with the arrows. It stays
+    // when the pointer leaves the grid, so the readout above it does not flick back to "Table"
+    // (issue #374).
+    let cursor_id = open_id.with("cursor");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
+    let mut cursor = ui.data(|d| d.get_temp::<(usize, usize)>(cursor_id));
+    let opening = resp.clicked() && !open;
     if resp.clicked() {
         open = !open;
     }
     if !open {
-        ui.data_mut(|d| d.insert_temp(open_id, open));
+        ui.data_mut(|d| {
+            d.insert_temp(open_id, open);
+            d.remove::<(usize, usize)>(cursor_id);
+        });
         return;
+    }
+    if opening {
+        cursor = Some((0, 0));
+    }
+    // The arrows step the size, Enter takes it, Escape goes back to the Table button.
+    let (mut down, mut right) = (0i32, 0i32);
+    ui.input_mut(|i| {
+        for (key, dr, dc) in [(egui::Key::ArrowDown, 1, 0), (egui::Key::ArrowUp, -1, 0), (egui::Key::ArrowRight, 0, 1), (egui::Key::ArrowLeft, 0, -1)]
+        {
+            if i.consume_key(egui::Modifiers::NONE, key) {
+                down += dr;
+                right += dc;
+            }
+        }
+    });
+    let stepped = down != 0 || right != 0;
+    if stepped {
+        let (r, c) = cursor.unwrap_or((0, 0));
+        #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+        let step = |at: usize, by: i32| (at as i32 + by).clamp(0, MOST as i32 - 1) as usize;
+        cursor = Some((step(r, down), step(c, right)));
     }
     let mut picked = false;
     let area = egui::Area::new(open_id.with("area"))
         .order(egui::Order::Foreground)
         .fixed_pos(resp.rect.left_bottom())
+        .constrain(true)
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
@@ -2617,7 +2959,11 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                 // Every square is its own button, named for the size it picks: the grid
                 // then answers the keyboard and a screen reader, not only the pointer.
                 let mut over = None;
+                let mut focused_now = None;
                 let mut chose = None;
+                // While a square has the keyboard, pointing at another moves the keyboard to it, so
+                // Enter takes the size the readout shows.
+                let grid_has_keys = ui.memory(|m| m.focused()).is_some_and(|f| (0..MOST).any(|r| (0..MOST).any(|c| f == open_id.with((r, c)))));
                 let mut cells = Vec::with_capacity(MOST * MOST);
                 for r in 0..MOST {
                     for c in 0..MOST {
@@ -2632,6 +2978,22 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &name));
                         if resp.hovered() {
                             over = Some((r, c));
+                            if grid_has_keys && !resp.has_focus() && cursor != Some((r, c)) {
+                                resp.request_focus();
+                            }
+                        }
+                        // A square reached with Tab is the size in hand, as one stepped to is.
+                        if resp.gained_focus() && !opening && !stepped {
+                            focused_now = Some((r, c));
+                        }
+                        if (opening || stepped) && cursor == Some((r, c)) {
+                            resp.request_focus();
+                        }
+                        // The arrows are the grid's own: egui is told not to move the keyboard to
+                        // a neighbour with them as well, or each step went one square too far.
+                        if resp.has_focus() {
+                            let arrows = egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, ..Default::default() };
+                            ui.memory_mut(|m| m.set_focus_lock_filter(resp.id, arrows));
                         }
                         if resp.clicked() {
                             chose = Some((r, c));
@@ -2639,21 +3001,27 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                         cells.push((r, c, cell));
                     }
                 }
+                if let Some(at) = over.or(focused_now) {
+                    cursor = Some(at);
+                }
                 let paint = ui.painter();
                 for (r, c, cell) in cells {
-                    let lit = over.is_some_and(|(hr, hc)| r <= hr && c <= hc);
+                    let lit = cursor.is_some_and(|(hr, hc)| r <= hr && c <= hc);
                     let (fill, line) = if lit { (t.accent.gamma_multiply(0.25), t.accent) } else { (t.editor, t.table_line) };
                     paint.rect_filled(cell, 1.0, fill);
                     paint.rect_stroke(cell, 1.0, egui::Stroke::new(1.0, line), egui::StrokeKind::Inside);
                 }
-                let title = match over {
+                let title = match cursor {
                     Some((r, c)) => crate::i18n::format_message_id(
                         "ui.columns_x_rows_table",
                         &[("columns", &(c + 1).to_string()), ("rows", &(r + 1).to_string())],
                     ),
                     None => crate::tl_id!("ui.table_3").to_string(),
                 };
-                paint.text(naming.left_top(), egui::Align2::LEFT_TOP, title, egui::FontId::proportional(13.0), t.text);
+                paint.text(naming.left_top(), egui::Align2::LEFT_TOP, &title, egui::FontId::proportional(13.0), t.text);
+                // The readout is read out too, so a screen reader hears the size as it changes.
+                let readout = ui.interact(naming, open_id.with("readout"), Sense::hover());
+                readout.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &title));
                 if let Some((r, c)) = chose {
                     acts.push(Act::InsertTable(r + 1, c + 1));
                     picked = true;
@@ -2679,13 +3047,181 @@ fn table_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
         .response;
     let clicked_away =
         ui.input(|i| i.pointer.any_click()) && !area.rect.contains(ui.ctx().pointer_latest_pos().unwrap_or_default()) && !resp.clicked();
-    if picked || clicked_away || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+    let escaped = ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+    if escaped {
+        // Back where the grid was opened from, so the keyboard carries on from there.
+        resp.request_focus();
+    }
+    if picked || clicked_away || escaped {
         open = false;
     }
-    ui.data_mut(|d| d.insert_temp(open_id, open));
+    ui.data_mut(|d| {
+        d.insert_temp(open_id, open);
+        match cursor.filter(|_| open) {
+            Some(at) => {
+                d.insert_temp(cursor_id, at);
+            }
+            None => d.remove::<(usize, usize)>(cursor_id),
+        }
+    });
 }
 
 /// OneNote's Rule Lines button: the paper now, and a gallery of every paper under it.
+/// A small row that names a setting, shows what it is set to and opens its choices (issue #376):
+/// a little picture of the value, the setting's name, the value in the quiet colour, and the
+/// chevron a menu button has. A screen reader hears the name and then the value.
+// i18n-ui-text: label,tip
+fn value_row(ui: &mut Ui, label: &str, value: &str, tip: &str, open: bool, t: &Tokens, preview: impl FnOnce(&egui::Painter, Rect)) -> egui::Response {
+    let label = crate::tl!(label);
+    let tip = crate::tl!(tip);
+    let font = egui::FontId::proportional(12.0);
+    let quiet = egui::FontId::proportional(11.5);
+    let name_w = ui.painter().layout_no_wrap(label.to_string(), font.clone(), t.text).size().x;
+    let value_w = ui.painter().layout_no_wrap(value.to_string(), quiet.clone(), t.muted).size().x;
+    let (rect, resp) = ui.allocate_exact_size(vec2(26.0 + name_w + 6.0 + value_w + 16.0, SMALL_H), Sense::click());
+    let painter = ui.painter_at(rect);
+    if open {
+        painter.rect_filled(rect, 4.0, t.row_selected);
+    } else if resp.hovered() {
+        painter.rect_filled(rect, 4.0, t.row_hover);
+    }
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+    }
+    preview(&painter, Rect::from_center_size(egui::pos2(rect.min.x + 11.0, rect.center().y), vec2(16.0, 14.0)));
+    let (text, quiet_colour) = if ui.is_enabled() { (t.text, t.muted) } else { (t.muted, t.faint) };
+    painter.text(egui::pos2(rect.min.x + 24.0, rect.center().y), Align2::LEFT_CENTER, label, font, text);
+    painter.text(egui::pos2(rect.min.x + 24.0 + name_w + 6.0, rect.center().y), Align2::LEFT_CENTER, value, quiet, quiet_colour);
+    chevron(&painter, egui::pos2(rect.max.x - 7.0, rect.center().y - 1.0), quiet_colour);
+    let enabled = ui.is_enabled();
+    let (name, said) = (label.to_string(), value.to_string());
+    resp.widget_info(move || {
+        let mut info = egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &name);
+        info.current_text_value = Some(said.clone());
+        info
+    });
+    resp.on_hover_text(tip)
+}
+
+/// View > Page Setup > Page colour, showing the colour the page has.
+fn page_colour_row(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
+    let value = view.page_colour.map_or_else(|| crate::tl_id!("ui.no_colour").to_string(), |c| crate::tl!(c.label()).to_string());
+    let popup_id = ui.id().with("page-colour-row");
+    let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+    let dark = t.editor.r() < 128;
+    let resp = value_row(ui, crate::tl_id!("ui.page_colour"), &value, crate::tl_id!("ui.page_colour_tip"), open, t, |painter, area| {
+        let fill = view.page_colour.map_or(t.editor, |c| {
+            let (r, g, b) = c.rgb(dark);
+            egui::Color32::from_rgb(r, g, b)
+        });
+        painter.rect_filled(area, 2.0, fill);
+        painter.rect_stroke(area, 2.0, egui::Stroke::new(1.0, t.muted), egui::StrokeKind::Inside);
+        if view.page_colour.is_none() {
+            painter.line_segment([area.left_bottom() + vec2(3.0, -3.0), area.right_top() + vec2(-3.0, 3.0)], egui::Stroke::new(1.0, t.muted));
+        }
+    });
+    egui::Popup::menu(&resp).id(popup_id).show(|ui| {
+        if page_colour_palette(ui, view, t, acts) {
+            ui.close();
+        }
+    });
+}
+
+/// View > Page Setup > Rule lines, showing the paper the page is on.
+fn rule_lines_row(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
+    let popup_id = ui.id().with("rule-lines-row");
+    let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+    let rules = view.rules;
+    let resp = value_row(
+        ui,
+        crate::tl_id!("ui.rule_lines"),
+        rules.translated_label(),
+        crate::tl_id!("ui.lines_or_squares_behind_the_page_as_on_paper"),
+        open,
+        t,
+        |painter, area| {
+            painter.rect_filled(area, 1.0, t.editor);
+            paint_paper(&painter.with_clip_rect(area), area, rules, 0.3, t.rule_line_strong, t.rule_line_strong);
+            painter.rect_stroke(area, 1.0, egui::Stroke::new(1.0, t.muted), egui::StrokeKind::Inside);
+        },
+    );
+    egui::Popup::menu(&resp).id(popup_id).show(|ui| {
+        let mut picked = false;
+        for papers in [&[RuleLines::None][..], &RuleLines::RULED[..], &RuleLines::GRIDS[..], &RuleLines::CRAFT[..]] {
+            ui.horizontal(|ui| {
+                for r in papers {
+                    if paper_swatch(ui, *r, view.rules == *r, t).clicked() {
+                        acts.push(Act::RuleLines(*r));
+                        picked = true;
+                    }
+                }
+            });
+        }
+        ui.separator();
+        picked |= rule_colour_palette(ui, view, t, acts);
+        if picked {
+            ui.close();
+        }
+    });
+}
+
+/// What a page's paper size is called on its row: Auto, the sheet and which way up, or a custom
+/// size in millimetres.
+pub fn paper_value(paper: Option<notecraft_model::paper::Paper>) -> String {
+    use notecraft_model::paper::Size;
+    match paper {
+        None => crate::tl_id!("ui.auto").to_string(),
+        Some(p) => match p.size {
+            Size::Custom(w, h) => crate::i18n::format_message_id("ui.custom_paper_mm", &[("w", &format!("{w:.0}")), ("h", &format!("{h:.0}"))]),
+            size => {
+                let turn = if p.landscape { crate::tl_id!("ui.landscape") } else { crate::tl_id!("ui.portrait") };
+                format!("{}, {turn}", crate::tl!(size.label()))
+            }
+        },
+    }
+}
+
+/// View > Page Setup > Paper size, showing the sheet the page is written for.
+fn paper_size_row(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
+    let popup_id = ui.id().with("paper-size-row");
+    let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+    let paper = view.paper_size;
+    let resp = value_row(
+        ui,
+        crate::tl_id!("ui.paper_size"),
+        &paper_value(paper),
+        crate::tl_id!("ui.the_sheet_this_page_is_written_for_its_size_turn_and_margins"),
+        open,
+        t,
+        |painter, area| {
+            // A sheet the shape of the paper, or a dashed edge for Auto, which has none.
+            let sheet = paper.map_or(area.shrink2(vec2(3.0, 1.0)), |p| {
+                let (w, h) = p.sheet_mm();
+                let scale = (area.width() / w).min(area.height() / h);
+                Rect::from_center_size(area.center(), vec2(w * scale, h * scale))
+            });
+            painter.rect_filled(sheet, 1.0, t.editor);
+            if paper.is_some() {
+                painter.rect_stroke(sheet, 1.0, egui::Stroke::new(1.0, t.muted), egui::StrokeKind::Inside);
+            } else {
+                for side in [
+                    [sheet.left_top(), sheet.right_top()],
+                    [sheet.right_top(), sheet.right_bottom()],
+                    [sheet.right_bottom(), sheet.left_bottom()],
+                    [sheet.left_bottom(), sheet.left_top()],
+                ] {
+                    painter.add(egui::Shape::dashed_line(&side, egui::Stroke::new(1.0, t.muted), 2.0, 2.0));
+                }
+            }
+        },
+    );
+    // It stays open while sizes are tried and margins dragged; a click away closes it.
+    egui::Popup::menu(&resp)
+        .id(popup_id)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| paper_size_menu(ui, paper, t, acts));
+}
+
 fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     let open_id = egui::Id::new("ribbon-rule-lines");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
@@ -2706,6 +3242,7 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
         let area = egui::Area::new(open_id.with("area"))
             .order(egui::Order::Foreground)
             .fixed_pos(resp.rect.left_bottom())
+            .constrain(true)
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).corner_radius(8.0).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
                     ui.spacing_mut().item_spacing = vec2(8.0, 5.0);
@@ -2753,11 +3290,24 @@ fn rule_lines_menu(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>
 /// either way, so a stroke drawn at one setting can be re-weighted later.
 fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts: &mut Vec<Act>) {
     rows(ui, |ui| {
-        ui.add_space(4.0);
-        let label = if pressure_available { "Sensitivity" } else { "Pressure off" };
-        // Issue #375: no pressure readings is a fact about the device, not an error, so it is
-        // shown in the quiet colour rather than the warning one. The reason is on the hover.
-        ui.label(egui::RichText::new(crate::tl!(label)).size(10.0).color(t.muted));
+        ui.add_space(2.0);
+        // Issue #375: one named control. Its heading says whether pressure is on, which depends on
+        // the pen, not on a setting: "Pressure off" until a pen's force readings arrive. Why it is
+        // off, for this system, is a button away rather than only on a hover.
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let (label, colour) =
+                if pressure_available { (crate::tl_id!("ui.pressure_on"), t.text) } else { (crate::tl_id!("ui.pressure_off"), t.muted) };
+            ui.label(egui::RichText::new(label).size(10.5).color(colour));
+            if !pressure_available {
+                let why =
+                    ui.add(egui::Button::new(egui::RichText::new(crate::tl_id!("ui.pressure_why")).size(10.5).color(t.accent)).frame(false).small());
+                egui::Popup::menu(&why).id(ui.id().with("pressure-why")).show(|ui| {
+                    ui.set_max_width(280.0);
+                    ui.label(pressure_unavailable_tip());
+                });
+            }
+        });
         let (rect, resp) = ui.allocate_exact_size(vec2(96.0, 20.0), Sense::click_and_drag());
         let share = f32::from(now.min(100)) / 100.0;
         let painter = ui.painter_at(rect);
@@ -2775,6 +3325,9 @@ fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts:
             egui::Stroke::NONE,
         ));
         painter.circle(egui::pos2(x, rect.center().y), 5.0, t.panel, egui::Stroke::new(1.4, accent));
+        if resp.has_focus() {
+            painter.rect_stroke(rect.shrink(0.5), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+        }
 
         if pressure_available
             && (resp.dragged() || resp.clicked())
@@ -2783,6 +3336,15 @@ fn sensitivity(ui: &mut Ui, now: u8, pressure_available: bool, t: &Tokens, acts:
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let picked = (((at.x - track.min.x) / track.width().max(1.0)).clamp(0.0, 1.0) * 100.0).round() as u8;
             if picked != now {
+                acts.push(Act::InkSensitivity(picked));
+            }
+        }
+        // The arrow keys move it five at a time, as a slider does, once it has the keyboard.
+        if pressure_available && resp.has_focus() {
+            let step = ui.input(|i| i32::from(i.key_pressed(egui::Key::ArrowRight)) - i32::from(i.key_pressed(egui::Key::ArrowLeft)));
+            if step != 0 {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let picked = (i32::from(now) + step * 5).clamp(0, 100) as u8;
                 acts.push(Act::InkSensitivity(picked));
             }
         }
@@ -2891,7 +3453,12 @@ fn add_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
 fn away(ui: &Ui, area: &egui::Response, button: &egui::Response) -> bool {
     let at = ui.ctx().pointer_latest_pos().unwrap_or_default();
     let out = ui.input(|i| i.pointer.any_click()) && !area.rect.contains(at) && !button.rect.contains(at);
-    out || ui.input(|i| i.key_pressed(egui::Key::Escape))
+    // Escape closes it and gives the keyboard back to the button it came from (issue #374).
+    let escaped = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    if escaped {
+        button.request_focus();
+    }
+    out || escaped
 }
 
 /// One tool on the rack, drawn as the tool: a pen standing on its nib, the way OneNote
@@ -2923,16 +3490,24 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
     paint_tool(&painter, stand, nib.tool, nib.colour, drop);
     let dark = crate::theme::luminance(t.panel) < crate::inkpad::DARK_PAGE;
     crate::inkpad::paint_stroke(&painter, band.min, &rack_swatch(nib, band, dark));
+    if chosen {
+        chosen_badge(&painter, rect, t);
+    }
 
     // The chevron on the tool in hand opens its editor, as OneNote's does; a right click
-    // opens the same editor and the rest of the rack's own menu.
+    // opens the same editor and the rest of the rack's own menu. It is a control of its own,
+    // named for the tool, so picking the tool up and opening its properties can each be done
+    // from the keyboard (issue #375).
     let mut picked_up = resp.clicked();
     let chev = egui::Rect::from_center_size(egui::pos2(rect.center().x, rect.max.y - 5.0), vec2(14.0, 11.0));
     let mut modify = false;
     if chosen {
         let hit = ui.interact(chev, resp.id.with("chevron"), Sense::click());
-        chevron(&painter, chev.center(), if hit.hovered() { t.accent } else { t.muted });
-        if hit.clicked() {
+        chevron(&painter, chev.center(), if hit.hovered() || hit.has_focus() { t.accent } else { t.muted });
+        let said = crate::i18n::format_message_id("ui.modify_named_tool", &[("tool", &name)]);
+        let tip = said.clone();
+        hit.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &said));
+        if hit.on_hover_text(tip).clicked() {
             modify = true;
             picked_up = false;
         }
@@ -2940,7 +3515,7 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
     // The menu hangs off the pen's own response. A second interact over the same
     // rectangle looked harmless and was not: later widgets win in egui, so it swallowed
     // every left click and only the eraser, which had no such overlay, could be picked up.
-    resp.context_menu(|ui| {
+    floating::row_menu(&resp, |ui| {
         if ui.button(crate::tl_id!("ui.modify_tool")).clicked() {
             modify = true;
             ui.close();
@@ -2984,6 +3559,15 @@ fn pen_on_rack(ui: &mut Ui, i: usize, nib: Nib, chosen: bool, rack_len: usize, t
     let name = if i < 9 { format!("{name} (Alt+{})", i + 1) } else { name };
     resp.on_hover_text(name);
     picked_up
+}
+
+/// The tick in the corner of the tool in hand (issue #375): with the outline, it marks the chosen
+/// tool by shape as well as by colour, so two tools of one colour, or a colour close to the
+/// accent, still read apart.
+fn chosen_badge(painter: &egui::Painter, slot: Rect, t: &Tokens) {
+    let c = egui::pos2(slot.max.x - 5.5, slot.min.y + 5.5);
+    painter.circle_filled(c, 4.6, t.accent);
+    painter.add(egui::Shape::line(vec![c + vec2(-2.2, 0.1), c + vec2(-0.6, 1.8), c + vec2(2.3, -1.6)], egui::Stroke::new(1.3, t.panel)));
 }
 
 /// How tall the strip under a pen on the rack is, where the stroke it makes is drawn.
@@ -3049,6 +3633,7 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
     let area = egui::Area::new(id.with("area"))
         .order(egui::Order::Foreground)
         .fixed_pos(under.left_bottom())
+        .constrain(true)
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 const POPUP_WIDTH: f32 = 196.0;
@@ -3063,7 +3648,10 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                 crate::inkpad::paint_stroke(&ui.painter_at(sample), sample.min, &stroke);
                 ui.separator();
 
-                ui.label(egui::RichText::new(crate::tl_id!("ui.thickness")).size(11.5).color(t.muted));
+                // Each heading says what is chosen now, so the dots and swatches need not be read by
+                // their ring alone (issue #375).
+                let size_now = crate::i18n::format_message_id("ui.size_pt", &[("size", &format!("{:.1}", nib.width()))]);
+                ui.label(egui::RichText::new(crate::i18n::format_message_id("ui.thickness_now", &[("size", &size_now)])).size(11.5).color(t.muted));
                 ui.horizontal(|ui| {
                     for tenths in rack::THICKNESSES {
                         let here = nib.tenths == tenths;
@@ -3089,7 +3677,11 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                 });
 
                 ui.add_space(2.0);
-                ui.label(egui::RichText::new(crate::tl_id!("ui.colours")).size(11.5).color(t.muted));
+                ui.label(
+                    egui::RichText::new(crate::i18n::format_message_id("ui.colour_now", &[("colour", crate::tl!(swatch_name(nib.colour)))]))
+                        .size(11.5)
+                        .color(t.muted),
+                );
                 for row in rack::PALETTE {
                     ui.horizontal(|ui| {
                         for colour in row {
@@ -3109,8 +3701,9 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                                 "ui.colour_hex",
                                 &[("colour", crate::tl!(swatch_name(colour))), ("hex", &colour.hex())],
                             );
+                            let tip = name.clone();
                             resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::RadioButton, enabled, here, name.clone()));
-                            if resp.on_hover_text(colour.hex()).clicked() {
+                            if resp.on_hover_text(tip).clicked() {
                                 acts.push(Act::InkRack(RackEdit::Set(i, Nib::new(nib.tool, colour, nib.tenths))));
                             }
                         }
@@ -3138,11 +3731,54 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
                     acts.push(Act::InkPointer(Pointer::Eyedropper(i)));
                     done = true;
                 }
-                if popup_action_button(ui, crate::tl_id!("ui.delete_tool"), rack_len > 1, t.warn, crate::tl_id!("ui.remove_this_tool_from_the_rack"))
-                    .clicked()
+                // The rack's own actions, together and apart from the tool's look: move it, add another
+                // like it, and, behind a second step, take it off the rack (issue #375).
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(i > 0, egui::Button::new(crate::tl_id!("ui.move_left")).small()).clicked() {
+                        acts.push(Act::InkRack(RackEdit::Move(i, true)));
+                    }
+                    if ui.add_enabled(i + 1 < rack_len, egui::Button::new(crate::tl_id!("ui.move_right")).small()).clicked() {
+                        acts.push(Act::InkRack(RackEdit::Move(i, false)));
+                    }
+                    let another = crate::i18n::format_message_id("ui.add_another_tool", &[("tool", crate::tl!(nib.tool.label()))]);
+                    if ui.add(egui::Button::new(another).small()).clicked() {
+                        acts.push(Act::InkRack(RackEdit::Add(nib.tool)));
+                        done = true;
+                    }
+                });
+                let confirm_id = id.with("confirm-delete");
+                let confirming = ui.data(|d| d.get_temp::<bool>(confirm_id)).unwrap_or(false);
+                if confirming {
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.delete_tool_confirm")).size(11.5).color(t.text));
+                    ui.horizontal(|ui| {
+                        if popup_action_button(
+                            ui,
+                            crate::tl_id!("ui.delete_tool"),
+                            rack_len > 1,
+                            t.warn,
+                            crate::tl_id!("ui.remove_this_tool_from_the_rack"),
+                        )
+                        .clicked()
+                        {
+                            acts.push(Act::InkRack(RackEdit::Remove(i)));
+                            ui.data_mut(|d| d.remove::<bool>(confirm_id));
+                            done = true;
+                        }
+                        if popup_action_button(ui, crate::tl_id!("ui.keep_tool"), true, t.accent, crate::tl_id!("ui.keep_tool_tip")).clicked() {
+                            ui.data_mut(|d| d.remove::<bool>(confirm_id));
+                        }
+                    });
+                } else if popup_action_button(
+                    ui,
+                    crate::tl_id!("ui.delete_tool_ellipsis"),
+                    rack_len > 1,
+                    t.muted,
+                    crate::tl_id!("ui.remove_this_tool_from_the_rack"),
+                )
+                .clicked()
                 {
-                    acts.push(Act::InkRack(RackEdit::Remove(i)));
-                    done = true;
+                    ui.data_mut(|d| d.insert_temp(confirm_id, true));
                 }
             });
         })
@@ -3150,7 +3786,11 @@ fn modify_tool(ui: &mut Ui, id: egui::Id, under: Rect, i: usize, nib: Nib, rack_
     ui.data_mut(|d| d.insert_temp(more_colours_id, more_colours));
     let at = ui.ctx().pointer_latest_pos().unwrap_or_default();
     let outside = ui.input(|i| i.pointer.any_click()) && !area.rect.contains(at) && !under.contains(at);
-    done || outside || ui.input(|i| i.key_pressed(egui::Key::Escape))
+    let close = done || outside || ui.input(|i| i.key_pressed(egui::Key::Escape));
+    if close {
+        ui.data_mut(|d| d.remove::<bool>(id.with("confirm-delete")));
+    }
+    close
 }
 
 /// The eraser, racked beside the pens because that is where a hand reaches for it, and
@@ -3163,6 +3803,7 @@ fn eraser_on_rack(ui: &mut Ui, chosen: bool, t: &Tokens) -> egui::Response {
     if chosen {
         painter.rect_filled(rect, 4.0, crate::theme::mix(t.panel, t.accent, 0.10));
         painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+        chosen_badge(&painter, rect, t);
     } else if resp.hovered() {
         painter.rect_filled(rect, 4.0, t.row_hover);
     }
@@ -3320,7 +3961,7 @@ fn paint_tool(painter: &egui::Painter, rect: Rect, tool: Tool, colour: Rgb, drop
 }
 
 /// A plain name for a colour, so a pen can be told from its neighbour by a screen reader
-/// and by a test. Only the colours on the rack need one.
+/// and by a test.
 fn swatch_name(colour: Rgb) -> &'static str {
     match (colour.0, colour.1, colour.2) {
         (0x20, 0x20, 0x20) => "black",
@@ -3330,6 +3971,31 @@ fn swatch_name(colour: Rgb) -> &'static str {
         (0x55, 0x55, 0x55) => "grey",
         (0xff, 0xdd, 0x33) => "yellow",
         (0x6f, 0xe3, 0x9a) => "mint",
+        // The rest of the palette, so every swatch is read out by a name (issue #375).
+        (0x5a, 0x5a, 0x5a) => "dark grey",
+        (0x8c, 0x8c, 0x8c) => "mid grey",
+        (0xbd, 0xbd, 0xbd) => "light grey",
+        (0xe4, 0xe4, 0xe4) => "pale grey",
+        (0xff, 0xff, 0xff) => "white",
+        (0x8c, 0x12, 0x12) => "dark red",
+        (0xe8, 0x62, 0x1f) => "orange",
+        (0xf2, 0x9d, 0x12) => "amber",
+        (0xfa, 0xf0, 0x8a) => "pale yellow",
+        (0x0d, 0x4c, 0x27) => "dark green",
+        (0x3f, 0xb5, 0x50) => "light green",
+        (0x19, 0x8f, 0x8f) => "teal",
+        (0x66, 0xd9, 0xd9) => "aqua",
+        (0x10, 0x2a, 0x6b) => "navy",
+        (0x3b, 0x8d, 0xf0) => "sky blue",
+        (0x86, 0xc5, 0xff) => "light blue",
+        (0x4a, 0x2a, 0x8f) => "purple",
+        (0x8b, 0x63, 0xd6) => "violet",
+        (0x6b, 0x1b, 0x4a) => "plum",
+        (0xb0, 0x2b, 0x7a) => "magenta",
+        (0xe8, 0x5a, 0xa8) => "pink",
+        (0xf7, 0xa8, 0xcd) => "light pink",
+        (0x6a, 0x45, 0x2a) => "brown",
+        (0xa9, 0x7c, 0x50) => "tan",
         _ => "custom",
     }
 }
@@ -3758,7 +4424,7 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             ui,
             if view.full_page { Icon::ExitFullPage } else { Icon::FullPage },
             crate::tl_id!("ui.full_page_view_2"),
-            crate::tl_id!("ui.give_the_page_the_whole_window"),
+            if view.full_page { crate::tl_id!("ui.full_page_on_tip") } else { crate::tl_id!("ui.full_page_off_tip") },
             view.full_page,
             t,
         )
@@ -3791,21 +4457,21 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             if small_check(ui, crate::tl_id!("ui.tabs_layout"), crate::tl_id!("ui.tabs_layout_tip"), view.tabs_layout, t).clicked() {
                 acts.push(Act::ToggleTabsLayout);
             }
+            // Which side of the page the list of pages is on, in the tabs layout (issue #534).
+            ui.add_enabled_ui(view.tabs_layout, |ui| {
+                if small_check(ui, crate::tl_id!("ui.page_list_on_right"), crate::tl_id!("ui.page_list_on_right_tip"), view.pages_right, t).clicked()
+                {
+                    acts.push(Act::TogglePagesRight);
+                }
+            });
         });
     });
     group(ui, crate::tl_id!("ui.tools"), t, |ui| {
         rows(ui, |ui| {
-            if small(
-                ui,
-                None,
-                crate::tl_id!("ui.immersive_reader"),
-                crate::tl_id!("ui.immersive_reader"),
-                crate::tl_id!("ui.immersive_reader_tip"),
-                false,
-                t,
-            )
-            .clicked()
-            {
+            // Issue #376: a command with an icon and its name, like the others, and a tip that says
+            // how it differs from Full Page View: the page as plain large type to read, not the
+            // page itself with more room.
+            if small_labeled_icon(ui, Icon::AlignLeft, crate::tl_id!("ui.immersive_reader"), crate::tl_id!("ui.immersive_reader_tip"), t).clicked() {
                 acts.push(Act::ImmersiveReader);
             }
             not_built(ui, crate::tl_id!("ui.live_captions"), t);
@@ -3813,6 +4479,13 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
     });
     group(ui, crate::tl_id!("ui.page_setup"), t, |ui| {
         rule_lines_menu(ui, view, t, acts);
+        // Issue #376: each part of the paper says what it is set to, with a small picture of it,
+        // and opens its own choices. Three rows, so nothing runs into the group's name.
+        rows(ui, |ui| {
+            ui.add_enabled_ui(view.has_page, |ui| page_colour_row(ui, view, t, acts));
+            ui.add_enabled_ui(view.has_page, |ui| rule_lines_row(ui, view, t, acts));
+            ui.add_enabled_ui(view.has_page, |ui| paper_size_row(ui, view, t, acts));
+        });
         rows(ui, |ui| {
             if small_check(ui, crate::tl_id!("ui.hide_page_title"), crate::tl_id!("ui.hide_the_page_title"), view.hide_title, t).clicked() {
                 acts.push(Act::ToggleTitle);
@@ -3828,42 +4501,38 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             {
                 acts.push(Act::ToggleSnap);
             }
-            ui.add_enabled_ui(view.has_page, |ui| {
-                ui.menu_button(crate::tl_id!("ui.page_colour"), |ui| {
-                    if page_colour_palette(ui, view, t, acts) {
-                        ui.close();
-                    }
-                });
-            });
-            ui.add_enabled_ui(view.has_page, |ui| {
-                // It stays open while sizes are tried and margins dragged; a click away closes it.
-                let config = egui::containers::menu::MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
-                egui::containers::menu::MenuButton::new(crate::tl_id!("ui.paper_size"))
-                    .config(config)
-                    .ui(ui, |ui| paper_size_menu(ui, view.paper_size, t, acts))
-                    .0
-                    .on_hover_text(crate::tl_id!("ui.the_sheet_this_page_is_written_for_its_size_turn_and_margins"));
-            });
         });
     });
+    // Issue #376: one cluster, in the order the issue names it: Zoom Out, the zoom now (pick
+    // another), Zoom In, then Reset zoom and Page Width under the percentage.
     group(ui, crate::tl_id!("ui.zoom"), t, |ui| {
         ui.horizontal(|ui| {
-            if big(ui, Icon::ZoomOut, crate::tl_id!("ui.zoom_out"), crate::tl_id!("ui.make_the_page_smaller"), t).clicked() {
+            if big(ui, Icon::ZoomOut, crate::tl_id!("ui.zoom_out"), crate::tl_id!("ui.zoom_out_tip"), t).clicked() {
                 acts.push(Act::Zoom(-1));
             }
-            if big(ui, Icon::ZoomIn, crate::tl_id!("ui.zoom_in"), crate::tl_id!("ui.make_the_page_larger"), t).clicked() {
-                acts.push(Act::Zoom(1));
-            }
             rows(ui, |ui| {
-                egui::ComboBox::from_label(crate::tl_id!("ui.zoom")).width(76.0).selected_text(format!("{}%", view.zoom_percent)).show_ui(ui, |ui| {
-                    for percent in [50, 60, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250] {
-                        if ui.selectable_label(view.zoom_percent == percent, format!("{percent}%")).clicked() {
-                            acts.push(Act::ZoomTo(percent));
+                let combo = egui::ComboBox::from_id_salt("ribbon-zoom-percent")
+                    .width(76.0)
+                    .selected_text(format!("{}%", view.zoom_percent))
+                    .show_ui(ui, |ui| {
+                        for percent in [50, 60, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250] {
+                            if ui.selectable_label(view.zoom_percent == percent, format!("{percent}%")).clicked() {
+                                acts.push(Act::ZoomTo(percent));
+                            }
                         }
-                    }
+                    })
+                    .response;
+                // The percentage box is named for a screen reader, and says its value; on screen the
+                // group's name under it already says what it is.
+                let (enabled, now) = (ui.is_enabled(), format!("{}%", view.zoom_percent));
+                combo.widget_info(move || {
+                    let mut info = egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, enabled, crate::tl_id!("ui.zoom_level"));
+                    info.current_text_value = Some(now.clone());
+                    info
                 });
-                // Issue #376: a reset reads as a reset, not as a second "100%" beside the
-                // percentage box; there is nothing to reset at 100%.
+                combo.on_hover_text(crate::tl_id!("ui.zoom_percent_tip"));
+                // A reset reads as a reset, not as a second "100%" beside the percentage box;
+                // there is nothing to reset at 100%.
                 let reset = ui
                     .add_enabled_ui(view.zoom_percent != 100, |ui| {
                         small_labeled_icon(ui, Icon::Undo, crate::tl_id!("ui.reset_zoom"), crate::tl_id!("ui.show_the_page_at_100"), t)
@@ -3878,6 +4547,9 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
                     acts.push(Act::PageWidth);
                 }
             });
+            if big(ui, Icon::ZoomIn, crate::tl_id!("ui.zoom_in"), crate::tl_id!("ui.zoom_in_tip"), t).clicked() {
+                acts.push(Act::Zoom(1));
+            }
         });
     });
     group(ui, crate::tl_id!("ui.window"), t, |ui| {
@@ -3967,29 +4639,6 @@ fn source_tab(ui: &mut Ui, format: Option<PageFormat>, t: &Tokens, acts: &mut Ve
             ui.label(egui::RichText::new(crate::tl_id!("ui.the_format_is_set_when_the_page_is_created")).size(10.0).color(t.muted));
         });
     });
-}
-
-/// A big button that draws one of the ribbon's own marks.
-// i18n-ui-text: label,tip
-fn big_mark(ui: &mut Ui, mark: Mark, label: &str, tip: &str, t: &Tokens) -> egui::Response {
-    let label = crate::tl!(label);
-    let tip = crate::tl!(tip);
-    let (rect, resp) = ui.allocate_exact_size(vec2(BIG, GROUP_H - 18.0), Sense::click());
-    let painter = ui.painter_at(rect);
-    if resp.hovered() {
-        painter.rect_filled(rect, 4.0, t.row_hover);
-    }
-    ribbon_icons::paint(
-        &painter,
-        Rect::from_center_size(egui::pos2(rect.center().x, rect.min.y + 18.0), vec2(24.0, 24.0)),
-        mark,
-        mark.color(t.text, t.accent),
-    );
-    painter.text(egui::pos2(rect.center().x, rect.min.y + 40.0), Align2::CENTER_CENTER, label, egui::FontId::proportional(11.0), t.text);
-    let enabled = ui.is_enabled();
-    let name = label.to_string();
-    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
-    resp.on_hover_text(tip)
 }
 
 #[cfg(test)]

@@ -1,9 +1,10 @@
 //! The Quick Access Toolbar: Back, Forward, Undo and Redo in a strip of their own, the way
 //! OneNote keeps them beside its title, and a small menu to choose which are shown, to put the
-//! strip under the ribbon, or to hide it.
+//! strip under the ribbon, or to hide it. Print and Print Preview can be added from the menu
+//! (issue #538); like OneNote's, they are not shown until chosen.
 //!
-//! Only what NoteCraft can do is offered. OneNote's menu also lists Print, Print Preview,
-//! Touch/Mouse Mode and More Commands; none of those exist here, so they are not listed.
+//! Only what NoteCraft can do is offered. OneNote's menu also lists Touch/Mouse Mode and More
+//! Commands; neither exists here, so they are not listed.
 //!
 //! This module draws the strip and says which command was pressed; the window carries it out.
 //! The choices (which buttons, above or below, hidden) are plain data in [`Config`] and are kept
@@ -21,10 +22,17 @@ pub enum Command {
     Forward,
     Undo,
     Redo,
+    /// File > Print, for the open page.
+    Print,
+    /// The Print dialog, which shows the open page as it will print.
+    PrintPreview,
 }
 
+/// How many commands the strip can hold.
+const COUNT: usize = 6;
+
 impl Command {
-    pub const ALL: [Command; 4] = [Command::Back, Command::Forward, Command::Undo, Command::Redo];
+    pub const ALL: [Command; COUNT] = [Command::Back, Command::Forward, Command::Undo, Command::Redo, Command::Print, Command::PrintPreview];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -32,6 +40,8 @@ impl Command {
             Command::Forward => "Forward",
             Command::Undo => "Undo",
             Command::Redo => "Redo",
+            Command::Print => "Print",
+            Command::PrintPreview => "Print preview",
         }
     }
 
@@ -41,6 +51,8 @@ impl Command {
             Command::Forward => "Forward to the page after (Alt+Right)",
             Command::Undo => "Undo (Ctrl+Z)",
             Command::Redo => "Redo (Ctrl+Y)",
+            Command::Print => "Print the page (Ctrl+P)",
+            Command::PrintPreview => "See the page as it will print",
         }
     }
 
@@ -50,6 +62,8 @@ impl Command {
             Command::Forward => Glyph::Mark(Mark::Forward),
             Command::Undo => Glyph::Icon(Icon::Undo),
             Command::Redo => Glyph::Icon(Icon::Redo),
+            Command::Print => Glyph::Icon(Icon::Print),
+            Command::PrintPreview => Glyph::Icon(Icon::PrintPreview),
         }
     }
 
@@ -63,7 +77,15 @@ impl Command {
             Command::Forward => "qat_forward",
             Command::Undo => "qat_undo",
             Command::Redo => "qat_redo",
+            Command::Print => "qat_print",
+            Command::PrintPreview => "qat_print_preview",
         }
+    }
+
+    /// Shown before anyone chooses: the four OneNote shows, and not the two it leaves in the
+    /// menu.
+    fn shown_at_first(self) -> bool {
+        !matches!(self, Command::Print | Command::PrintPreview)
     }
 }
 
@@ -73,7 +95,7 @@ const HIDDEN_KEY: &str = "qat_hidden";
 /// What the person chose: which buttons, where the strip sits, whether it shows at all.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Config {
-    pub show: [bool; 4],
+    pub show: [bool; COUNT],
     /// Under the ribbon instead of beside the title.
     pub below: bool,
     pub hidden: bool,
@@ -81,7 +103,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { show: [true; 4], below: false, hidden: false }
+        Config { show: Command::ALL.map(Command::shown_at_first), below: false, hidden: false }
     }
 }
 
@@ -99,7 +121,7 @@ impl Config {
     pub fn load(get: impl Fn(&str) -> Option<String>) -> Config {
         let mut c = Config::default();
         for cmd in Command::ALL {
-            c.show[cmd.index()] = flag(get(cmd.key()), true);
+            c.show[cmd.index()] = flag(get(cmd.key()), cmd.shown_at_first());
         }
         c.below = flag(get(BELOW_KEY), false);
         c.hidden = flag(get(HIDDEN_KEY), false);
@@ -128,6 +150,8 @@ pub struct Enabled {
     pub forward: bool,
     pub undo: bool,
     pub redo: bool,
+    /// A page is open to print, as File > Print needs.
+    pub print: bool,
 }
 
 impl Enabled {
@@ -137,6 +161,7 @@ impl Enabled {
             Command::Forward => self.forward,
             Command::Undo => self.undo,
             Command::Redo => self.redo,
+            Command::Print | Command::PrintPreview => self.print,
         }
     }
 }
@@ -229,19 +254,21 @@ mod tests {
     fn nothing_saved_means_every_button_in_its_usual_place() {
         let c = Config::load(|_| None);
         assert_eq!(c, Config::default());
-        assert!(c.show.iter().all(|s| *s) && !c.below && !c.hidden);
+        assert!(c.show[..4].iter().all(|s| *s) && !c.below && !c.hidden);
+        assert!(!c.shows(Command::Print) && !c.shows(Command::PrintPreview), "Print waits to be chosen, as in OneNote");
     }
 
     #[test]
     fn the_choices_are_kept_and_read_back() {
         let store = RefCell::new(HashMap::new());
-        let chosen = Config { show: [true, true, false, true], below: true, hidden: false };
+        let chosen = Config { show: [true, true, false, true, true, false], below: true, hidden: false };
         chosen.save(|k, v| {
             store.borrow_mut().insert(k.to_string(), v.to_string());
         });
         let back = Config::load(|k| store.borrow().get(k).cloned());
         assert_eq!(back, chosen);
         assert_eq!(store.borrow().get("qat_undo").map(String::as_str), Some("false"));
+        assert_eq!(store.borrow().get("qat_print").map(String::as_str), Some("true"));
     }
 
     #[test]
@@ -254,9 +281,10 @@ mod tests {
     fn every_command_has_a_name_a_tip_and_its_own_setting() {
         let labels: std::collections::HashSet<&str> = Command::ALL.iter().map(|c| c.label()).collect();
         let keys: std::collections::HashSet<&str> = Command::ALL.iter().map(|c| c.key()).collect();
-        assert_eq!((labels.len(), keys.len()), (4, 4));
+        assert_eq!((labels.len(), keys.len()), (COUNT, COUNT));
         assert!(Command::ALL.iter().all(|c| !c.tip().is_empty()));
-        let on = Enabled { back: true, forward: false, undo: true, redo: false };
+        let on = Enabled { back: true, forward: false, undo: true, redo: false, print: true };
         assert!(on.of(Command::Back) && !on.of(Command::Forward) && on.of(Command::Undo) && !on.of(Command::Redo));
+        assert!(on.of(Command::Print) && on.of(Command::PrintPreview));
     }
 }

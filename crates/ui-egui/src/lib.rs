@@ -54,6 +54,7 @@ pub mod versions;
 pub mod input_language {
     pub use notecraft_input_language::{Watcher, is_rtl, watch_changes};
 }
+pub mod image_text;
 pub mod inkpad;
 pub mod mathview;
 pub mod navdrag;

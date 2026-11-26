@@ -288,6 +288,18 @@ impl Justified {
         moved
     }
 
+    /// The page's blocks were put in another order: the block that was at `i` is now at
+    /// `moved(i)`. A mark goes with its paragraph (issue #563). True when anything changed.
+    pub fn renumber(&mut self, moved: impl Fn(usize) -> usize) -> bool {
+        let before = (self.blocks.clone(), self.spacing.clone());
+        for at in self.blocks.iter_mut().map(|(b, _)| b).chain(self.spacing.iter_mut().map(|(b, _)| b)) {
+            *at = moved(*at);
+        }
+        self.blocks.sort_by_key(|(b, _)| *b);
+        self.spacing.sort_by_key(|(b, _)| *b);
+        (self.blocks.clone(), self.spacing.clone()) != before
+    }
+
     /// The blocks in `gone` were taken off the page. A mark on one of them goes, and a mark
     /// on a paragraph after them moves up with it, so it stays on the same paragraph. True
     /// when anything changed.
@@ -375,6 +387,18 @@ pub fn write(justified: &Justified) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #563: a mark goes with its paragraph when the blocks are put in another order.
+    #[test]
+    fn a_mark_follows_its_paragraph_when_blocks_are_reordered() {
+        let mut marked = parse("0, 3:low, 7:high");
+        assert!(marked.renumber(|i| match i {
+            3 => 2,
+            2 => 3,
+            i => i,
+        }));
+        assert_eq!(write(&marked), "0, 2:low, 7:high");
+    }
 
     #[test]
     fn a_mark_follows_its_paragraph_when_blocks_before_it_go() {

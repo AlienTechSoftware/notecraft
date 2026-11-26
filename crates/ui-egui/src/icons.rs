@@ -154,6 +154,10 @@ pub enum Icon {
     TableRow,
     /// A table with one column picked out.
     TableColumn,
+    /// A printer with a sheet coming out of it: print the page.
+    Print,
+    /// A sheet with a magnifier over it: see the page as it will print.
+    PrintPreview,
 }
 
 /// Maps points from a 24 x 24 design grid into `rect`.
@@ -476,6 +480,22 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line((9.5, 5.5), (9.5, 19.0)),
             line((14.5, 5.5), (14.5, 19.0)),
         ],
+        // A printer: the sheet going in at the top, the body, and the sheet coming out.
+        Icon::Print => vec![
+            closed(&[(7.0, 3.5), (17.0, 3.5), (17.0, 8.5), (7.0, 8.5)]),
+            closed(&[(3.5, 8.5), (20.5, 8.5), (20.5, 16.5), (3.5, 16.5)]),
+            fill(&[(7.0, 13.5), (17.0, 13.5), (17.0, 20.5), (7.0, 20.5)], shade(color, 0.2)),
+            closed(&[(7.0, 13.5), (17.0, 13.5), (17.0, 20.5), (7.0, 20.5)]),
+            Shape::circle_filled(g.p(17.5, 11.0), w / 24.0, color),
+        ],
+        // A sheet with a magnifier over its corner.
+        Icon::PrintPreview => vec![
+            closed(&[(4.0, 3.5), (15.0, 3.5), (15.0, 20.5), (4.0, 20.5)]),
+            line((6.5, 7.5), (12.5, 7.5)),
+            line((6.5, 10.5), (10.5, 10.5)),
+            Shape::circle_stroke(g.p(15.0, 14.0), w * 4.0 / 24.0, stroke),
+            line((17.8, 16.8), (21.0, 20.0)),
+        ],
         Icon::MoveUp => vec![line((12.0, 20.0), (12.0, 4.5)), path(&[(6.0, 10.5), (12.0, 4.5), (18.0, 10.5)])],
         Icon::MoveDown => vec![line((12.0, 4.0), (12.0, 19.5)), path(&[(6.0, 13.5), (12.0, 19.5), (18.0, 13.5)])],
         // A plain plus.
@@ -682,7 +702,7 @@ pub fn paint_moon(painter: &Painter, rect: Rect, color: Color32, behind: Color32
 mod tests {
     use super::*;
 
-    pub const ALL: [Icon; 70] = [
+    pub const ALL: [Icon; 72] = [
         Icon::Notebook,
         Icon::SectionGroup,
         Icon::SectionGroupOpen,
@@ -753,6 +773,8 @@ mod tests {
         Icon::Symbol,
         Icon::TableRow,
         Icon::TableColumn,
+        Icon::Print,
+        Icon::PrintPreview,
     ];
 
     #[test]

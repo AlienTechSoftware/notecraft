@@ -6,7 +6,7 @@ default-members = ["crates/*", "apps/notecraft", "apps/notecraft-cli", "apps/not
 exclude = ["vendor/winit"]
 
 [workspace.package]
-version = "0.0.20"
+version = "0.0.22"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT OR Apache-2.0"

@@ -40,6 +40,125 @@ const ROW_H: f32 = 26.0;
 const ICON_COL: f32 = 30.0;
 const GLYPH: f32 = 16.0;
 
+/// A row's or object's own menu (issue #380): it opens from the row itself, not wherever the
+/// pointer happens to be, so it is clear which row it is for and it stays inside the window,
+/// turning to open upwards or the other way near an edge. A secondary click opens it, and so do
+/// Shift+F10 and the Menu key while the row has the keyboard; Escape closes it and gives the
+/// keyboard back to the row.
+pub fn row_menu<R>(resp: &Response, add: impl FnOnce(&mut Ui) -> R) -> Option<egui::InnerResponse<R>> {
+    let by_keys = resp.has_focus()
+        && resp.ctx.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, egui::Key::F10) || i.consume_key(egui::Modifiers::NONE, egui::Key::Menu));
+    let set = if resp.secondary_clicked() || by_keys {
+        Some(egui::SetOpenCommand::Bool(true))
+    } else if resp.clicked() {
+        Some(egui::SetOpenCommand::Bool(false))
+    } else {
+        None
+    };
+    let id = egui::Popup::default_response_id(resp);
+    let was_open = egui::Popup::is_id_open(&resp.ctx, id);
+    let escaped = was_open && resp.ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    let shown = egui::Popup::menu(resp).open_memory(set).show(add);
+    if escaped && !egui::Popup::is_id_open(&resp.ctx, id) {
+        resp.request_focus();
+    }
+    shown
+}
+
+/// Where a menu that opens at a point goes (issue #380): under and after the point, and, when that
+/// would run past the window, before it or above it instead, so its last row is never cut off by
+/// the window's edge. The first frame measures the menu; the next one places it.
+const POINT_MENU_ALIGNS: [egui::RectAlign; 4] =
+    [egui::RectAlign::BOTTOM_START, egui::RectAlign::BOTTOM_END, egui::RectAlign::TOP_START, egui::RectAlign::TOP_END];
+
+/// A menu for something on the page (the page, a box, a picture), opened at `anchor`: where the
+/// right click fell, or, from the keyboard, the thing itself. It is an egui menu, so the arrow
+/// keys move between its rows, and it is kept inside the window by turning to open the other
+/// way near an edge. The caller decides when it opens and closes.
+pub fn point_menu<R>(ctx: &Context, id: Id, anchor: Rect, add: impl FnOnce(&mut Ui) -> R) -> Option<egui::InnerResponse<R>> {
+    egui::Popup::new(id, ctx.clone(), egui::PopupAnchor::ParentRect(anchor), egui::LayerId::new(Order::Foreground, id))
+        .kind(egui::PopupKind::Menu)
+        .open(true)
+        .align(POINT_MENU_ALIGNS[0])
+        .align_alternatives(&POINT_MENU_ALIGNS[1..])
+        .gap(0.0)
+        .layout(egui::Layout::top_down(egui::Align::Min))
+        .frame(Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(4)))
+        .show(|ui| {
+            ui.set_width(MENU_W);
+            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+            add(ui)
+        })
+}
+
+/// Whether Shift+F10 or the Menu key was pressed this frame, without taking the key: for a
+/// check that must not run on other frames (egui's `read_response` lets go of the keyboard on a
+/// click elsewhere, so it is only asked once the key is known to be down).
+pub fn menu_keys_down(ctx: &Context) -> bool {
+    ctx.input(|i| {
+        i.events.iter().any(|e| {
+            matches!(e, egui::Event::Key { key: egui::Key::F10, pressed: true, modifiers, .. } if modifiers.shift_only())
+                || matches!(e, egui::Event::Key { key: egui::Key::Menu, pressed: true, modifiers, .. } if modifiers.is_none())
+        })
+    })
+}
+
+/// The keys that open the menu of whatever has the keyboard: Shift+F10, or the Menu key.
+pub fn menu_keys_pressed(ctx: &Context) -> bool {
+    ctx.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, egui::Key::F10) || i.consume_key(egui::Modifiers::NONE, egui::Key::Menu))
+}
+
+fn first_row_id(layer: Id) -> Id {
+    Id::new(("menu-first-row", layer))
+}
+
+/// Asks the menu whose area is `menu` to put the keyboard on its first row that can be used,
+/// the next time it is drawn: a menu opened from the keyboard is then ready for Enter and the
+/// arrow keys (issue #380).
+pub fn focus_first_row(ctx: &Context, menu: Id) {
+    ctx.data_mut(|d| d.insert_temp(first_row_id(menu), true));
+}
+
+/// The first usable row of a menu takes the keyboard when the menu asked for it.
+fn take_first_row(ui: &Ui, resp: &Response) {
+    if ui.is_sizing_pass() || !ui.is_enabled() || !ui.is_visible() {
+        return;
+    }
+    let key = first_row_id(ui.layer_id().id);
+    if ui.data_mut(|d| d.remove_temp::<bool>(key)).unwrap_or(false) {
+        resp.request_focus();
+    }
+}
+
+/// The line at the top of a menu that names what it acts on (issue #380), so a menu opened over
+/// a page, a picture or a box says which one, in the quiet colour of a heading.
+pub fn menu_heading(ui: &mut Ui, text: &str, t: &Tokens) {
+    let width = ui.available_width().min(MENU_W);
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, 22.0), Sense::hover());
+    let painter = ui.painter_at(rect);
+    let galley = painter.layout(text.to_owned(), egui::FontId::proportional(11.5), t.muted, rect.width() - 12.0);
+    let shown = galley.rows.first().map(|r| r.text()).unwrap_or_default();
+    let cut = shown.chars().count() < text.chars().count();
+    let line = if cut { format!("{}…", shown.trim_end()) } else { text.to_owned() };
+    painter.text(egui::pos2(rect.min.x + 8.0, rect.center().y), Align2::LEFT_CENTER, line, egui::FontId::proportional(11.5), t.muted);
+    let name = text.to_owned();
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Label, true, name.clone()));
+}
+
+/// A row that opens a further menu (issue #380): the picture column and the words as every
+/// other row, and a chevron in the column on the right where a shortcut would go. Hovering it,
+/// Enter, or the Right arrow opens the further menu; Left or Escape comes back.
+// i18n-ui-text: label
+pub fn menu_submenu_row<R>(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Tokens, add: impl FnOnce(&mut Ui) -> R) -> Option<R> {
+    let resp = menu_row(ui, glyph, label, t);
+    let at = egui::pos2(resp.rect.max.x - 12.0, resp.rect.center().y);
+    ui.painter_at(resp.rect).add(egui::Shape::line(
+        vec![egui::pos2(at.x - 2.0, at.y - 4.0), egui::pos2(at.x + 2.0, at.y), egui::pos2(at.x - 2.0, at.y + 4.0)],
+        egui::Stroke::new(1.3, t.muted),
+    ));
+    egui::containers::menu::SubMenu::new().show(ui, &resp, add).map(|r| r.inner)
+}
+
 /// One row of a context menu: a picture in its own column, then the words. `glyph` is `None`
 /// for a row that has no picture; its words still start where the others' do, so a column of
 /// mixed rows lines up as it does in Office.
@@ -50,9 +169,15 @@ pub fn menu_row(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Tokens) -> R
     // four-item menu does not become a large empty ribbon across the page.
     let width = ui.available_width().min(MENU_W);
     let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
+    take_first_row(ui, &resp);
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
+    if resp.hovered() || resp.has_focus() {
         painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    // The row the keyboard is on is ringed as well as lit (issue #380), so a menu opened from
+    // the keyboard shows where Enter will go.
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     if let Some(glyph) = glyph {
         glyph.paint(&painter, Rect::from_center_size(egui::pos2(rect.min.x + ICON_COL / 2.0, rect.center().y), vec2(GLYPH, GLYPH)), t);
@@ -96,9 +221,15 @@ pub fn menu_row_danger(ui: &mut Ui, glyph: Option<Glyph>, label: &str, t: &Token
     let label = crate::tl!(label);
     let width = ui.available_width().min(MENU_W);
     let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
+    take_first_row(ui, &resp);
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
+    if resp.hovered() || resp.has_focus() {
         painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    // The row the keyboard is on is ringed as well as lit (issue #380), so a menu opened from
+    // the keyboard shows where Enter will go.
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     let icon = Rect::from_center_size(egui::pos2(rect.min.x + ICON_COL / 2.0, rect.center().y), vec2(GLYPH, GLYPH));
     match glyph {
@@ -120,9 +251,15 @@ pub fn menu_check_row(ui: &mut Ui, checked: bool, label: &str, t: &Tokens) -> Re
     let label = crate::tl!(label);
     let width = ui.available_width().min(MENU_W);
     let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
+    take_first_row(ui, &resp);
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
+    if resp.hovered() || resp.has_focus() {
         painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    // The row the keyboard is on is ringed as well as lit (issue #380), so a menu opened from
+    // the keyboard shows where Enter will go.
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     if checked {
         let c = egui::pos2(rect.min.x + ICON_COL / 2.0, rect.center().y);
@@ -331,8 +468,13 @@ pub fn show_bar(ctx: &Context, id: Id, anchor: Rect, bar: &Bar, t: &Tokens, acts
 fn bar_button(ui: &mut Ui, b: &BarButton, t: &Tokens) -> Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(BTN, BTN), Sense::click());
     let painter = ui.painter_at(rect);
-    if resp.hovered() {
+    if resp.hovered() || resp.has_focus() {
         painter.rect_filled(rect, 3.0, t.row_hover);
+    }
+    // The row the keyboard is on is ringed as well as lit (issue #380), so a menu opened from
+    // the keyboard shows where Enter will go.
+    if resp.has_focus() {
+        painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     b.glyph.paint(&painter, Rect::from_center_size(rect.center(), vec2(GLYPH, GLYPH)), t);
     let enabled = ui.is_enabled();

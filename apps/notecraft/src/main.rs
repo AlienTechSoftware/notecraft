@@ -16,7 +16,7 @@ use notecraft_engine::Session;
 use notecraft_store::Settings;
 use notecraft_ui_egui::NoteCraftApp;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 struct Shell {
     windows: notecraft_ui_egui::windows::Host,
@@ -32,19 +32,10 @@ impl eframe::App for Shell {
                 log::debug!("key press: {key:?} shift={} ctrl={} alt={}", modifiers.shift, modifiers.command, modifiers.alt);
             }
         }
-        let mut keyboard_paste = false;
-        raw_input.events.retain(|event| {
-            let is_paste = matches!(
-                event,
-                egui::Event::Key { key: egui::Key::V, pressed: true, modifiers, .. }
-                    if modifiers.ctrl || modifiers.command
-            ) || matches!(event, egui::Event::PasteImage(_));
-            keyboard_paste |= is_paste;
-            !is_paste
-        });
-        if keyboard_paste {
-            log::debug!("raw keyboard paste captured before egui clipboard handling");
-            self.windows.queue_keyboard_paste(raw_input.viewport_id);
+        // Ctrl+V, or Ctrl+Shift+V for the text only (issue #535).
+        if let Some(plain) = notecraft_ui_egui::clipboard::take_keyboard_paste(&mut raw_input.events) {
+            log::debug!("raw keyboard paste captured before egui clipboard handling (text only: {plain})");
+            self.windows.queue_keyboard_paste(raw_input.viewport_id, plain);
         }
         raw_input.events.extend(self.windows.take_events(raw_input.viewport_id));
     }
@@ -82,29 +73,50 @@ fn should_remember_notebooks_root(root: &std::path::Path) -> bool {
 }
 
 /// Locates the generated HTML and CMGFM demo payload installed beside the app.
-fn demo_payload(_executable: &std::path::Path) -> Option<PathBuf> {
-    #[cfg(target_os = "windows")]
-    let installed = _executable.parent().map(|parent| parent.join("demo").join("welcome-to-notecraft"));
+fn demo_payload(executable: &Path) -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
 
-    #[cfg(target_os = "linux")]
-    let installed: Option<PathBuf> = Some(if let Some(appdir) = std::env::var_os("APPDIR") {
-        PathBuf::from(appdir).join("usr/share/notecraft/demo/welcome-to-notecraft")
-    } else {
-        PathBuf::from("/usr/share/notecraft/demo/welcome-to-notecraft")
-    });
+    #[cfg(target_os = "windows")]
+    if let Some(parent) = executable.parent() {
+        candidates.push(parent.join("demo").join("welcome-to-notecraft"));
+    }
 
     #[cfg(target_os = "macos")]
-    let installed = _executable.parent().and_then(|parent| parent.parent()).map(|parent| parent.join("Resources/demo/welcome-to-notecraft"));
+    if let Some(parent) = executable.parent().and_then(|parent| parent.parent()) {
+        candidates.push(parent.join("Resources/demo/welcome-to-notecraft"));
+    }
+
+    #[cfg(target_os = "linux")]
+    candidates.extend(linux_demo_payload_candidates(executable, std::env::var_os("APPDIR").map(PathBuf::from)));
 
     #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-    let installed = _executable.parent().map(|parent| parent.join("demo").join("welcome-to-notecraft"));
+    if let Some(parent) = executable.parent() {
+        candidates.push(parent.join("demo").join("welcome-to-notecraft"));
+    }
 
     let fallback = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/demo/DemoNotebook");
-    Some(choose_demo_payload(installed.as_deref(), &fallback))
+    Some(choose_demo_payload(&candidates, &fallback))
 }
 
-fn choose_demo_payload(installed: Option<&std::path::Path>, fallback: &std::path::Path) -> PathBuf {
-    installed.filter(|path| path.is_dir()).map_or_else(|| fallback.to_path_buf(), std::path::Path::to_path_buf)
+/// Linux installs are not necessarily under /usr: a portable tarball keeps share/ next to bin/.
+/// Check that layout first, then the AppImage and system locations, so the wizard finds the
+/// payload shipped with the running app instead of a build-machine path that does not exist.
+#[cfg(target_os = "linux")]
+fn linux_demo_payload_candidates(executable: &Path, appdir: Option<PathBuf>) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(root) = executable.parent().and_then(|parent| parent.parent()) {
+        candidates.push(root.join("share/notecraft/demo/welcome-to-notecraft"));
+    }
+    if let Some(appdir) = appdir {
+        candidates.push(appdir.join("usr/share/notecraft/demo/welcome-to-notecraft"));
+    }
+    candidates.push(PathBuf::from("/usr/share/notecraft/demo/welcome-to-notecraft"));
+    candidates
+}
+
+/// First shipped payload that exists wins; the source copy is only a development fallback.
+fn choose_demo_payload(candidates: &[PathBuf], fallback: &Path) -> PathBuf {
+    candidates.iter().find(|path| path.is_dir()).cloned().unwrap_or_else(|| fallback.to_path_buf())
 }
 
 /// The file the MSI leaves beside the app to ask for the first-use wizard once.
@@ -642,11 +654,27 @@ mod tests {
         let fallback = t.path().join("source");
         std::fs::create_dir_all(&installed).expect("create installed payload");
         std::fs::create_dir_all(&fallback).expect("create source payload");
-
-        assert_eq!(choose_demo_payload(Some(&installed), &fallback), installed);
         let missing = t.path().join("missing");
-        assert_eq!(choose_demo_payload(Some(&missing), &fallback), fallback);
-        assert_eq!(choose_demo_payload(None, &missing), missing);
+
+        assert_eq!(choose_demo_payload(&[installed.clone(), missing.clone()], &fallback), installed);
+        assert_eq!(choose_demo_payload(std::slice::from_ref(&missing), &fallback), fallback);
+        assert_eq!(choose_demo_payload(&[], &missing), missing);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn portable_linux_install_finds_the_payload_beside_the_executable() {
+        let t = notecraft_store::testing::TempDir::new("demo-payload-portable");
+        let root = t.path().join("Applications/notecraft");
+        let executable = root.join("bin/notecraft");
+        let payload = root.join("share/notecraft/demo/welcome-to-notecraft");
+        std::fs::create_dir_all(executable.parent().expect("bin folder")).expect("create bin");
+        std::fs::create_dir_all(&payload).expect("create portable payload");
+
+        let candidates = linux_demo_payload_candidates(&executable, None);
+        assert_eq!(candidates.first(), Some(&payload), "the portable copy comes before /usr/share");
+        assert_eq!(choose_demo_payload(&candidates, &t.path().join("source")), payload);
+        assert_eq!(demo_payload(&executable), Some(payload));
     }
 
     #[test]

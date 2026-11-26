@@ -35,18 +35,25 @@ pub fn validate_and_read_image(page_dir: &Path, src: &str) -> Result<(PathBuf, S
     Ok((source_path, default_name, bytes))
 }
 
-/// Draws the image context menu when an image has been right-clicked, and puts what was picked
-/// into `acts`.
-pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens) {
+/// The picture's menu was opened from the keyboard (Shift+F10 or the Menu key on a picture
+/// selected with the keyboard, issue #380), so Escape gives the keyboard back to the page.
+fn keyed_id() -> egui::Id {
+    id().with("keyed")
+}
+
+/// Draws the image context menu when an image has been right-clicked, or when a picture of
+/// `page` that is selected asks for its menu from the keyboard, and puts what was picked into
+/// `acts`.
+pub fn show(ui: &mut Ui, body: egui::Rect, page: &Path, acts: &mut Vec<Act>, t: &Tokens) {
     if crate::containers::took_right_click(ui.ctx()) {
         ui.data_mut(|d| d.remove::<(egui::Pos2, String)>(id()));
         return;
     }
     let pointer = ui.ctx().pointer_latest_pos();
     let opened_now = ui.input(|i| i.pointer.secondary_clicked());
+    let rendered_images = || ui.data(|d| d.get_temp::<Vec<crate::preview::RenderedImage>>(crate::preview::rendered_images_id())).unwrap_or_default();
     if opened_now {
-        let rendered_images = ui.data(|d| d.get_temp::<Vec<crate::preview::RenderedImage>>(crate::preview::rendered_images_id())).unwrap_or_default();
-        let hit_image = pointer.filter(|p| body.contains(*p)).and_then(|p| rendered_images.iter().rev().find(|img| img.rect.contains(p)).cloned());
+        let hit_image = pointer.filter(|p| body.contains(*p)).and_then(|p| rendered_images().iter().rev().find(|img| img.rect.contains(p)).cloned());
 
         if let Some(hit) = hit_image {
             let at = pointer.unwrap_or(hit.rect.min);
@@ -54,70 +61,84 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens) {
             ui.data_mut(|d| {
                 d.insert_temp(id(), (at, hit.src));
                 d.insert_temp(block_id(), hit.block);
+                d.remove::<bool>(keyed_id());
             });
             crate::containers::claim_right_click(ui.ctx());
         } else {
             ui.data_mut(|d| d.remove::<(egui::Pos2, String)>(id()));
         }
+    } else if state(ui.ctx()).is_none()
+        && let Some(block) = crate::containers::selected_image(ui.ctx(), page)
+        && let Some(hit) = rendered_images().into_iter().find(|img| img.block == block)
+        && floating::menu_keys_pressed(ui.ctx())
+    {
+        // Under the picture's top-left corner, as if the click had fallen just inside it.
+        let at = hit.rect.min + egui::vec2(8.0, 8.0);
+        log::debug!("image menu: opened from the keyboard on {:?}", hit.src);
+        ui.data_mut(|d| {
+            d.insert_temp(id(), (at, hit.src));
+            d.insert_temp(block_id(), hit.block);
+            d.insert_temp(keyed_id(), true);
+        });
+        floating::focus_first_row(ui.ctx(), id());
     }
     let Some((at, src)) = state(ui.ctx()) else { return };
 
     let mut picked = false;
-    let area = egui::Area::new(id().with("area"))
-        .order(egui::Order::Foreground)
-        .fixed_pos(at)
-        .show(ui.ctx(), |ui| {
-            egui::Frame::popup(ui.style()).inner_margin(egui::Margin::same(4)).show(ui, |ui| {
-                ui.set_width(floating::MENU_W);
-                ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-                if floating::menu_row(ui, Some(Glyph::Icon(Icon::Picture)), crate::tl_id!("ui.save_picture_as"), t).clicked() {
-                    acts.push(Act::SavePictureAs(src.clone()));
-                    picked = true;
-                }
-                // The printed text of the picture, or of a printout's page or every page (issue #274).
-                if crate::picture_text::printout_source(&src).is_some() {
-                    if floating::menu_row(ui, None, crate::tl_id!("ui.copy_text_from_this_printout_page"), t).clicked() {
-                        acts.push(Act::CopyTextFromPicture { src: src.clone(), whole_printout: false });
-                        picked = true;
-                    }
-                    if floating::menu_row(ui, None, crate::tl_id!("ui.copy_text_from_all_printout_pages"), t).clicked() {
-                        acts.push(Act::CopyTextFromPicture { src: src.clone(), whole_printout: true });
-                        picked = true;
-                    }
-                } else if floating::menu_row(ui, None, crate::tl_id!("ui.copy_text_from_picture"), t).clicked() {
-                    acts.push(Act::CopyTextFromPicture { src: src.clone(), whole_printout: false });
-                    picked = true;
-                }
-                // A picture or printout that shares a box with other blocks can be taken out of it
-                // where it stands, as dragging it out does, without the drag (issue #481).
-                if let Some(block) = ui.data(|d| d.get_temp::<usize>(block_id()))
-                    && crate::containers::can_unbox(ui.ctx(), block)
-                    && floating::menu_row(ui, None, crate::tl_id!("ui.take_out_of_box"), t).clicked()
-                {
-                    ui.data_mut(|d| d.insert_temp(crate::containers::unbox_request_id(), block));
-                    ui.ctx().request_repaint();
-                    picked = true;
-                }
-                ui.separator();
-                for (glyph, label, how) in [
-                    (Some(Glyph::Icon(Icon::Redo)), crate::tl_id!("ui.rotate_right_90"), crate::turn::Turn::Right),
-                    (Some(Glyph::Icon(Icon::Undo)), crate::tl_id!("ui.rotate_left_90"), crate::turn::Turn::Left),
-                    (None, crate::tl_id!("ui.flip_horizontal"), crate::turn::Turn::FlipHorizontal),
-                    (None, crate::tl_id!("ui.flip_vertical"), crate::turn::Turn::FlipVertical),
-                ] {
-                    if floating::menu_row(ui, glyph, label, t).clicked() {
-                        acts.push(Act::TurnPicture(src.clone(), how));
-                        picked = true;
-                    }
-                }
-            });
-        })
-        .response;
+    let Some(menu) = floating::point_menu(ui.ctx(), id(), egui::Rect::from_pos(at), |ui| {
+        floating::menu_heading(ui, crate::tl_id!("ui.this_picture"), t);
+        if floating::menu_row(ui, Some(Glyph::Icon(Icon::Picture)), crate::tl_id!("ui.save_picture_as"), t).clicked() {
+            acts.push(Act::SavePictureAs(src.clone()));
+            picked = true;
+        }
+        // The printed text of the picture, or of a printout's page or every page (issue #274).
+        if crate::picture_text::printout_source(&src).is_some() {
+            if floating::menu_row(ui, None, crate::tl_id!("ui.copy_text_from_this_printout_page"), t).clicked() {
+                acts.push(Act::CopyTextFromPicture { src: src.clone(), whole_printout: false });
+                picked = true;
+            }
+            if floating::menu_row(ui, None, crate::tl_id!("ui.copy_text_from_all_printout_pages"), t).clicked() {
+                acts.push(Act::CopyTextFromPicture { src: src.clone(), whole_printout: true });
+                picked = true;
+            }
+        } else if floating::menu_row(ui, None, crate::tl_id!("ui.copy_text_from_picture"), t).clicked() {
+            acts.push(Act::CopyTextFromPicture { src: src.clone(), whole_printout: false });
+            picked = true;
+        }
+        // A picture or printout that shares a box with other blocks can be taken out of it
+        // where it stands, as dragging it out does, without the drag (issue #481).
+        if let Some(block) = ui.data(|d| d.get_temp::<usize>(block_id()))
+            && crate::containers::can_unbox(ui.ctx(), block)
+            && floating::menu_row(ui, None, crate::tl_id!("ui.take_out_of_box"), t).clicked()
+        {
+            ui.data_mut(|d| d.insert_temp(crate::containers::unbox_request_id(), block));
+            ui.ctx().request_repaint();
+            picked = true;
+        }
+        floating::menu_separator(ui, t);
+        for (glyph, label, how) in [
+            (Some(Glyph::Icon(Icon::Redo)), crate::tl_id!("ui.rotate_right_90"), crate::turn::Turn::Right),
+            (Some(Glyph::Icon(Icon::Undo)), crate::tl_id!("ui.rotate_left_90"), crate::turn::Turn::Left),
+            (None, crate::tl_id!("ui.flip_horizontal"), crate::turn::Turn::FlipHorizontal),
+            (None, crate::tl_id!("ui.flip_vertical"), crate::turn::Turn::FlipVertical),
+        ] {
+            if floating::menu_row(ui, glyph, label, t).clicked() {
+                acts.push(Act::TurnPicture(src.clone(), how));
+                picked = true;
+            }
+        }
+    }) else {
+        return;
+    };
+    let area = menu.response;
 
     let away = |p: egui::Pos2| !area.rect.contains(p);
     let out = ui.input(|i| i.pointer.any_click()) && !opened_now && away(pointer.unwrap_or_default());
     if picked || out || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         ui.data_mut(|d| d.remove::<(egui::Pos2, String)>(id()));
+        // From the keyboard, the keyboard is left with nothing in particular; the picture stays
+        // selected, so Shift+F10 opens the menu again.
+        ui.data_mut(|d| d.remove::<bool>(keyed_id()));
     }
 }
 
@@ -196,7 +217,7 @@ mod tests {
                 egui::Rect::from_min_size(egui::pos2(100.0, 100.0), egui::vec2(200.0, 150.0)),
                 "assets/sample.png",
             );
-            show(ui, body, &mut acts, &tokens);
+            show(ui, body, std::path::Path::new("page"), &mut acts, &tokens);
             claimed = crate::containers::took_right_click(ui.ctx());
         });
         frame.textures_delta.clear();
@@ -234,7 +255,7 @@ mod tests {
                 egui::Rect::from_min_size(egui::pos2(100.0, 100.0), egui::vec2(200.0, 150.0)),
                 "assets/sample.png",
             );
-            show(ui, body, &mut acts, &tokens);
+            show(ui, body, std::path::Path::new("page"), &mut acts, &tokens);
             claimed = crate::containers::took_right_click(ui.ctx());
         });
         frame.textures_delta.clear();
@@ -254,7 +275,7 @@ mod tests {
 
         let mut h = Harness::builder().with_size(egui::vec2(800.0, 600.0)).with_accessibility_check(false).build_ui_state(
             |ui, acts: &mut Vec<Act>| {
-                show(ui, body, acts, &tokens);
+                show(ui, body, std::path::Path::new("page"), acts, &tokens);
             },
             acts,
         );
@@ -286,7 +307,7 @@ mod tests {
         ] {
             let mut h = Harness::builder().with_size(egui::vec2(800.0, 600.0)).with_accessibility_check(false).build_ui_state(
                 |ui, acts: &mut Vec<Act>| {
-                    show(ui, body, acts, &tokens);
+                    show(ui, body, std::path::Path::new("page"), acts, &tokens);
                 },
                 Vec::new(),
             );
@@ -321,7 +342,7 @@ mod tests {
         });
 
         let mut frame = ctx.run_ui(raw_input, |ui| {
-            show(ui, body, &mut acts, &tokens);
+            show(ui, body, std::path::Path::new("page"), &mut acts, &tokens);
         });
         frame.textures_delta.clear();
 
@@ -344,7 +365,7 @@ mod tests {
         ] {
             let mut h = Harness::builder().with_size(egui::vec2(800.0, 600.0)).with_accessibility_check(false).build_ui_state(
                 |ui, acts: &mut Vec<Act>| {
-                    show(ui, body, acts, &tokens);
+                    show(ui, body, std::path::Path::new("page"), acts, &tokens);
                 },
                 Vec::new(),
             );

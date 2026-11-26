@@ -27,7 +27,7 @@ use notecraft_model::{NodeColor, NodeKind, PageFormat};
 use notecraft_store::search::Ranked;
 use notecraft_store::tree::Node;
 use serde_json::{Value, json};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::{
@@ -201,6 +201,55 @@ const INDENT: f32 = 14.0;
 const WIZARD_SCREEN_MARGIN: f32 = 2.0 * (16.0 + 2.0 + 8.0);
 /// The height kept below the wizard's scrolling body for its Back, Next and Finish buttons.
 const WIZARD_BUTTON_ROW: f32 = 56.0;
+
+/// One result of a History search (Recent Edits, Find by Author; issue #382): the page's title as
+/// the link that opens it, and under it where it is and when it was last changed, so two pages
+/// of one name are told apart by their place and time. Returns true when it was chosen.
+fn result_row(ui: &mut Ui, t: &Tokens, title: &str, notebook: &str, section: &[String], when: Option<&str>, note: Option<&str>) -> bool {
+    let title = if title.is_empty() { crate::tl_id!("ui.untitled_page").to_string() } else { title.to_string() };
+    let mut place = vec![notebook.to_string()];
+    place.extend(section.iter().cloned());
+    let place = place.join(&format!(" {} ", crate::tl_id!("ui.place_separator")));
+    let detail = when.map_or_else(|| place.clone(), |when| format!("{place} \u{b7} {when}"));
+    let mut clicked = false;
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 1.0;
+        let tip = note.map_or_else(|| detail.clone(), |note| format!("{detail}\n{note}"));
+        clicked = ui.link(title).on_hover_text(tip).clicked();
+        ui.label(egui::RichText::new(detail).small().color(t.muted));
+    });
+    ui.add_space(4.0);
+    clicked
+}
+
+/// When the page was last saved, as an ISO time, for Page Versions' "Current page": the stamp the
+/// page keeps in its own file, which the web build's files can give as well as a desktop's.
+fn page_saved_at(page: &Path) -> Option<String> {
+    notecraft_store::recent::stamp(page).map(notecraft_model::time::iso_from_secs)
+}
+
+/// One row of Page Versions' list (issue #382): what it is ("Current page", "Saved version") over
+/// when, selected with the accent edge the recycle bin uses. A screen reader hears both lines.
+fn version_row(ui: &mut Ui, t: &Tokens, title: &str, sub: &str, selected: bool) -> egui::Response {
+    let (rect, row) = ui.allocate_exact_size(vec2(ui.available_width(), 42.0), Sense::click());
+    let painter = ui.painter_at(rect);
+    if selected {
+        painter.rect_filled(rect, 4.0, t.row_selected);
+        painter.rect_filled(egui::Rect::from_min_size(rect.min, vec2(3.0, rect.height())), 2.0, t.accent);
+    } else if row.hovered() {
+        painter.rect_filled(rect, 4.0, t.row_hover);
+    }
+    if row.has_focus() {
+        painter.rect_stroke(rect.shrink(1.0), 4.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+    }
+    let room = (rect.width() - 22.0).max(20.0);
+    painter.text(egui::pos2(rect.min.x + 12.0, rect.min.y + 13.0), Align2::LEFT_CENTER, title, egui::FontId::proportional(13.5), t.text);
+    let shown = fit_to_width(ui, sub, 12.0, room);
+    crate::bidi::line_at(ui, &painter, egui::pos2(rect.min.x + 12.0, rect.min.y + 30.0), Align2::LEFT_CENTER, &shown, 12.0, t.muted, None);
+    let heard = format!("{title}, {sub}");
+    row.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, heard.clone()));
+    row.on_hover_text(sub)
+}
 
 pub(crate) fn modal_frame(tokens: &Tokens) -> egui::Frame {
     egui::Frame::NONE.fill(tokens.panel).stroke(egui::Stroke::new(1.5, tokens.accent)).inner_margin(egui::Margin::same(16))
@@ -569,8 +618,19 @@ enum SearchScope {
     #[default]
     All,
     Notebook,
+    /// The section group the open section is in, with every section under it (issue #528).
+    Group,
     Section,
     Page,
+}
+
+/// The order search results are listed in (issue #573). The best matches first is the usual one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum SearchSort {
+    #[default]
+    Best,
+    Title,
+    Changed,
 }
 
 impl TagScope {
@@ -611,7 +671,103 @@ struct TagsPane {
     scope: TagScope,
     /// Only the To Do items not yet ticked.
     unchecked: bool,
+    /// How the lines found are put together (issue #565).
+    group: TagGroup,
     found: Vec<notecraft_store::tags::Tagged>,
+}
+
+/// How the Tags Summary groups what it found (issue #565): by the tag, as OneNote does first,
+/// or by where the lines are, a section or a page at a time.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum TagGroup {
+    #[default]
+    Tag,
+    Section,
+    Page,
+}
+
+impl TagGroup {
+    const ALL: [TagGroup; 3] = [TagGroup::Tag, TagGroup::Section, TagGroup::Page];
+
+    fn label(self) -> &'static str {
+        match self {
+            TagGroup::Tag => crate::tl_id!("ui.tags_group_tag_name"),
+            TagGroup::Section => crate::tl_id!("ui.tags_group_section"),
+            TagGroup::Page => crate::tl_id!("ui.tags_group_page"),
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            TagGroup::Tag => "tag",
+            TagGroup::Section => "section",
+            TagGroup::Page => "page",
+        }
+    }
+
+    fn parse(id: &str) -> TagGroup {
+        TagGroup::ALL.into_iter().find(|g| g.id() == id.trim()).unwrap_or_default()
+    }
+}
+
+/// The settings key for the page list on the right in the tabs layout (issue #534).
+const PAGES_RIGHT_KEY: &str = "pages_right";
+
+/// The settings key the Tags Summary's grouping is kept under (issue #565).
+const TAGS_GROUP_KEY: &str = "tags_group";
+
+/// What heads a group of the Tags Summary.
+#[derive(Clone, Debug, PartialEq)]
+enum TagHead {
+    Tag(notecraft_model::Tag),
+    /// A section or a page: its title, and where it is.
+    Place {
+        title: String,
+        trail: String,
+    },
+}
+
+/// The lines found, put together the way the Tags Summary groups them (issue #565): each group's
+/// head and the places of its lines in `found`, in the order they were found. Tags come in the
+/// order the Tags menu has them; sections and pages in the order they were first met.
+fn tag_groups(found: &[notecraft_store::tags::Tagged], by: TagGroup, tree: &[Node]) -> Vec<(TagHead, Vec<usize>)> {
+    match by {
+        TagGroup::Tag => notecraft_model::Tag::all()
+            .into_iter()
+            .filter_map(|tag| {
+                let lines: Vec<usize> = found.iter().enumerate().filter(|(_, f)| f.tag == tag).map(|(i, _)| i).collect();
+                (!lines.is_empty()).then_some((TagHead::Tag(tag), lines))
+            })
+            .collect(),
+        TagGroup::Section | TagGroup::Page => {
+            let mut groups: Vec<(PathBuf, TagHead, Vec<usize>)> = Vec::new();
+            for (i, line) in found.iter().enumerate() {
+                let (key, title) = if by == TagGroup::Page {
+                    (line.path.clone(), line.page.clone())
+                } else {
+                    match section_for(&line.path) {
+                        Some(section) => (section, line.section.clone()),
+                        None => (line.path.clone(), line.page.clone()),
+                    }
+                };
+                match groups.iter_mut().find(|(k, _, _)| *k == key) {
+                    Some((_, _, lines)) => lines.push(i),
+                    None => {
+                        // Where it is, without its own name: a section's notebook and groups, or
+                        // a page's notebook, groups and section.
+                        let trail = if by == TagGroup::Page { search_trail(tree, &key) } else { search_trail(tree, &line.path) };
+                        let trail = if by == TagGroup::Section {
+                            trail.rsplit_once(" > ").map(|(before, _)| before.to_string()).unwrap_or_default()
+                        } else {
+                            trail
+                        };
+                        groups.push((key, TagHead::Place { title, trail }, vec![i]));
+                    }
+                }
+            }
+            groups.into_iter().map(|(_, head, lines)| (head, lines)).collect()
+        }
+    }
 }
 
 /// The Page Templates pane (issue #173): every template, by category, each one a new page in
@@ -646,6 +802,79 @@ fn band_title_centre(centre: f32, start: f32, end: f32, width: f32) -> f32 {
 /// Where a search result is (issue #370): the titles of its notebook, any section groups and
 /// its section, from the tree already in memory, joined with " > ". A sub-page's parent pages
 /// are left out; the section is the place. Empty when the page is not in the tree.
+/// Where to put the caret for a search result (issue #529): the block, and where the words
+/// found start and end in it, counted in characters. The words as one phrase first, ignoring
+/// case; else, as the search itself matches them, any of the query's words: in the block that has
+/// the most of them, the first one. A heading that only repeats the title shown above the page
+/// (`shown_title`) is not drawn, so it is passed over.
+fn find_words_in_blocks(blocks: &[notecraft_formats::Block], words: &str, shown_title: &str) -> Option<(usize, usize, usize)> {
+    // Compared a character at a time, each lowered on its own, so the place found is a place in
+    // the text as written even where lowering changes a letter's length.
+    let lower = |c: char| c.to_lowercase().next().unwrap_or(c);
+    let needle: Vec<char> = words.split_whitespace().collect::<Vec<_>>().join(" ").chars().map(lower).collect();
+    if needle.is_empty() {
+        return None;
+    }
+    let shown = || {
+        blocks.iter().enumerate().filter(|(at, b)| {
+            pageedit::is_writable(b) && !matches!(b, notecraft_formats::Block::Table { .. }) && !pageedit::is_title_echo(blocks, *at, shown_title)
+        })
+    };
+    let phrase = shown().find_map(|(at, b)| {
+        let text: Vec<char> = pageedit::caret_text(b).chars().collect();
+        (0..text.len()).find_map(|start| {
+            let mut i = start;
+            for want in &needle {
+                let have = text.get(i).copied()?;
+                let have = if have.is_whitespace() && *want == ' ' { ' ' } else { lower(have) };
+                if have != *want {
+                    return None;
+                }
+                i += 1;
+            }
+            Some((at, start, i))
+        })
+    });
+    if phrase.is_some() {
+        return phrase;
+    }
+    // The words apart, by the search's own word rules: the block with the most different words
+    // of the query, the first such block when two have as many.
+    let mut best: Option<(usize, usize, usize, usize)> = None;
+    for (at, b) in shown() {
+        let text = pageedit::caret_text(b);
+        let ranges = notecraft_store::search::snippet_matches(&text, words);
+        let Some(first) = ranges.first() else { continue };
+        let distinct: std::collections::HashSet<String> = ranges.iter().map(|r| text[r.clone()].to_lowercase()).collect();
+        if best.is_none_or(|(count, ..)| distinct.len() > count) {
+            let start = text[..first.start].chars().count();
+            let end = start + text[first.clone()].chars().count();
+            best = Some((distinct.len(), at, start, end));
+        }
+    }
+    best.map(|(_, at, start, end)| (at, start, end))
+}
+
+/// The note containers in the order the keyboard goes through them (issue #560): from the top
+/// down, with those whose tops are within a line of each other read as one row, from the left,
+/// or from the right on a right-to-left page.
+fn container_reading_order(boxes: &[notecraft_model::container::Container], rtl: bool) -> Vec<usize> {
+    const ROW: f32 = 16.0;
+    let mut by_top: Vec<usize> = (0..boxes.len()).collect();
+    by_top.sort_by(|&a, &b| boxes[a].y.total_cmp(&boxes[b].y).then(a.cmp(&b)));
+    let mut rows: Vec<Vec<usize>> = Vec::new();
+    for i in by_top {
+        match rows.last_mut() {
+            Some(row) if boxes[i].y - boxes[row[0]].y <= ROW => row.push(i),
+            _ => rows.push(vec![i]),
+        }
+    }
+    for row in &mut rows {
+        row.sort_by(|&a, &b| if rtl { boxes[b].x.total_cmp(&boxes[a].x) } else { boxes[a].x.total_cmp(&boxes[b].x) });
+    }
+    rows.into_iter().flatten().collect()
+}
+
 fn search_trail(tree: &[Node], page: &Path) -> String {
     fn walk(nodes: &[Node], page: &Path, names: &mut Vec<String>) -> bool {
         for n in nodes {
@@ -803,6 +1032,25 @@ impl Editor {
         }
     }
 
+    /// The blocks `range` were just taken out of the page: their boxes count them no more, and
+    /// the widths and justification kept against blocks after them move up with them. Returns,
+    /// as [`Self::blocks_inserted`] does, whether those two changed and need saving.
+    fn blocks_removed(&mut self, range: std::ops::Range<usize>) -> (bool, bool) {
+        if range.is_empty() {
+            return (false, false);
+        }
+        let counted: usize = self.boxes.iter().map(|c| c.blocks).sum();
+        if !self.boxes.is_empty() && counted == self.blocks.len() + range.len() {
+            // From the last back, so each block is still found in the box it was in.
+            for at in range.clone().rev() {
+                if let Some((i, _)) = notecraft_model::container::place(&self.boxes, at) {
+                    self.boxes[i].blocks -= 1;
+                }
+            }
+        }
+        (self.columns.remove_blocks(range.clone()), self.justified.remove_blocks(range))
+    }
+
     /// The block at `at` was just taken out of the page: its box counts one fewer.
     fn count_removed_from_boxes(&mut self, at: usize) {
         let counted: usize = self.boxes.iter().map(|c| c.blocks).sum();
@@ -935,6 +1183,13 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
         // was cut off at the page's edge on a phone. The title is still one line of text:
         // Enter finishes it rather than breaking it, and a line break pasted in becomes a space.
         let finish = ui.memory(|m| m.has_focus(title_id)) && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+        // Escape leaves the title for the words, where the caret was or at the page's first
+        // words (issue #571); the title is left as it is.
+        // egui lets go of the keyboard on Escape before any widget is drawn, so whether the title
+        // had it is what the last frame said. The key is taken here, so the words' box, asked for
+        // the keyboard in this same frame, does not let go of it again.
+        let had_it = ui.data(|d| d.get_temp::<bool>(title_id.with("had-focus"))).unwrap_or(false);
+        let leave = had_it && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
         // A locked page's title cannot be typed in: the box keeps its text (issue #441).
         let out = egui::TextEdit::multiline(&mut ed.title_buf)
             .id(title_id)
@@ -954,6 +1209,29 @@ fn page_title(ui: &mut Ui, ed: &mut Editor, tokens: &Tokens, title_id: egui::Id,
         }
         if finish {
             out.response.surrender_focus();
+        }
+        let has_it = out.response.has_focus();
+        ui.data_mut(|d| d.insert_temp(title_id.with("had-focus"), has_it));
+        if leave {
+            out.response.surrender_focus();
+            match ed.caret.as_mut() {
+                Some(caret) => caret.focus = true,
+                None => {
+                    if let Some(index) = ed.blocks.iter().position(crate::pageedit::is_writable) {
+                        let text = crate::pageedit::caret_text(&ed.blocks[index]);
+                        ed.caret = Some(crate::pageedit::Caret {
+                            block: index,
+                            text,
+                            focus: true,
+                            selection: (0, 0),
+                            place: Some(0),
+                            cell: None,
+                            span: None,
+                            inline: None,
+                        });
+                    }
+                }
+            }
         }
         if out.response.has_focus()
             && crate::input_language::is_rtl()
@@ -1180,6 +1458,8 @@ enum Dialog {
         title: String,
     },
     Symbols,
+    /// Ctrl+G: the open notebooks, to switch to one from the keyboard (issue #559).
+    Notebooks,
     /// The first-use wizard: one window with three steps. Step 0 is the local logging level,
     /// step 1 the page format saved as the default, and step 2 whether to add the Welcome notebook
     /// in that format.
@@ -1262,6 +1542,10 @@ enum Act {
     MovePageDown(PathBuf),
     /// A row dragged in the navigation pane and let go: where it goes.
     Place(PathBuf, crate::navdrag::Drop),
+    /// A page row's Cut (true) or Copy (false): the page is held for Paste (issue #532).
+    HoldPage(PathBuf, bool),
+    /// Paste the page held: after this page, or last in this section (issue #532).
+    PastePage(PathBuf),
     PageVersions(PathBuf),
     Delete(PathBuf, String, usize),
     Color(PathBuf, Option<NodeColor>),
@@ -1333,6 +1617,16 @@ pub struct NoteCraftApp {
     printouts: Vec<(crate::printout::Job, PageFormat)>,
     open: HashSet<PathBuf>,
     selected: Option<PathBuf>,
+    /// The page last open in each section, so going back to a section opens where it was left
+    /// (issue #557). Kept in the settings, so it is there after a restart too.
+    section_pages: HashMap<PathBuf, PathBuf>,
+    /// The navigation row to give the keyboard to when it is next drawn (issue #514).
+    nav_focus: Option<PathBuf>,
+    /// The page a row's Cut or Copy holds, and whether it was Cut (issue #532). A cut page stays
+    /// where it is until it is pasted.
+    held_page: Option<(PathBuf, bool)>,
+    /// Frames left to draw that row in, after which it is no longer asked for.
+    nav_focus_tries: u8,
     /// The pages visited, for Back and Forward.
     nav: NavHistory,
     /// Which Quick Access buttons are shown, and where.
@@ -1378,6 +1672,14 @@ pub struct NoteCraftApp {
     /// The result chosen with the arrow keys, if any (issue #370).
     search_pick: Option<usize>,
     search_scope: SearchScope,
+    search_sort: SearchSort,
+    /// The level the row of section tabs shows when it was chosen rather than followed: the
+    /// section open then (none for an empty group), and the group or notebook the row shows
+    /// (issue #511). Once another section is open, the row shows that section's own level again.
+    tabs_view: Option<(Option<PathBuf>, PathBuf)>,
+    /// A page opened from a search result, and the words to put the caret on there once it is
+    /// open (issue #529).
+    find_on_open: Option<(PathBuf, String)>,
     /// The Tags Summary, while it is open.
     tags_pane: Option<TagsPane>,
     /// Home > More tags > Customize Tags, while it is open (issue #259).
@@ -1485,6 +1787,9 @@ pub struct NoteCraftApp {
     replaying: bool,
     /// View > Tabs layout: the sections as tabs over the page (issues #268, #33). Kept.
     tabs_layout: bool,
+    /// In the tabs layout, the list of pages on the right of the page rather than the left
+    /// (issue #534).
+    pages_right: bool,
     /// View > Immersive Reader, while it is open (issue #299).
     reader: Option<crate::reader::Reader>,
     /// What the pointer does on the page (the Draw tab).
@@ -1529,6 +1834,8 @@ pub struct NoteCraftApp {
     /// Matching HTML flavor for the same copied item, when one is available.
     pending_copy_html: Option<String>,
     keyboard_paste_requested: bool,
+    /// The queued paste is Ctrl+Shift+V, the text only (issue #535).
+    keyboard_paste_plain: bool,
     /// The File screen, when it is open, and which of its pages.
     backstage: Option<&'static str>,
     /// File > Save a Copy as it is being filled in (issue #301).
@@ -1582,6 +1889,14 @@ impl NoteCraftApp {
     pub fn queue_keyboard_paste(&mut self) {
         log::debug!("queued native keyboard paste");
         self.keyboard_paste_requested = true;
+        self.keyboard_paste_plain = false;
+    }
+
+    /// Queues a native Ctrl+Shift+V: the clipboard's text only (issue #535).
+    pub fn queue_keyboard_paste_plain(&mut self) {
+        log::debug!("queued native keyboard paste, text only");
+        self.keyboard_paste_requested = true;
+        self.keyboard_paste_plain = true;
     }
 
     pub fn new(session: Session) -> NoteCraftApp {
@@ -1590,6 +1905,8 @@ impl NoteCraftApp {
         crate::fonts::start_catalog();
         #[cfg(feature = "voice")]
         let voice = voice::VoiceUi::new(&session.settings);
+        let section_pages =
+            session.settings.get(SECTION_PAGES_KEY).and_then(|v| serde_json::from_str::<HashMap<PathBuf, PathBuf>>(&v).ok()).unwrap_or_default();
         let mode_pref = session.settings.get("theme_mode").and_then(|v| ModePref::parse(&v)).unwrap_or(ModePref::System);
         let ui_language =
             session.settings.get("ui_language").map(|value| crate::i18n::normalize_preference(&value)).unwrap_or_else(|| crate::i18n::AUTO.into());
@@ -1603,6 +1920,7 @@ impl NoteCraftApp {
         let session_auto_switch = session.settings.get("switch_by_device").is_none_or(|v| v.trim() != "false");
         let session_update_check_off = session.settings.get("update_check_off_at_start").is_some_and(|v| v.trim() == "true");
         let session_tabs_layout = session.settings.get("tabs_layout").is_some_and(|v| v.trim() == "true");
+        let session_pages_right = session.settings.get(PAGES_RIGHT_KEY).is_some_and(|v| v.trim() == "true");
         let session_ribbon_collapsed = session.settings.get("ribbon_collapsed").map(|v| v.trim() == "true").unwrap_or(false);
         // Two columns in the side panel, the way OneNote separates the notebooks from the
         // pages. This is the product's default navigation layout; the one-tree view remains
@@ -1644,6 +1962,10 @@ impl NoteCraftApp {
             undone: Vec::new(),
             open: HashSet::new(),
             selected: None,
+            section_pages,
+            nav_focus: None,
+            held_page: None,
+            nav_focus_tries: 0,
             split_panes: session_split,
             organisers: true,
             always_on_top: false,
@@ -1677,6 +1999,9 @@ impl NoteCraftApp {
             hit_trails: Vec::new(),
             search_pick: None,
             search_scope: SearchScope::default(),
+            search_sort: SearchSort::default(),
+            tabs_view: None,
+            find_on_open: None,
             tags_pane: None,
             custom_tags: None,
             picture_text: None,
@@ -1729,6 +2054,7 @@ impl NoteCraftApp {
             pen_picked_by_pen: false,
             replaying: false,
             tabs_layout: session_tabs_layout,
+            pages_right: session_pages_right,
             reader: None,
             canvas_drag: None,
             typed_while_inking: Vec::new(),
@@ -1754,6 +2080,7 @@ impl NoteCraftApp {
             pending_copy: None,
             pending_copy_html: None,
             keyboard_paste_requested: false,
+            keyboard_paste_plain: false,
             backstage: None,
             copy_choice: backstage::CopyChoice::default(),
             account_choice: backstage::AccountChoice::default(),
@@ -2173,6 +2500,169 @@ impl NoteCraftApp {
         }
     }
 
+    /// Keeps `page` as the one to open when its section is chosen again (issue #557).
+    fn remember_section_page(&mut self, page: &Path) {
+        let section = section_in_tree(self.session.tree(), page);
+        // The notebook's too, for switching notebooks (issue #559), even for a page outside any
+        // section.
+        let notebook = self.session.tree().iter().find(|n| page.starts_with(&n.path)).map(|n| n.path.clone());
+        // And each section group around it, for going into a group from its tab (issue #511).
+        let groups: Vec<PathBuf> = section
+            .as_ref()
+            .map(|section| {
+                section
+                    .ancestors()
+                    .skip(1)
+                    .take_while(|a| node_at(self.session.tree(), a).is_some_and(|n| n.info.kind == NodeKind::SectionGroup))
+                    .map(Path::to_path_buf)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let keys: Vec<PathBuf> = section.into_iter().chain(groups).chain(notebook).collect();
+        if keys.is_empty() || keys.iter().all(|k| self.section_pages.get(k).is_some_and(|p| p == page)) {
+            return;
+        }
+        for key in keys {
+            self.section_pages.insert(key, page.to_path_buf());
+        }
+        if self.section_pages.len() > SECTION_PAGES_KEPT {
+            // Sections no longer in the open notebooks go first.
+            let tree = self.session.tree();
+            let gone: Vec<PathBuf> = self.section_pages.keys().filter(|s| node_at(tree, s).is_none()).cloned().collect();
+            for s in gone {
+                self.section_pages.remove(&s);
+            }
+        }
+        if let Ok(kept) = serde_json::to_string(&self.section_pages) {
+            let _ = self.session.settings.set(SECTION_PAGES_KEY, &kept);
+        }
+    }
+
+    /// The page to open when `section` is chosen: the one last open there if it is still in the
+    /// section, else its first page (issue #557).
+    fn page_for_section(&self, section: &Path) -> Option<PathBuf> {
+        let tree = self.session.tree();
+        self.section_pages
+            .get(section)
+            .filter(|p| p.starts_with(section) && node_at(tree, p).is_some_and(|n| n.info.kind == NodeKind::Page))
+            .cloned()
+            .or_else(|| first_page_under(tree, section))
+    }
+
+    /// Opens a section, from the tree, a section tab or the keyboard, in one step (issues #525,
+    /// #557): the page last open there, else its first page. An empty section is chosen with the
+    /// page closed, so the canvas shows that section's empty state rather than the page of the
+    /// section left. If the page being left cannot be saved, nothing moves and the save's own
+    /// message says why.
+    fn open_section(&mut self, section: &Path) {
+        match self.page_for_section(section) {
+            Some(page) => {
+                self.expand_to(&page);
+                self.open_page_soon(&page);
+            }
+            None => {
+                self.save_now();
+                if self.is_dirty() || self.page_conflict {
+                    return;
+                }
+                if let Some(left) = self.editor.as_ref().map(|e| e.dir.clone()) {
+                    self.note_read(&left, false);
+                }
+                self.editor = None;
+                self.pad = None;
+                self.opening = None;
+                self.expand_to(section);
+                self.selected = Some(section.to_path_buf());
+                self.say(crate::tl_id!("ui.this_section_has_no_pages_yet"));
+            }
+        }
+    }
+
+    /// Goes into a section group from its tab (issue #511): the row of tabs shows the group's own
+    /// sections, and the page last open in the group comes back, or else its first section's
+    /// first page. A group with no sections in it is shown as such, with a way to add its first.
+    fn open_group(&mut self, group: &Path) {
+        let section = match self.page_for_section(group) {
+            Some(page) => {
+                self.expand_to(&page);
+                self.open_page_soon(&page);
+                section_in_tree(self.session.tree(), &page)
+            }
+            None => match sections_under(self.session.tree(), group).into_iter().next() {
+                Some(section) => {
+                    self.open_section(&section);
+                    Some(section)
+                }
+                None => {
+                    self.save_now();
+                    if self.is_dirty() || self.page_conflict {
+                        return;
+                    }
+                    if let Some(left) = self.editor.as_ref().map(|e| e.dir.clone()) {
+                        self.note_read(&left, false);
+                    }
+                    self.editor = None;
+                    self.pad = None;
+                    self.opening = None;
+                    self.expand_to(group);
+                    self.selected = Some(group.to_path_buf());
+                    self.say(crate::tl_id!("ui.this_section_group_has_no_sections_yet"));
+                    None
+                }
+            },
+        };
+        self.tabs_view = Some((section, group.to_path_buf()));
+    }
+
+    /// Opens a notebook at the page last open in it, else its first page (issue #559).
+    fn open_notebook_where_left(&mut self, notebook: &Path) {
+        if self.editor.as_ref().is_some_and(|e| e.dir.starts_with(notebook)) {
+            return;
+        }
+        match self.page_for_section(notebook) {
+            Some(page) => {
+                self.expand_to(&page);
+                self.open_page_soon(&page);
+            }
+            None => {
+                // The page being left is saved and closed first, as choosing an empty section
+                // does, so the canvas is not left showing another notebook's page.
+                self.save_now();
+                if self.is_dirty() || self.page_conflict {
+                    return;
+                }
+                if let Some(left) = self.editor.as_ref().map(|e| e.dir.clone()) {
+                    self.note_read(&left, false);
+                }
+                self.editor = None;
+                self.pad = None;
+                self.opening = None;
+                self.open.insert(notebook.to_path_buf());
+                self.selected = Some(notebook.to_path_buf());
+                self.say(crate::i18n::format_message_id("ui.opened_path_it_has_no_pages_yet", &[("path", &self.shown(notebook))]));
+            }
+        }
+    }
+
+    /// Puts the keyboard on the navigation row of `row` (issue #514): the panes are brought
+    /// back if they were put away, the levels above it opened, and the row scrolled into view
+    /// and ringed. Up and Down then go along the rows, and Enter opens one.
+    fn focus_nav_row(&mut self, row: &Path) {
+        if self.full_page {
+            self.full_page = false;
+            self.compact_full_page = false;
+        }
+        if self.split_panes && self.kind_in_tree(row) != Some(NodeKind::Page) {
+            self.organisers = true;
+        }
+        self.expand_to(row);
+        if let Some(caret) = self.editor.as_mut().and_then(|ed| ed.caret.as_mut()) {
+            caret.focus = false;
+        }
+        self.nav_focus = Some(row.to_path_buf());
+        self.nav_focus_tries = 5;
+    }
+
     /// Opens every level above `dir`, so the page is visible in the tree.
     fn expand_to(&mut self, dir: &Path) {
         let mut parent = dir.parent();
@@ -2581,8 +3071,13 @@ impl NoteCraftApp {
 
     /// The Quick Access Toolbar, drawn in whatever row it is given.
     fn quick_access(&mut self, ui: &mut Ui, tokens: Tokens) {
-        let enabled =
-            quickaccess::Enabled { back: self.nav.can_back(), forward: self.nav.can_forward(), undo: self.can_undo(), redo: self.can_redo() };
+        let enabled = quickaccess::Enabled {
+            back: self.nav.can_back(),
+            forward: self.nav.can_forward(),
+            undo: self.can_undo(),
+            redo: self.can_redo(),
+            print: self.editor.is_some(),
+        };
         let (pressed, changed) = quickaccess::show(ui, &mut self.qat, enabled, &tokens);
         if changed {
             self.qat.save(|k, v| {
@@ -2594,6 +3089,9 @@ impl NoteCraftApp {
             Some(quickaccess::Command::Forward) => self.go_forward(),
             Some(quickaccess::Command::Undo) => self.undo(),
             Some(quickaccess::Command::Redo) => self.redo(),
+            // The Print dialog is NoteCraft's print preview too: it shows each sheet as it
+            // will come out, beside the printer's settings (issue #538).
+            Some(quickaccess::Command::Print | quickaccess::Command::PrintPreview) => self.open_print(),
             None => {}
         }
     }
@@ -2623,6 +3121,11 @@ impl NoteCraftApp {
     }
 
     /// The page's zoom, in percent, as the View tab shows it.
+    /// Whether the page has the whole window (Full Page View).
+    pub fn is_full_page(&self) -> bool {
+        self.full_page
+    }
+
     pub fn zoom_percent(&self) -> u32 {
         self.zoom_percent
     }
@@ -3090,6 +3593,13 @@ impl NoteCraftApp {
         self.dialog = Some(Dialog::RecentEdits { range, this_notebook, filter: String::new(), items });
     }
 
+    /// History > Page Versions for the open page, as the ribbon and the page's menu open it.
+    pub fn open_page_versions(&mut self) {
+        if let Some(page) = self.current_page().map(Path::to_path_buf) {
+            self.show_page_versions(&page);
+        }
+    }
+
     fn show_page_versions(&mut self, page: &Path) {
         self.save_now();
         if self.is_dirty() {
@@ -3181,12 +3691,385 @@ impl NoteCraftApp {
 
     /// Whether the keyboard is with one of the open page's own text boxes, its title or a block,
     /// rather than with a box outside the page such as search or a rename in the tree.
+    /// OneNote's keys for going between sections and pages, for a new section, the page's title,
+    /// the time stamps and the heading styles. Not while a dialog, the File screen or another text
+    /// box (the search box, a rename) has the keyboard; the page's own words and title do not
+    /// stop them, as in OneNote.
+    fn onenote_keys(&mut self, ctx: &Context) {
+        if self.dialog.is_some() || self.backstage.is_some() || self.own_modal_open() || self.custom_tags.is_some() {
+            return;
+        }
+        let ours = |e: &egui::Event| {
+            matches!(e, egui::Event::Key { pressed: true, key, modifiers, .. }
+                if (modifiers.command && matches!(key, Key::Tab | Key::T | Key::G))
+                    || (modifiers.alt && matches!(key, Key::Home | Key::End))
+                    || (modifiers.alt && modifiers.shift && matches!(key, Key::D | Key::T | Key::F))
+                    || (modifiers.alt && matches!(key, Key::ArrowUp | Key::ArrowDown))
+                    || (modifiers.command && modifiers.alt && matches!(key, Key::Num1 | Key::Num2 | Key::Num3 | Key::Num4 | Key::Num5 | Key::Num6)))
+        };
+        // Asked only when one of these keys is down: which widget has the keyboard is read through
+        // `read_response`, which is not free.
+        if !ctx.input(|i| i.events.iter().any(ours)) {
+            return;
+        }
+        // Another text box with the keyboard keeps these keys: the search box, a rename. A row
+        // of the notebooks or a button with the keyboard does not.
+        let focused_text_box = ctx.memory(|m| m.focused()).is_some_and(|id| egui::TextEdit::load_state(ctx, id).is_some());
+        if focused_text_box && !self.page_text_has_focus(ctx) {
+            return;
+        }
+        let ctrl_alt = Modifiers::COMMAND | Modifiers::ALT;
+        let shift_cmd = Modifiers::COMMAND | Modifiers::SHIFT;
+        let alt_shift = Modifiers::ALT | Modifiers::SHIFT;
+        // egui matches a key without Shift to the key with it too, so the Shift forms go first.
+        // Ctrl+Tab and Ctrl+Shift+Tab: the next or the previous section of the notebook, in the
+        // order it shows them, round from the last to the first (issue #512).
+        let section_step = ctx.input_mut(|i| {
+            if i.consume_key(shift_cmd, Key::Tab) {
+                Some(false)
+            } else if i.consume_key(Modifiers::COMMAND, Key::Tab) {
+                Some(true)
+            } else {
+                None
+            }
+        });
+        if let Some(forward) = section_step {
+            self.step_section(forward);
+            return;
+        }
+        // Ctrl+Shift+G: the keyboard to the section's row; Ctrl+Alt+G: to the page's row (issue
+        // #514). Ctrl+G: the list of notebooks, to switch (issue #559).
+        let g = ctx.input_mut(|i| {
+            if i.consume_key(shift_cmd, Key::G) {
+                Some(1)
+            } else if i.consume_key(ctrl_alt, Key::G) {
+                Some(2)
+            } else if i.consume_key(Modifiers::COMMAND, Key::G) {
+                Some(3)
+            } else {
+                None
+            }
+        });
+        if let Some(which) = g {
+            let here = self.editor.as_ref().map(|e| e.dir.clone()).or_else(|| self.selected.clone());
+            match which {
+                1 => {
+                    let section = here.as_ref().and_then(|h| {
+                        if self.kind_in_tree(h) == Some(NodeKind::Section) { Some(h.clone()) } else { section_in_tree(self.session.tree(), h) }
+                    });
+                    if let Some(section) = section {
+                        self.focus_nav_row(&section);
+                    }
+                }
+                2 => {
+                    if let Some(page) = here.filter(|h| self.kind_in_tree(h) == Some(NodeKind::Page)) {
+                        self.focus_nav_row(&page);
+                    }
+                }
+                _ => self.dialog = Some(Dialog::Notebooks),
+            }
+            return;
+        }
+        // Ctrl+Shift+T: the page's title (issue #571). Ctrl+T: a new section (issue #558).
+        if ctx.input_mut(|i| i.consume_key(shift_cmd, Key::T)) {
+            self.focus_page_title(ctx);
+            return;
+        }
+        if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::T)) {
+            self.new_section_here();
+            return;
+        }
+        // Alt+Home and Alt+End: the first or the last page of the section's list (issue #513).
+        let end = ctx.input_mut(|i| {
+            if i.consume_key(Modifiers::ALT, Key::Home) {
+                Some(false)
+            } else if i.consume_key(Modifiers::ALT, Key::End) {
+                Some(true)
+            } else {
+                None
+            }
+        });
+        if let Some(last) = end {
+            self.page_at_end(last);
+            return;
+        }
+        // Alt+Shift+Up and Down: the paragraph with the caret, or the paragraphs picked, one place
+        // up or down in their box (issue #563).
+        let shift_by = ctx.input_mut(|i| {
+            if i.consume_key(alt_shift, Key::ArrowUp) {
+                Some(true)
+            } else if i.consume_key(alt_shift, Key::ArrowDown) {
+                Some(false)
+            } else {
+                None
+            }
+        });
+        if let Some(up) = shift_by {
+            self.move_paragraphs(up);
+            return;
+        }
+        // Alt+Down and Alt+Up: the next or the previous note container, in reading order
+        // (issue #560).
+        let container = ctx.input_mut(|i| {
+            if i.consume_key(Modifiers::ALT, Key::ArrowDown) {
+                Some(true)
+            } else if i.consume_key(Modifiers::ALT, Key::ArrowUp) {
+                Some(false)
+            } else {
+                None
+            }
+        });
+        if let Some(down) = container {
+            self.step_container(ctx, down);
+            return;
+        }
+        // Alt+Shift+D, T and F: the date, the time, or both, as the ribbon's Time Stamp buttons
+        // write them (issue #561).
+        let stamp = ctx.input_mut(|i| {
+            if i.consume_key(alt_shift, Key::D) {
+                Some("date")
+            } else if i.consume_key(alt_shift, Key::T) {
+                Some("time")
+            } else if i.consume_key(alt_shift, Key::F) {
+                Some("datetime")
+            } else {
+                None
+            }
+        });
+        // Ctrl+Alt+1 to 6: Heading 1 to Heading 6, as the Styles gallery sets them (issue #562).
+        const LEVELS: [(Key, &str); 6] =
+            [(Key::Num1, "h1"), (Key::Num2, "h2"), (Key::Num3, "h3"), (Key::Num4, "h4"), (Key::Num5, "h5"), (Key::Num6, "h6")];
+        let heading = ctx.input_mut(|i| LEVELS.iter().find(|(key, _)| i.consume_key(ctrl_alt, *key)).map(|(_, kind)| *kind));
+        if stamp.is_none() && heading.is_none() {
+            return;
+        }
+        // On a Mac, Option with a letter or a digit also types a character: it must not land in
+        // the note as well.
+        ctx.input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Text(_))));
+        let Some(ed) = self.editor.as_ref() else { return };
+        if ed.locked || !ed.writable {
+            self.say(crate::tl_id!("ui.page_is_read_only"));
+            return;
+        }
+        if let Some(what) = stamp {
+            self.ribbon_act(ribbon::Act::Insert(what));
+        } else if let Some(kind) = heading {
+            // The words the caret is in; with none, the page's last words, as the ribbon does.
+            // A step of its own, so one Undo takes back exactly this.
+            if let Some(ed) = self.editor.as_mut() {
+                Self::place_caret_for_format(ed);
+                Self::remember_step(ed);
+            }
+            self.ribbon_act(ribbon::Act::Block(kind));
+            if let Some(ed) = self.editor.as_mut() {
+                Self::remember_edit(ed);
+            }
+        }
+    }
+
+    /// Moves the paragraph with the caret, or every block of a selection across paragraphs, one
+    /// place up or down inside its box (issue #563): it changes places with the block before or
+    /// after them. The words, their formatting and any list they make stay as they are, the
+    /// selection with them, and what the page keeps for a table or a justified paragraph goes
+    /// with its block. One Undo puts them back. At the top or bottom of the box nothing moves.
+    fn move_paragraphs(&mut self, up: bool) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        if ed.locked || !ed.writable {
+            self.say(crate::tl_id!("ui.page_is_read_only"));
+            return;
+        }
+        let range = match (ed.across.filter(|a| !a.inside_one_block()), ed.caret.as_ref()) {
+            (Some(across), _) => across.blocks(),
+            (None, Some(caret)) if caret.cell.is_none() => caret.block..=caret.block,
+            _ => {
+                self.say(crate::tl_id!("ui.click_in_the_page_first_then_use_the_ribbon"));
+                return;
+            }
+        };
+        let (lo, hi) = (*range.start(), *range.end());
+        let counted: usize = ed.boxes.iter().map(|c| c.blocks).sum();
+        let held = if counted == ed.blocks.len() && !ed.boxes.is_empty() {
+            notecraft_model::container::place(&ed.boxes, lo).map(|(i, _)| notecraft_model::container::blocks_of(&ed.boxes, i))
+        } else {
+            Some(0..ed.blocks.len())
+        };
+        let Some(held) = held.filter(|r| r.contains(&lo) && r.contains(&hi)) else { return };
+        // A heading that only repeats the title is not drawn: nothing moves past it.
+        let first = if pageedit::is_title_echo(&ed.blocks, held.start, &ed.title) { held.start + 1 } else { held.start };
+        let other = if up { lo.checked_sub(1).filter(|o| *o >= first) } else { Some(hi + 1).filter(|o| *o < held.end) };
+        let Some(other) = other else {
+            self.say(if up { crate::tl_id!("ui.it_is_at_the_top_of_its_box") } else { crate::tl_id!("ui.it_is_at_the_bottom_of_its_box") });
+            return;
+        };
+        Self::remember_step(ed);
+        // The block beside them goes to their other side; they move one place.
+        let moved = move |i: usize| {
+            if up {
+                if i == other {
+                    hi
+                } else if (lo..=hi).contains(&i) {
+                    i - 1
+                } else {
+                    i
+                }
+            } else if i == other {
+                lo
+            } else if (lo..=hi).contains(&i) {
+                i + 1
+            } else {
+                i
+            }
+        };
+        if up {
+            ed.blocks[other..=hi].rotate_left(1);
+        } else {
+            ed.blocks[lo..=other].rotate_right(1);
+        }
+        let cols = ed.columns.renumber(moved);
+        let justified = ed.justified.renumber(moved);
+        if let Some(caret) = ed.caret.as_mut() {
+            caret.block = moved(caret.block);
+            caret.focus = true;
+            ed.restore_format_selection = Some((caret.block, caret.selection.0, caret.selection.1));
+        }
+        if let Some(across) = ed.across.as_mut() {
+            across.from.0 = moved(across.from.0);
+            across.to.0 = moved(across.to.0);
+        }
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        // A step of its own even when only a justification moved, between two lines alike.
+        Self::remember_layout(ed);
+        self.save_block_marks((cols, justified));
+    }
+
+    /// Alt+Down and Alt+Up (issue #560): the caret to the start of the next or the previous note
+    /// container on the page, which is brought into view. Containers are read the way the page
+    /// is: from the top down, and those whose tops are within a line of each other as one row,
+    /// left to right, or right to left on a right-to-left page. The words inside a container are
+    /// left to the arrow keys as ever.
+    fn step_container(&mut self, ctx: &Context, down: bool) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        if ed.boxes.len() < 2 {
+            self.say(crate::tl_id!("ui.this_page_has_one_note_container"));
+            return;
+        }
+        let order = container_reading_order(&ed.boxes, ed.page_dir == Some(notecraft_model::Dir::Rtl));
+        let here = ed.caret.as_ref().and_then(|c| notecraft_model::container::place(&ed.boxes, c.block)).map(|(i, _)| i);
+        let position = here.and_then(|h| order.iter().position(|&i| i == h));
+        let next = match (position, down) {
+            (Some(p), true) => order.get(p + 1).copied(),
+            (Some(p), false) => p.checked_sub(1).and_then(|p| order.get(p).copied()),
+            (None, true) => order.first().copied(),
+            (None, false) => order.last().copied(),
+        };
+        let Some(next) = next else {
+            self.say(if down { crate::tl_id!("ui.this_is_the_last_note_container") } else { crate::tl_id!("ui.this_is_the_first_note_container") });
+            return;
+        };
+        let title = ed.title.clone();
+        let range = notecraft_model::container::blocks_of(&ed.boxes, next);
+        let Some(block) = range.clone().find(|&i| pageedit::is_writable(&ed.blocks[i]) && !pageedit::is_title_echo(&ed.blocks, i, &title)) else {
+            self.say(crate::tl_id!("ui.that_note_container_has_nothing_to_write_in"));
+            return;
+        };
+        // A container that starts with a table is gone into at its first cell.
+        let (text, cell) = match pageedit::cell_text(&ed.blocks[block], (0, 0)) {
+            Some(text) if matches!(ed.blocks[block], notecraft_formats::Block::Table { .. }) => (text, Some((0, 0))),
+            _ => (pageedit::text_for_caret(&ed.blocks, block), None),
+        };
+        ed.across = None;
+        ed.caret = Some(pageedit::Caret { block, text, focus: true, selection: (0, 0), place: Some(0), cell, span: None, inline: None });
+        pageedit::reveal_caret(ctx);
+    }
+
+    /// The next or the previous section of the open notebook, round from one end to the other,
+    /// opened where it was left (issue #512).
+    fn step_section(&mut self, forward: bool) {
+        let tree = self.session.tree();
+        let here = self.editor.as_ref().map(|e| e.dir.clone()).or_else(|| self.selected.clone());
+        let Some(here) = here else { return };
+        let Some(notebook) = tree.iter().find(|n| here.starts_with(&n.path)).map(|n| n.path.clone()) else { return };
+        let sections = sections_in_order(tree, &notebook);
+        if sections.is_empty() {
+            return;
+        }
+        let at = sections.iter().position(|s| here.starts_with(s));
+        let next = match at {
+            Some(i) if forward => (i + 1) % sections.len(),
+            Some(i) => (i + sections.len() - 1) % sections.len(),
+            None if forward => 0,
+            None => sections.len() - 1,
+        };
+        let section = sections[next].clone();
+        if at == Some(next) {
+            return;
+        }
+        self.open_section(&section);
+    }
+
+    /// The first or the last page in the section's page list, subpages of a collapsed page left
+    /// out as the list leaves them out (issue #513).
+    fn page_at_end(&mut self, last: bool) {
+        let pages = self.listed_pages();
+        let target = if last { pages.last() } else { pages.first() };
+        match target.cloned() {
+            Some(page) => {
+                let here = self.editor.as_ref().map(|e| e.dir.clone());
+                if here.as_deref() != Some(page.as_path()) {
+                    self.selected = Some(page.clone());
+                    self.open_page_soon(&page);
+                }
+            }
+            None => self.say(crate::tl_id!("ui.this_section_has_no_pages_yet")),
+        }
+    }
+
+    /// Ctrl+T: the New section dialog, for the section group or notebook the open section is in
+    /// (issue #558). Cancelled, it leaves the page as it was.
+    fn new_section_here(&mut self) {
+        // The same place the "+ New section" button adds to: the notebook or section group
+        // chosen, or the one around the chosen section or page, so an empty section group
+        // that is selected takes the new section too.
+        let Some((parent, parent_kind)) = self.new_section_parent() else {
+            self.dialog = Some(Dialog::NewNotebook { name: String::new(), format: None, first: true });
+            return;
+        };
+        self.dialog = Some(Dialog::Add { parent, parent_kind, title: String::new(), kind: NodeKind::Section, format: None });
+    }
+
+    /// Ctrl+Shift+T: the keyboard to the open page's title, scrolled into view, its words left as
+    /// they are (issue #571). A hidden title, or a locked page's, says why it cannot be typed in.
+    fn focus_page_title(&mut self, ctx: &Context) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        if self.hide_title {
+            self.say(crate::tl_id!("ui.the_page_title_is_hidden"));
+            return;
+        }
+        if ed.locked || !ed.writable {
+            self.scroll_to = Some(0.0);
+            self.say(crate::tl_id!("ui.page_is_read_only"));
+            return;
+        }
+        if let Some(caret) = ed.caret.as_mut() {
+            caret.focus = false;
+        }
+        self.scroll_to = Some(0.0);
+        let title = page_title_id(ctx);
+        ctx.memory_mut(|m| m.request_focus(title));
+    }
+
     fn page_text_has_focus(&self, ctx: &Context) -> bool {
         let (Some(page), Some(_)) = (self.page_rect, self.editor.as_ref()) else { return false };
         if self.show_source {
             return false;
         }
-        ctx.memory(|m| m.focused()).and_then(|id| ctx.read_response(id)).is_some_and(|focused| page.contains(focused.rect.center()))
+        // The words' own rect runs from the page's first line to its last, so a line below it, in
+        // a container placed lower down, is still the page's: the view the page scrolls in counts
+        // too (issue #560).
+        ctx.memory(|m| m.focused())
+            .and_then(|id| ctx.read_response(id))
+            .is_some_and(|focused| page.contains(focused.rect.center()) || self.page_view.is_some_and(|view| view.contains(focused.rect.center())))
     }
 
     // ---------- page open, save ----------
@@ -3453,6 +4336,7 @@ impl NoteCraftApp {
             self.selected = Some(dir.to_path_buf());
             self.cursor = 0;
             self.remember_last_page(dir, another_page);
+            self.remember_section_page(dir);
             // Opened, so read (issue #291).
             self.note_read(dir, true);
             if refresh_tags {
@@ -3973,8 +4857,15 @@ impl NoteCraftApp {
                     }
                     // Selecting a container must also move the editor. Leaving the old
                     // page open here made the navigator and page column describe one
-                    // location while the editor showed another.
-                    if let Some(page) = first_page(self.session.tree(), &p) {
+                    // location while the editor showed another. A section opens where it was
+                    // left, or shows that it is empty (issues #525, #557).
+                    if self.kind_in_tree(&p) == Some(NodeKind::Section) {
+                        self.open_section(&p);
+                        self.page_opened = false;
+                        if let Some(pending) = self.opening.as_mut() {
+                            pending.keep_list = true;
+                        }
+                    } else if let Some(page) = first_page_under(self.session.tree(), &p) {
                         self.open_page_soon(&page);
                         // A phone-width window keeps the list up, so the next level can be
                         // picked; only a page chosen for itself takes the window. A page still
@@ -4064,7 +4955,15 @@ impl NoteCraftApp {
                     self.session.refresh();
                 }
             }
-            Act::Place(path, drop) => self.place_dropped(&path, &drop),
+            Act::Place(path, drop) => {
+                self.place_dropped(&path, &drop);
+            }
+            Act::HoldPage(path, cut) => {
+                let title = self.title_in_tree(&path).unwrap_or_default();
+                self.held_page = Some((path, cut));
+                self.say(crate::i18n::format_message_id(if cut { "ui.page_cut_paste_it" } else { "ui.page_copied_paste_it" }, &[("title", &title)]));
+            }
+            Act::PastePage(target) => self.paste_page(&target),
             Act::PageVersions(path) => self.show_page_versions(&path),
             Act::Delete(path, title, count) => self.dialog = Some(Dialog::Delete { path, title, count }),
             Act::Color(path, color) => {
@@ -4163,12 +5062,12 @@ impl NoteCraftApp {
 
     /// Puts a row dragged in the navigation pane where it was let go: above or below another row,
     /// among the rows beside it, or into one. The window stays on the page it was on, wherever
-    /// that page went.
-    fn place_dropped(&mut self, path: &Path, drop: &crate::navdrag::Drop) {
+    /// that page went. True when the row was put there.
+    fn place_dropped(&mut self, path: &Path, drop: &crate::navdrag::Drop) -> bool {
         use crate::navdrag::Drop;
         self.save_now();
         if self.is_dirty() {
-            return;
+            return false;
         }
         let kind = notecraft_store::tree::read_node(path).map(|n| n.kind);
         let target = crate::navdrag::target(drop).to_path_buf();
@@ -4201,7 +5100,7 @@ impl NoteCraftApp {
         }
         let pairs: Vec<(&str, &str)> = p.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let editor_path = self.editor.as_ref().map(|editor| editor.dir.clone());
-        let Some(Output::Path(new_path)) = self.run("node.place", &params(&pairs)) else { return };
+        let Some(Output::Path(new_path)) = self.run("node.place", &params(&pairs)) else { return false };
         self.session.refresh();
         if matches!(drop, Drop::Into(_)) {
             self.open.insert(to);
@@ -4217,6 +5116,51 @@ impl NoteCraftApp {
             }
         }
         self.say(crate::tl_id!("ui.moved"));
+        true
+    }
+
+    /// Pastes the page a row's Cut or Copy holds (issue #532): just after the page `target`, or
+    /// last in the section `target`. A copy is the page with its subpages, files and ink, every
+    /// one with an id of its own, beside the others under a folder name of its own; a cut page
+    /// moves only now, so it stays where it was until it is pasted, and if the paste fails.
+    fn paste_page(&mut self, target: &Path) {
+        let Some((source, cut)) = self.held_page.clone() else { return };
+        if notecraft_store::tree::page_file(&source).is_none() {
+            self.held_page = None;
+            self.complain(crate::tl_id!("ui.the_page_held_is_no_longer_there"));
+            return;
+        }
+        if target.starts_with(&source) {
+            self.complain(crate::tl_id!("ui.a_page_cannot_go_inside_itself"));
+            return;
+        }
+        let into_section = self.kind_in_tree(target) == Some(NodeKind::Section);
+        let drop = if into_section { crate::navdrag::Drop::Into(target.to_path_buf()) } else { crate::navdrag::Drop::After(target.to_path_buf()) };
+        self.save_now();
+        if self.is_dirty() || self.page_conflict {
+            return;
+        }
+        if cut {
+            // A failed move leaves the page where it was, still held, with the move's own
+            // message saying why.
+            if !self.place_dropped(&source, &drop) {
+                return;
+            }
+            if notecraft_store::tree::page_file(&source).is_none() {
+                self.held_page = None;
+            }
+        } else {
+            let to = if into_section { target.to_path_buf() } else { target.parent().map(Path::to_path_buf).unwrap_or_default() };
+            let Some(Output::Path(copy)) = self.run("node.copy", &params(&[("path", &path_str(&source)), ("to", &path_str(&to))])) else { return };
+            self.session.refresh();
+            self.open.insert(to);
+            if !into_section && !self.place_dropped(&copy, &drop) {
+                // The copy is made, last in the section, but could not go after the page.
+                self.complain(crate::tl_id!("ui.the_copy_is_last_in_the_section"));
+                return;
+            }
+        }
+        self.say(crate::tl_id!("ui.pasted"));
     }
 
     fn draw_node(&self, ui: &mut Ui, node: &Node, depth: usize, acts: &mut Vec<Act>) {
@@ -4225,6 +5169,228 @@ impl NoteCraftApp {
 
     /// One row of the tree. With `pages` false the pages are left out, which is what the
     /// organisers column shows: notebooks, section groups and sections only.
+    /// The menu of a notebook, section group, section or page: from its row in the navigation
+    /// pane, and a section's from its tab over the page too (issue #556), so both act on that
+    /// node, whichever page is shown.
+    fn node_menu_items(&self, ui: &mut Ui, node: &Node, open: bool, has_kids: bool, acts: &mut Vec<Act>) {
+        let t = &self.tokens;
+        // A locked page keeps its menu, with the changes to it greyed out (issue #441). Read
+        // from the page's head only while this menu is open.
+        let edits_off = node.info.kind == NodeKind::Page && notecraft_store::page::read_only(&node.path).unwrap_or(false);
+        // Issue #380: the shortcut sits in its own right-hand column, not in the words.
+        let shortcut = if cfg!(target_os = "macos") { "Cmd+N" } else { "Ctrl+N" };
+        if node.info.kind == NodeKind::Page
+            && let Some(parent) = node.path.parent()
+            && floating::menu_row_shortcut(ui, Some(floating::Glyph::Icon(Icon::Page)), crate::tl_id!("ui.new_page"), shortcut, t).clicked()
+        {
+            acts.push(Act::NewPage(parent.to_path_buf()));
+            ui.close();
+        }
+        // What this node may hold, named in full rather than left to the dialog: a
+        // notebook and a group take sections and groups, a section takes pages, and a
+        // page takes sub-pages.
+        for kind in node.info.kind.may_contain() {
+            let label = match kind {
+                NodeKind::SectionGroup => "New section group...",
+                NodeKind::Section => "New section...",
+                NodeKind::Page if node.info.kind == NodeKind::Page => crate::tl_id!("ui.add_a_sub_page"),
+                NodeKind::Page => crate::tl_id!("ui.add_page"),
+                NodeKind::Notebook => "New notebook...",
+            };
+            let icon = match kind {
+                NodeKind::SectionGroup => Icon::SectionGroup,
+                NodeKind::Section => Icon::Section,
+                NodeKind::Page => Icon::Page,
+                NodeKind::Notebook => Icon::Notebook,
+            };
+            if floating::menu_row(ui, Some(floating::Glyph::Icon(icon)), label, t).clicked() {
+                acts.push(Act::AddKind(node.path.clone(), node.info.kind, *kind));
+                ui.close();
+            }
+        }
+        // Cut, Copy and Paste for pages, as OneNote's page rows have them (issue #532). Paste on a
+        // page puts the page held after it; on a section, last in it.
+        if matches!(node.info.kind, NodeKind::Page | NodeKind::Section) {
+            floating::menu_separator(ui, t);
+            if node.info.kind == NodeKind::Page {
+                if floating::menu_row_if(ui, !edits_off, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Cut)), crate::tl_id!("ui.cut"), t)
+                    .clicked()
+                {
+                    acts.push(Act::HoldPage(node.path.clone(), true));
+                    ui.close();
+                }
+                if floating::menu_row(ui, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Copy)), crate::tl_id!("ui.copy"), t).clicked() {
+                    acts.push(Act::HoldPage(node.path.clone(), false));
+                    ui.close();
+                }
+            }
+            let held = self.held_page.as_ref().is_some_and(|(p, _)| !node.path.starts_with(p));
+            if floating::menu_row_if(ui, held, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Paste)), crate::tl_id!("ui.paste_page"), t)
+                .clicked()
+            {
+                acts.push(Act::PastePage(node.path.clone()));
+                ui.close();
+            }
+            floating::menu_separator(ui, t);
+        }
+        if node.info.kind == NodeKind::Page
+            && (Self::can_make_subpage(&node.path)
+                || Self::can_promote_subpage(&node.path)
+                || Self::can_move_page(&node.path, true)
+                || Self::can_move_page(&node.path, false))
+        {
+            floating::menu_separator(ui, t);
+            if Self::can_make_subpage(&node.path)
+                && floating::menu_row_if(
+                    ui,
+                    !edits_off,
+                    Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::IndentMore)),
+                    crate::tl_id!("ui.make_subpage"),
+                    t,
+                )
+                .clicked()
+            {
+                acts.push(Act::MakeSubpage(node.path.clone()));
+                ui.close();
+            }
+            if Self::can_promote_subpage(&node.path)
+                && floating::menu_row_if(
+                    ui,
+                    !edits_off,
+                    Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::IndentLess)),
+                    crate::tl_id!("ui.promote_subpage"),
+                    t,
+                )
+                .clicked()
+            {
+                acts.push(Act::PromoteSubpage(node.path.clone()));
+                ui.close();
+            }
+            if Self::can_move_page(&node.path, true)
+                && floating::menu_row_if(ui, !edits_off, Some(floating::Glyph::Icon(Icon::MoveUp)), crate::tl_id!("ui.move_up"), t).clicked()
+            {
+                acts.push(Act::MovePageUp(node.path.clone()));
+                ui.close();
+            }
+            if Self::can_move_page(&node.path, false)
+                && floating::menu_row_if(ui, !edits_off, Some(floating::Glyph::Icon(Icon::MoveDown)), crate::tl_id!("ui.move_down"), t).clicked()
+            {
+                acts.push(Act::MovePageDown(node.path.clone()));
+                ui.close();
+            }
+        }
+        floating::menu_separator(ui, t);
+        if node.info.kind == NodeKind::Page {
+            // Read from the page's head only while this menu is open, so no row pays for it.
+            let locked = notecraft_store::page::read_only(&node.path).unwrap_or(false);
+            let (label, icon) =
+                if locked { (crate::tl_id!("ui.unlock_read_only"), Icon::Unlock) } else { (crate::tl_id!("ui.lock_read_only"), Icon::Lock) };
+            if floating::menu_row(ui, Some(floating::Glyph::Icon(icon)), label, t).clicked() {
+                acts.push(Act::SetReadOnly(node.path.clone(), !locked));
+                ui.close();
+            }
+        }
+        if floating::menu_row_if(ui, !edits_off, Some(floating::Glyph::Icon(Icon::Page)), crate::tl_id!("ui.rename_ellipsis"), t).clicked() {
+            acts.push(Act::Rename(node.path.clone(), node.info.title.clone()));
+            ui.close();
+        }
+        if matches!(node.info.kind, NodeKind::Page | NodeKind::Section | NodeKind::SectionGroup)
+            && floating::menu_row_if(ui, !edits_off, Some(floating::Glyph::Icon(Icon::MoveDown)), crate::tl_id!("ui.move_or_copy_ellipsis"), t)
+                .clicked()
+        {
+            acts.push(Act::MoveOrCopy(node.path.clone()));
+            ui.close();
+        }
+        if has_kids
+            && floating::menu_row(
+                ui,
+                Some(floating::Glyph::Icon(if open { Icon::Minus } else { Icon::Plus })),
+                if node.info.kind == NodeKind::Page {
+                    if open { crate::tl_id!("ui.collapse_subpages") } else { crate::tl_id!("ui.expand_subpages") }
+                } else if open {
+                    crate::tl_id!("ui.collapse")
+                } else {
+                    crate::tl_id!("ui.expand")
+                },
+                t,
+            )
+            .clicked()
+        {
+            acts.push(Act::Toggle(node.path.clone()));
+            ui.close();
+        }
+        // Pages take the colour of their section, the way OneNote colours tabs.
+        // A row that opens a further menu, with its chevron in the shortcut column (issue #380).
+        if node.info.kind != NodeKind::Page {
+            floating::menu_submenu_row(ui, None, crate::tl_id!("ui.colour"), t, |ui| {
+                let dark = self.effective_mode.is_dark();
+                egui::Grid::new("node-colours").spacing([4.0, 4.0]).show(ui, |ui| {
+                    for (i, c) in NodeColor::ALL.into_iter().enumerate() {
+                        if color_swatch(ui, c, dark, node.info.color == Some(c)).clicked() {
+                            acts.push(Act::Color(node.path.clone(), Some(c)));
+                            ui.close();
+                        }
+                        if i % 3 == 2 {
+                            ui.end_row();
+                        }
+                    }
+                });
+                ui.add_space(2.0);
+                if ui.button(crate::tl_id!("ui.no_colour")).clicked() {
+                    acts.push(Act::Color(node.path.clone(), None));
+                    ui.close();
+                }
+            });
+        }
+        // Where it is and how to reach it, apart from the actions that change it.
+        floating::menu_separator(ui, t);
+        // Named for what it links to (issues #518, #531): pasted into a page, the link opens that
+        // notebook or section at a page, as a page's link opens the page.
+        let copy_link = match node.info.kind {
+            NodeKind::Notebook => crate::tl_id!("ui.copy_link_to_notebook"),
+            NodeKind::SectionGroup => crate::tl_id!("ui.copy_link_to_section_group"),
+            NodeKind::Section => crate::tl_id!("ui.copy_link_to_section"),
+            NodeKind::Page => crate::tl_id!("ui.copy_link_to_page"),
+        };
+        if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Link)), copy_link, t)
+            .on_hover_text(crate::tl_id!("ui.a_link_to_paste_into_another_page"))
+            .clicked()
+        {
+            acts.push(Act::CopyLink(node.path.clone()));
+            ui.close();
+        }
+        if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Folder)), crate::tl_id!("ui.open_folder"), t)
+            .on_hover_text(self.shown(&node.path))
+            .clicked()
+        {
+            acts.push(Act::Reveal(node.path.clone()));
+            ui.close();
+        }
+        if node.info.kind == NodeKind::Page
+            && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::PageStack)), crate::tl_id!("ui.page_versions_2"), t).clicked()
+        {
+            acts.push(Act::PageVersions(node.path.clone()));
+            ui.close();
+        }
+        floating::menu_separator(ui, t);
+        if node.info.kind == NodeKind::Notebook
+            && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Notebook)), crate::tl_id!("ui.close_notebook"), t).clicked()
+        {
+            acts.push(Act::CloseNotebook(node.path.clone()));
+            ui.close();
+        }
+        if ui
+            .add_enabled_ui(!edits_off, |ui| {
+                floating::menu_row_danger(ui, Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Delete)), crate::tl_id!("ui.delete_ellipsis"), t)
+            })
+            .inner
+            .clicked()
+        {
+            acts.push(Act::Delete(node.path.clone(), node.info.title.clone(), node.count()));
+            ui.close();
+        }
+    }
+
     fn draw_row(&self, ui: &mut Ui, node: &Node, depth: usize, acts: &mut Vec<Act>, pages: bool) {
         let has_kids = if pages { !node.children.is_empty() } else { node.children.iter().any(|c| c.info.kind != NodeKind::Page) };
         let open = self.open.contains(&node.path);
@@ -4237,6 +5403,12 @@ impl NoteCraftApp {
         // that hardly moves is still a click.
         let (_, rect) = ui.allocate_space(vec2(width, ROW_HEIGHT));
         let resp = ui.interact(rect, ui.make_persistent_id(("navigation-row", &node.path)), Sense::click_and_drag());
+        // Asked for from the keyboard (Ctrl+Alt+G, Ctrl+Shift+G, issue #514).
+        if self.nav_focus.as_deref() == Some(node.path.as_path()) {
+            resp.request_focus();
+            resp.scroll_to_me(Some(egui::Align::Center));
+            ui.data_mut(|d| d.insert_temp(egui::Id::new("nav-focus-done"), true));
+        }
         let painter = ui.painter_at(rect);
         let t = &self.tokens;
         self.drag_row(ui, node, rect, &resp, acts);
@@ -4373,194 +5545,7 @@ impl NoteCraftApp {
                 acts.push(Act::Select(node.path.clone()));
             }
         }
-        resp.context_menu(|ui| {
-            // A locked page keeps its menu, with the changes to it greyed out (issue #441). Read
-            // from the page's head only while this menu is open.
-            let edits_off = node.info.kind == NodeKind::Page && notecraft_store::page::read_only(&node.path).unwrap_or(false);
-            // Issue #380: the shortcut sits in its own right-hand column, not in the words.
-            let shortcut = if cfg!(target_os = "macos") { "Cmd+N" } else { "Ctrl+N" };
-            if node.info.kind == NodeKind::Page
-                && let Some(parent) = node.path.parent()
-                && floating::menu_row_shortcut(ui, Some(floating::Glyph::Icon(Icon::Page)), crate::tl_id!("ui.new_page"), shortcut, t).clicked()
-            {
-                acts.push(Act::NewPage(parent.to_path_buf()));
-                ui.close();
-            }
-            // What this node may hold, named in full rather than left to the dialog: a
-            // notebook and a group take sections and groups, a section takes pages, and a
-            // page takes sub-pages.
-            for kind in node.info.kind.may_contain() {
-                let label = match kind {
-                    NodeKind::SectionGroup => "New section group...",
-                    NodeKind::Section => "New section...",
-                    NodeKind::Page if node.info.kind == NodeKind::Page => crate::tl_id!("ui.add_a_sub_page"),
-                    NodeKind::Page => crate::tl_id!("ui.add_page"),
-                    NodeKind::Notebook => "New notebook...",
-                };
-                let icon = match kind {
-                    NodeKind::SectionGroup => Icon::SectionGroup,
-                    NodeKind::Section => Icon::Section,
-                    NodeKind::Page => Icon::Page,
-                    NodeKind::Notebook => Icon::Notebook,
-                };
-                if floating::menu_row(ui, Some(floating::Glyph::Icon(icon)), label, t).clicked() {
-                    acts.push(Act::AddKind(node.path.clone(), node.info.kind, *kind));
-                    ui.close();
-                }
-            }
-            if node.info.kind == NodeKind::Page
-                && (Self::can_make_subpage(&node.path)
-                    || Self::can_promote_subpage(&node.path)
-                    || Self::can_move_page(&node.path, true)
-                    || Self::can_move_page(&node.path, false))
-            {
-                floating::menu_separator(ui, t);
-                if Self::can_make_subpage(&node.path)
-                    && floating::menu_row_if(
-                        ui,
-                        !edits_off,
-                        Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::IndentMore)),
-                        crate::tl_id!("ui.make_subpage"),
-                        t,
-                    )
-                    .clicked()
-                {
-                    acts.push(Act::MakeSubpage(node.path.clone()));
-                    ui.close();
-                }
-                if Self::can_promote_subpage(&node.path)
-                    && floating::menu_row_if(
-                        ui,
-                        !edits_off,
-                        Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::IndentLess)),
-                        crate::tl_id!("ui.promote_subpage"),
-                        t,
-                    )
-                    .clicked()
-                {
-                    acts.push(Act::PromoteSubpage(node.path.clone()));
-                    ui.close();
-                }
-                if Self::can_move_page(&node.path, true)
-                    && floating::menu_row_if(ui, !edits_off, Some(floating::Glyph::Icon(Icon::MoveUp)), crate::tl_id!("ui.move_up"), t).clicked()
-                {
-                    acts.push(Act::MovePageUp(node.path.clone()));
-                    ui.close();
-                }
-                if Self::can_move_page(&node.path, false)
-                    && floating::menu_row_if(ui, !edits_off, Some(floating::Glyph::Icon(Icon::MoveDown)), crate::tl_id!("ui.move_down"), t).clicked()
-                {
-                    acts.push(Act::MovePageDown(node.path.clone()));
-                    ui.close();
-                }
-            }
-            floating::menu_separator(ui, t);
-            if node.info.kind == NodeKind::Page {
-                // Read from the page's head only while this menu is open, so no row pays for it.
-                let locked = notecraft_store::page::read_only(&node.path).unwrap_or(false);
-                let (label, icon) =
-                    if locked { (crate::tl_id!("ui.unlock_read_only"), Icon::Unlock) } else { (crate::tl_id!("ui.lock_read_only"), Icon::Lock) };
-                if floating::menu_row(ui, Some(floating::Glyph::Icon(icon)), label, t).clicked() {
-                    acts.push(Act::SetReadOnly(node.path.clone(), !locked));
-                    ui.close();
-                }
-            }
-            if floating::menu_row_if(ui, !edits_off, Some(floating::Glyph::Icon(Icon::Page)), crate::tl_id!("ui.rename_ellipsis"), t).clicked() {
-                acts.push(Act::Rename(node.path.clone(), node.info.title.clone()));
-                ui.close();
-            }
-            if matches!(node.info.kind, NodeKind::Page | NodeKind::Section | NodeKind::SectionGroup)
-                && floating::menu_row_if(ui, !edits_off, Some(floating::Glyph::Icon(Icon::MoveDown)), crate::tl_id!("ui.move_or_copy_ellipsis"), t)
-                    .clicked()
-            {
-                acts.push(Act::MoveOrCopy(node.path.clone()));
-                ui.close();
-            }
-            if has_kids
-                && floating::menu_row(
-                    ui,
-                    Some(floating::Glyph::Icon(if open { Icon::Minus } else { Icon::Plus })),
-                    if node.info.kind == NodeKind::Page {
-                        if open { crate::tl_id!("ui.collapse_subpages") } else { crate::tl_id!("ui.expand_subpages") }
-                    } else if open {
-                        crate::tl_id!("ui.collapse")
-                    } else {
-                        crate::tl_id!("ui.expand")
-                    },
-                    t,
-                )
-                .clicked()
-            {
-                acts.push(Act::Toggle(node.path.clone()));
-                ui.close();
-            }
-            // Pages take the colour of their section, the way OneNote colours tabs.
-            if node.info.kind != NodeKind::Page {
-                ui.menu_button(crate::tl_id!("ui.colour"), |ui| {
-                    let dark = self.effective_mode.is_dark();
-                    egui::Grid::new("node-colours").spacing([4.0, 4.0]).show(ui, |ui| {
-                        for (i, c) in NodeColor::ALL.into_iter().enumerate() {
-                            if color_swatch(ui, c, dark, node.info.color == Some(c)).clicked() {
-                                acts.push(Act::Color(node.path.clone(), Some(c)));
-                                ui.close();
-                            }
-                            if i % 3 == 2 {
-                                ui.end_row();
-                            }
-                        }
-                    });
-                    ui.add_space(2.0);
-                    if ui.button(crate::tl_id!("ui.no_colour")).clicked() {
-                        acts.push(Act::Color(node.path.clone(), None));
-                        ui.close();
-                    }
-                });
-            }
-            // Where it is and how to reach it, apart from the actions that change it.
-            floating::menu_separator(ui, t);
-            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Link)), crate::tl_id!("ui.copy_link_to_page"), t)
-                .on_hover_text(crate::tl_id!("ui.a_link_to_paste_into_another_page"))
-                .clicked()
-            {
-                acts.push(Act::CopyLink(node.path.clone()));
-                ui.close();
-            }
-            if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Folder)), crate::tl_id!("ui.open_folder"), t)
-                .on_hover_text(self.shown(&node.path))
-                .clicked()
-            {
-                acts.push(Act::Reveal(node.path.clone()));
-                ui.close();
-            }
-            if node.info.kind == NodeKind::Page
-                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::PageStack)), crate::tl_id!("ui.page_versions_2"), t).clicked()
-            {
-                acts.push(Act::PageVersions(node.path.clone()));
-                ui.close();
-            }
-            floating::menu_separator(ui, t);
-            if node.info.kind == NodeKind::Notebook
-                && floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Notebook)), crate::tl_id!("ui.close_notebook"), t).clicked()
-            {
-                acts.push(Act::CloseNotebook(node.path.clone()));
-                ui.close();
-            }
-            if ui
-                .add_enabled_ui(!edits_off, |ui| {
-                    floating::menu_row_danger(
-                        ui,
-                        Some(floating::Glyph::Mark(crate::ribbon_icons::Mark::Delete)),
-                        crate::tl_id!("ui.delete_ellipsis"),
-                        t,
-                    )
-                })
-                .inner
-                .clicked()
-            {
-                acts.push(Act::Delete(node.path.clone(), node.info.title.clone(), node.count()));
-                ui.close();
-            }
-        });
+        floating::row_menu(&resp, |ui| self.node_menu_items(ui, node, open, has_kids, acts));
         if has_kids && open {
             let kids: Vec<&Node> = node.children.iter().filter(|c| pages || c.info.kind != NodeKind::Page).collect();
             if pages {
@@ -5465,6 +6450,13 @@ impl NoteCraftApp {
             Link::Node(dir) => {
                 if notecraft_store::tree::read_node(&dir).is_some_and(|n| n.kind == NodeKind::Page) {
                     self.open_path(&path_str(&dir));
+                } else if self.kind_in_tree(&dir) == Some(NodeKind::Section) {
+                    // A section's link opens it where it was left, or its first page, or says
+                    // it has none (issue #518), as choosing it in the notebooks does.
+                    self.open_section(&dir);
+                } else if self.session.tree().iter().any(|n| n.path == dir) {
+                    // A notebook's (issue #531).
+                    self.open_notebook_where_left(&dir);
                 } else {
                     self.open.insert(dir.clone());
                     self.selected = Some(dir.clone());
@@ -5524,7 +6516,8 @@ impl NoteCraftApp {
             always_on_top: self.always_on_top,
             docked: self.docked.is_some(),
             full_page: self.full_page,
-            rules: self.rules,
+            // The paper the page is drawn on: its own, or the window's (what Rule lines shows).
+            rules: self.paper_now(),
             hide_title: self.hide_title,
             snap: self.snap_to_grid,
             zoom_percent: self.zoom_percent,
@@ -5537,6 +6530,7 @@ impl NoteCraftApp {
             auto_shapes: self.auto_shapes,
             replaying: self.replaying,
             tabs_layout: self.tabs_layout,
+            pages_right: self.pages_right,
             table_borders: self.caret_table_has_borders(),
             table_align: self.caret_cells_align(),
             table_shade: self.caret_cells_shade(),
@@ -5566,6 +6560,12 @@ impl NoteCraftApp {
                 pageedit::FontValue::Value(v) => Some(v.as_deref()),
                 _ => None,
             },
+            text_colour_mixed: matches!(font_selection.colour, pageedit::FontValue::Mixed),
+            text_highlight_mixed: matches!(font_selection.highlight, pageedit::FontValue::Mixed),
+            // A page open for editing. Without a caret the controls place one at the end of the
+            // page's last words and set what the next words typed there look like, so only a
+            // locked page or no page makes them unavailable.
+            text_editable: self.editor.as_ref().is_some_and(|e| !e.locked),
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
@@ -6042,7 +7042,11 @@ impl NoteCraftApp {
                 // OneNote looks in the section first; with no page open there is no section.
                 let scope = self.tags_pane.as_ref().map_or(if self.editor.is_some() { TagScope::Section } else { TagScope::All }, |p| p.scope);
                 let unchecked = self.tags_pane.as_ref().is_some_and(|p| p.unchecked);
-                self.tags_pane = Some(TagsPane { scope, unchecked, found: Vec::new() });
+                let group = self
+                    .tags_pane
+                    .as_ref()
+                    .map_or_else(|| self.session.settings.get(TAGS_GROUP_KEY).map(|g| TagGroup::parse(&g)).unwrap_or_default(), |p| p.group);
+                self.tags_pane = Some(TagsPane { scope, unchecked, group, found: Vec::new() });
                 self.refresh_tags();
             }
             ribbon::Act::CustomizeTags => {
@@ -6057,6 +7061,17 @@ impl NoteCraftApp {
                 self.tabs_layout = !self.tabs_layout;
                 let _ = self.session.settings.set("tabs_layout", if self.tabs_layout { "true" } else { "false" });
                 self.say(if self.tabs_layout { crate::tl_id!("ui.tabs_layout_on") } else { crate::tl_id!("ui.tabs_layout_off") });
+            }
+            // Issue #534: the page list on the right in the tabs layout. The list is the second
+            // column of the navigation, so it is shown if it was not.
+            ribbon::Act::TogglePagesRight => {
+                self.pages_right = !self.pages_right;
+                let _ = self.session.settings.set(PAGES_RIGHT_KEY, if self.pages_right { "true" } else { "false" });
+                if self.pages_right && !self.split_panes {
+                    self.split_panes = true;
+                    let _ = self.session.settings.set("split_panes", "true");
+                }
+                self.say(if self.pages_right { crate::tl_id!("ui.page_list_on_the_right") } else { crate::tl_id!("ui.page_list_on_the_left") });
             }
             ribbon::Act::ToggleReplay => {
                 if !self.replaying && self.pad.as_ref().is_none_or(crate::inkpad::Pad::is_empty) {
@@ -6094,6 +7109,7 @@ impl NoteCraftApp {
             ribbon::Act::Tag(tag) => self.apply_tag(tag),
             ribbon::Act::Clipboard(which) => self.clipboard(which),
             ribbon::Act::Paste => self.paste_here(),
+            ribbon::Act::PastePlain => self.paste_plain(),
             ribbon::Act::SetReadOnly(locked) => {
                 if let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) {
                     self.set_read_only(&dir, locked);
@@ -6270,6 +7286,98 @@ impl NoteCraftApp {
             }
             None => self.say(crate::tl_id!("ui.there_is_nothing_on_the_clipboard_to_paste")),
         }
+    }
+
+    /// Paste > Keep text only, and Ctrl+Shift+V (issue #535): the clipboard's text alone, as if it
+    /// were typed at the caret. It takes the place of the words picked, its lines stay lines
+    /// (each a paragraph), and what the source had for fonts, colours and links stays behind,
+    /// since only the text flavour is read. One Undo takes it back.
+    fn paste_plain(&mut self) {
+        let Some(ed) = self.editor.as_ref() else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        if ed.locked || !ed.writable {
+            self.say(crate::tl_id!("ui.page_is_read_only"));
+            return;
+        }
+        let Some(text) = self.clipboard.text().filter(|t| !t.is_empty()) else {
+            self.say(crate::tl_id!("ui.there_is_nothing_on_the_clipboard_to_paste"));
+            return;
+        };
+        let text = text.replace("\r\n", "\n").replace('\r', "\n");
+        let Some(ed) = self.editor.as_mut() else { return };
+        Self::remember_step(ed);
+        // Words selected across blocks are replaced, as typing over them would.
+        let mut marks = (false, false);
+        if let Some(open) = ed.across.filter(|a| !a.inside_one_block()) {
+            let before = ed.blocks.len();
+            let (block, at) = pageedit::delete_span(&mut ed.blocks, open);
+            marks = ed.blocks_removed(block + 1..block + 1 + before.saturating_sub(ed.blocks.len()));
+            let text = ed.blocks.get(block).map(pageedit::caret_text).unwrap_or_default();
+            ed.caret = Some(pageedit::Caret { block, text, focus: true, selection: (at, at), place: Some(at), cell: None, span: None, inline: None });
+        }
+        ed.across = None;
+        Self::place_caret_for_format(ed);
+        // A page with nothing to write in yet gets a line to paste into.
+        if ed.caret.is_none() {
+            ed.blocks.push(notecraft_formats::Block::Paragraph(Vec::new(), Vec::new()));
+            let block = ed.blocks.len() - 1;
+            let more = ed.blocks_inserted(block, 1);
+            marks = (marks.0 || more.0, marks.1 || more.1);
+            ed.caret = Some(pageedit::Caret {
+                block,
+                text: String::new(),
+                focus: true,
+                selection: (0, 0),
+                place: Some(0),
+                cell: None,
+                span: None,
+                inline: None,
+            });
+        }
+        let Some(mut caret) = ed.caret.take() else { return };
+        let words = caret.cell.is_some()
+            || matches!(
+                ed.blocks.get(caret.block),
+                Some(
+                    notecraft_formats::Block::Paragraph(..)
+                        | notecraft_formats::Block::Heading { .. }
+                        | notecraft_formats::Block::Quote(..)
+                        | notecraft_formats::Block::Item { .. }
+                )
+            );
+        if !words {
+            // A block of code takes the text as it is, line breaks and all.
+            let (new_text, at) = pageedit::insert_at_caret(&caret.text, caret.selection, &text);
+            caret.text = new_text;
+            caret.selection = (at, at);
+            caret.place = Some(at);
+            caret.focus = true;
+            if let Some(b) = ed.blocks.get_mut(caret.block) {
+                caret.write(b);
+            }
+            ed.caret = Some(caret);
+            ed.rebuild_body();
+            Self::mark_dirty_from_blocks(ed);
+            Self::remember_edit(ed);
+            self.save_block_marks(marks);
+            self.say(crate::tl_id!("ui.pasted_as_text"));
+            return;
+        }
+        let lines: Vec<&str> = text.split('\n').collect();
+        let at = caret.block;
+        let count = pageedit::insert_plain_lines(&mut ed.blocks, &mut caret, &lines);
+        ed.caret = Some(caret);
+        if count > 0 {
+            let more = ed.blocks_inserted(at + 1, count);
+            marks = (marks.0 || more.0, marks.1 || more.1);
+        }
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_edit(ed);
+        self.save_block_marks(marks);
+        self.say(crate::tl_id!("ui.pasted_as_text"));
     }
 
     /// Pastes `new` blocks at the caret, or after the last block. False, with nothing done,
@@ -6986,7 +8094,9 @@ impl NoteCraftApp {
     /// such as cells merged or split (issue #298), as a step of its own, so Undo takes back
     /// that change alone. `remember_step` must have noted the layout from before.
     fn remember_layout(ed: &mut Editor) {
-        if ed.history.here().is_some_and(|s| s.columns.as_ref() == Some(&ed.columns) && s.body == ed.body && s.blocks == ed.blocks) {
+        if ed.history.here().is_some_and(|s| {
+            s.columns.as_ref() == Some(&ed.columns) && s.justified.as_ref() == Some(&ed.justified) && s.body == ed.body && s.blocks == ed.blocks
+        }) {
             return;
         }
         let mut step = crate::history::Step::new(ed.body.clone(), ed.blocks.clone(), ed.boxes.clone(), ed.caret.clone(), crate::history::Kind::Edit);
@@ -7692,6 +8802,11 @@ impl NoteCraftApp {
             self.apply_across_format(format);
             return;
         }
+        // With no caret, the marks act where the font boxes do: at the end of the last words of the
+        // page, as the format of the next words typed there.
+        if let Some(ed) = self.editor.as_mut() {
+            Self::place_caret_for_format(ed);
+        }
         if matches!(mark, "underline" | "subscript" | "superscript") {
             self.apply_new_mark(mark);
             return;
@@ -7747,11 +8862,17 @@ impl NoteCraftApp {
             Self::mark_dirty_from_blocks(ed);
             return;
         }
-        let (text, _) = pageedit::wrap_selection(&caret.text, caret.selection, marks);
+        let (text, selection) = pageedit::wrap_selection(&caret.text, caret.selection, marks);
         caret.text = text;
+        // The caret goes where the wrapped words now are: between the marks for an empty
+        // selection, so the next words typed are inside them, not after the closing mark.
+        caret.selection = selection;
+        caret.place = Some(selection.1);
+        caret.focus = true;
         if let Some(b) = ed.blocks.get_mut(caret.block) {
             caret.write(b);
         }
+        ed.restore_format_selection = Some((caret.block, selection.0, selection.1));
         ed.rebuild_body();
         Self::mark_dirty_from_blocks(ed);
     }
@@ -8687,6 +9808,22 @@ impl NoteCraftApp {
         if !(copy || cut || paste || all) {
             return;
         }
+        // Ctrl+A again, with the whole paragraph already taken: the note container, then the
+        // page (issue #536). Taken before any text box sees the key, or it would select its
+        // own words again.
+        // Not while another text box has the keyboard (the font size, a search): its Ctrl+A is
+        // its own.
+        // The page's title is drawn on the page, and its Ctrl+A is its own too.
+        let focused = ctx.memory(|m| m.focused());
+        let text_box_elsewhere = focused == Some(page_title_id(ctx))
+            || (focused.is_some_and(|id| egui::TextEdit::load_state(ctx, id).is_some()) && !self.page_text_has_focus(ctx));
+        if all && !text_box_elsewhere && self.widen_selection() {
+            ctx.input_mut(|i| {
+                i.consume_key(Modifiers::COMMAND, Key::A);
+                i.events.retain(|e| !matches!(e, egui::Event::Key { key: Key::A, modifiers, .. } if modifiers.command || modifiers.ctrl));
+            });
+            return;
+        }
         let ours = self.words_are_ours();
         if copy && ours {
             self.clipboard("copy");
@@ -8702,7 +9839,18 @@ impl NoteCraftApp {
             // Consume the shortcut before the text widgets draw. Otherwise an LTR TextEdit
             // handles Ctrl+V itself while the page menu goes through `paste_here`, giving the
             // two entry points different behavior.
+            // Ctrl+Shift+V: the text alone (issue #535). egui matches Ctrl+V to it too, so it is
+            // told apart by Shift here, and the text egui read for it is dropped with the key.
+            let plain = ctx.input(|i| {
+                i.modifiers.shift
+                    || i.events.iter().any(|e| matches!(e, egui::Event::Key { key: Key::V, pressed: true, modifiers, .. } if modifiers.shift))
+            });
             ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::V) || i.consume_key(Modifiers::CTRL, Key::V));
+            if plain {
+                ctx.input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Paste(_))));
+                self.paste_plain();
+                return;
+            }
             let picture = self.clipboard.picture();
             if let (Some(picture), Some(dir)) = (picture, self.editor.as_ref().map(|e| e.dir.clone())) {
                 self.paste_picture(&dir, picture);
@@ -8811,6 +9959,65 @@ impl NoteCraftApp {
     /// The paragraph and not the page. That is what a text box does, and it is the step
     /// OneNote takes first as well; pressing again there widens to the box and then to the
     /// page, which is not built here and is written down in `work\expected`.
+    /// Ctrl+A when the paragraph is already all selected: the selection grows to the note
+    /// container it is in, and from there to the whole page (issue #536), as OneNote's does. The
+    /// status line says which it is now, so what Delete or Cut would take is plain first. A
+    /// page of one container goes straight from the paragraph to the page. The title, drawn
+    /// above the page, is never part of it. False when there is nothing to grow, so Ctrl+A is
+    /// the paragraph's own.
+    fn widen_selection(&mut self) -> bool {
+        let Some(ed) = self.editor.as_mut() else { return false };
+        let title = ed.title.clone();
+        let first_body = (0..ed.blocks.len()).find(|&i| !pageedit::is_title_echo(&ed.blocks, i, &title)).unwrap_or(0);
+        let whole = |blocks: &[notecraft_formats::Block], range: std::ops::Range<usize>| -> Option<pageedit::Across> {
+            let start = range.start.max(first_body);
+            let last = range.end.checked_sub(1)?;
+            (start <= last).then(|| pageedit::Across { from: (start, 0), to: (last, blocks.get(last).map_or(0, |b| pageedit::block_text(b).len())) })
+        };
+        let page = whole(&ed.blocks, 0..ed.blocks.len());
+        let container_of = |at: usize| -> Option<pageedit::Across> {
+            if ed.boxes.len() < 2 {
+                return None;
+            }
+            let (index, _) = notecraft_model::container::place(&ed.boxes, at)?;
+            whole(&ed.blocks, notecraft_model::container::blocks_of(&ed.boxes, index))
+        };
+        let same = |a: Option<pageedit::Across>, b: Option<pageedit::Across>| match (a, b) {
+            (Some(a), Some(b)) => a.ends() == b.ends(),
+            _ => false,
+        };
+        let (next, said) = if let Some(open) = ed.across.filter(|a| !a.inside_one_block()) {
+            let (start, _) = open.ends();
+            let container = container_of(start.0);
+            if same(Some(open), page) {
+                (None, crate::tl_id!("ui.the_whole_page_is_selected"))
+            } else if container.is_some() && same(Some(open), container) {
+                (page, crate::tl_id!("ui.the_whole_page_is_selected"))
+            } else {
+                return false;
+            }
+        } else {
+            let Some(caret) = ed.caret.as_ref().filter(|c| c.cell.is_none()) else { return false };
+            let len = caret.text.chars().count();
+            let (lo, hi) = (caret.selection.0.min(caret.selection.1), caret.selection.0.max(caret.selection.1));
+            if lo != 0 || hi < len || len == 0 {
+                return false;
+            }
+            match container_of(caret.block) {
+                Some(container) if !container.inside_one_block() && !same(Some(container), page) => {
+                    (Some(container), crate::tl_id!("ui.the_note_container_is_selected"))
+                }
+                _ if page.is_some_and(|p| !p.inside_one_block()) => (page, crate::tl_id!("ui.the_whole_page_is_selected")),
+                _ => return false,
+            }
+        };
+        if let Some(next) = next {
+            ed.across = Some(next);
+        }
+        self.say(said);
+        true
+    }
+
     fn select_all_in_block(&mut self) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some(caret) = ed.caret.as_mut() else { return };
@@ -8834,13 +10041,20 @@ impl NoteCraftApp {
             self.pending_copy = Some(notecraft_formats::render::blocks_to_text(&copied));
             self.pending_copy_html = Some(notecraft_formats::render::blocks_to_html(&copied));
             if which == "cut" {
+                // The page before the cut is a step of its own, widths and justification with
+                // it, so Undo puts them back with the paragraphs.
+                Self::remember_step(ed);
+                let before = ed.blocks.len();
                 let (block, at) = pageedit::delete_span(&mut ed.blocks, open);
+                let marks = ed.blocks_removed(block + 1..block + 1 + before.saturating_sub(ed.blocks.len()));
                 let text = ed.blocks.get(block).map(pageedit::caret_text).unwrap_or_default();
                 ed.caret =
                     Some(pageedit::Caret { block, text, focus: true, selection: (at, at), place: Some(at), cell: None, span: None, inline: None });
                 ed.across = None;
                 ed.rebuild_body();
                 Self::mark_dirty_from_blocks(ed);
+                Self::remember_edit(ed);
+                self.save_block_marks(marks);
             }
             self.say(if which == crate::tl_id!("ui.cut_2") { crate::tl_id!("ui.cut") } else { crate::tl_id!("ui.copied") });
             return;
@@ -9167,12 +10381,23 @@ impl NoteCraftApp {
 
     fn refresh_search(&mut self) {
         self.searched.clone_from(&self.search);
-        let mut query = params(&[("q", &self.search), ("limit", "20")]);
+        // The best matches are the first twenty the search ranks. Another order is of every match
+        // there is, as far as the search goes, so its first rows are the first by that order
+        // (issue #573).
+        let limit = if self.search_sort == SearchSort::Best { "20" } else { "500" };
+        let mut query = params(&[("q", &self.search), ("limit", limit)]);
+        // A section group chosen as the scope, and the section open now in none: the section
+        // is searched, rather than every notebook (issue #528).
+        if self.search_scope == SearchScope::Group && self.current_group().is_none() {
+            self.search_scope = SearchScope::Section;
+        }
+        let group = self.current_group().map(|(path, _)| path);
         let scope = match self.search_scope {
             SearchScope::All => None,
             SearchScope::Notebook => {
                 self.selected.as_ref().and_then(|p| self.session.tree().iter().find(|n| p.starts_with(&n.path))).map(|n| &n.path)
             }
+            SearchScope::Group => group.as_ref(),
             SearchScope::Section => self.current_section(self.session.tree()).map(|n| &n.path),
             SearchScope::Page => self.editor.as_ref().map(|editor| &editor.dir),
         };
@@ -9184,7 +10409,45 @@ impl NoteCraftApp {
             _ => Vec::new(),
         };
         self.hit_trails = self.hits.iter().map(|hit| search_trail(self.session.tree(), &hit.path)).collect();
+        self.sort_hits();
         self.search_pick = None;
+    }
+
+    /// The section group the open section is in, nearest first, with its title (issue #528).
+    fn current_group(&self) -> Option<(PathBuf, String)> {
+        let section = self.current_section(self.session.tree())?.path.clone();
+        let mut at = section.parent();
+        while let Some(dir) = at {
+            match node_at(self.session.tree(), dir) {
+                Some(n) if n.info.kind == NodeKind::SectionGroup => return Some((n.path.clone(), n.info.title.clone())),
+                Some(n) if n.info.kind == NodeKind::Notebook => return None,
+                None => return None,
+                _ => at = dir.parent(),
+            }
+        }
+        None
+    }
+
+    /// Puts the results in the chosen order (issue #573). The best matches first is the order
+    /// the search gives; by title, a title that two pages share is told apart by where they are;
+    /// most recently changed reads when each page was last saved.
+    fn sort_hits(&mut self) {
+        if self.search_sort == SearchSort::Best {
+            return;
+        }
+        let mut rows: Vec<(notecraft_store::search::Ranked, String)> = self.hits.drain(..).zip(self.hit_trails.drain(..)).collect();
+        match self.search_sort {
+            SearchSort::Best => {}
+            SearchSort::Title => rows.sort_by(|(a, at), (b, bt)| {
+                a.title.to_lowercase().cmp(&b.title.to_lowercase()).then_with(|| at.to_lowercase().cmp(&bt.to_lowercase()))
+            }),
+            // When each was changed, as Recent Edits reads it: the stamp the page keeps, which a
+            // sync tool copying the folder does not move, else its file's time.
+            SearchSort::Changed => {
+                rows.sort_by_cached_key(|(hit, _)| std::cmp::Reverse(notecraft_store::recent::changed_at(&hit.path).unwrap_or(i64::MIN)))
+            }
+        }
+        (self.hits, self.hit_trails) = rows.into_iter().unzip();
     }
 
     fn open_search_result(&mut self, ctx: &Context, path: &Path) {
@@ -9199,11 +10462,57 @@ impl NoteCraftApp {
             Some(crate::preview::PictureHighlight { page_dir: path.to_path_buf(), src: format!("assets/{name}"), pixels, boxes: hit.boxes.clone() })
         });
         crate::preview::set_picture_highlight(ctx, highlight);
+        // The words searched for are found again in the page once it is open, and the caret put
+        // on them (issue #529). A page found by a picture's text has its picture outlined instead.
+        let words = self.searched.trim().to_string();
+        let in_words = self.hits.iter().find(|hit| hit.path == path).is_none_or(|hit| hit.source == notecraft_store::search::Source::Page);
+        self.find_on_open = (in_words && !words.is_empty()).then(|| (path.to_path_buf(), words));
         if self.backstage.is_some() {
             self.close_backstage();
         }
         self.expand_to(path);
         self.open_page_soon(path);
+        self.apply_find_on_open(ctx);
+    }
+
+    /// Once the page a search result named is open, selects the first place in it that has the
+    /// words searched for and brings it into view (issue #529). Words found only in the title
+    /// leave the page as it opened.
+    fn apply_find_on_open(&mut self, ctx: &Context) {
+        let Some((page, words)) = self.find_on_open.clone() else { return };
+        // Still coming from a synced folder, the page already shown included (it is read again
+        // when its files are in): wait for it.
+        if self.opening.as_ref().is_some_and(|o| o.dir == page) {
+            return;
+        }
+        let hide_title = self.hide_title;
+        let Some(ed) = self.editor.as_mut() else {
+            self.find_on_open = None;
+            return;
+        };
+        self.find_on_open = None;
+        // Anything else open means the person went elsewhere.
+        if ed.dir != page {
+            return;
+        }
+        let shown_title = if hide_title { String::new() } else { ed.title.clone() };
+        let Some((block, start, end)) = find_words_in_blocks(&ed.blocks, &words, &shown_title) else { return };
+        let Some(b) = ed.blocks.get(block) else { return };
+        ed.caret = Some(pageedit::Caret {
+            block,
+            text: pageedit::caret_text(b),
+            focus: true,
+            selection: (end, end),
+            place: Some(end),
+            cell: None,
+            span: None,
+            inline: None,
+        });
+        ed.across = None;
+        // The caret's line takes the selection as it arrives, and is scrolled to.
+        let restore = pageedit::restore_selection_id(ctx);
+        ctx.data_mut(|d| d.insert_temp(restore, (block, end, start)));
+        pageedit::reveal_caret(ctx);
     }
 
     fn search_popup(&mut self, ctx: &Context) {
@@ -9218,6 +10527,7 @@ impl NoteCraftApp {
         }
         let mut chosen: Option<PathBuf> = None;
         let mut scope = self.search_scope;
+        let mut sort = self.search_sort;
         let tokens = self.tokens;
         // Issue #370: the results hang from the search box itself, as wide as it or wider, and
         // are kept inside the window, rather than sitting at a fixed place on the right.
@@ -9242,18 +10552,44 @@ impl NoteCraftApp {
             frame.show(ui, |ui| {
                 ui.set_width(content_width);
                 ui.horizontal_wrapped(|ui| {
+                    let group = self.current_group();
+                    let group_label = group.as_ref().map_or_else(
+                        || crate::tl_id!("ui.this_section_group").to_string(),
+                        |(_, name)| crate::i18n::format_message_id("ui.this_section_group_name", &[("name", name)]),
+                    );
                     let choices = [
-                        (SearchScope::All, crate::tl_id!("ui.tags_scope_all_notebooks"), true),
-                        (SearchScope::Notebook, crate::tl_id!("ui.this_notebook"), self.selected.is_some()),
-                        (SearchScope::Section, crate::tl_id!("ui.this_section"), self.current_section(self.session.tree()).is_some()),
-                        (SearchScope::Page, crate::tl_id!("ui.find_on_this_page"), self.editor.is_some()),
+                        (SearchScope::All, crate::tl_id!("ui.tags_scope_all_notebooks").to_string(), true),
+                        (SearchScope::Notebook, crate::tl_id!("ui.this_notebook").to_string(), self.selected.is_some()),
+                        (SearchScope::Group, group_label, group.is_some()),
+                        (SearchScope::Section, crate::tl_id!("ui.this_section").to_string(), self.current_section(self.session.tree()).is_some()),
+                        (SearchScope::Page, crate::tl_id!("ui.find_on_this_page").to_string(), self.editor.is_some()),
                     ];
                     for (choice, label, available) in choices {
+                        // A section outside any group has no group to search: that choice is
+                        // left out rather than shown and never usable.
+                        if choice == SearchScope::Group && !available {
+                            continue;
+                        }
                         if ui.add_enabled(available, egui::Button::selectable(scope == choice, label)).clicked() {
                             scope = choice;
                         }
                     }
                 });
+                if !empty && !self.hits.is_empty() {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.weak(crate::tl_id!("ui.sort_by"));
+                        let sorts = [
+                            (SearchSort::Best, crate::tl_id!("ui.sort_best_match")),
+                            (SearchSort::Title, crate::tl_id!("ui.sort_page_title")),
+                            (SearchSort::Changed, crate::tl_id!("ui.sort_recently_changed")),
+                        ];
+                        for (choice, label) in sorts {
+                            if ui.add(egui::Button::selectable(sort == choice, label)).clicked() {
+                                sort = choice;
+                            }
+                        }
+                    });
+                }
                 ui.add_space(2.0);
                 if empty {
                     ui.weak(crate::tl_id!("ui.search_prompt"));
@@ -9336,6 +10672,11 @@ impl NoteCraftApp {
             if empty {
                 ctx.memory_mut(|memory| memory.request_focus(field_id));
             }
+        } else if sort != self.search_sort {
+            // The same query in the same scope, put in the other order (issue #573).
+            // Asked again, for the twenty best or for every match to put in order.
+            self.search_sort = sort;
+            self.refresh_search();
         } else if outside {
             self.dismiss_search();
         }
@@ -9509,10 +10850,13 @@ impl NoteCraftApp {
     }
 
     fn tags_panel(&mut self, ui: &mut Ui) {
+        let tree = self.session.tree();
         let Some(pane) = self.tags_pane.as_mut() else { return };
         let tokens = self.tokens;
         let mut close = false;
         let mut refresh = false;
+        let mut regrouped = false;
+        let mut summary = false;
         let mut chosen: Option<(PathBuf, usize)> = None;
         let panel = if self.compact {
             egui::Panel::right("tags-summary-compact").resizable(false).exact_size(ui.available_width())
@@ -9551,28 +10895,63 @@ impl NoteCraftApp {
             if ui.checkbox(&mut pane.unchecked, crate::tl_id!("ui.tags_only_unchecked_to_do_items")).changed() {
                 refresh = true;
             }
-            if ui.button(crate::tl_id!("ui.refresh")).on_hover_text(crate::tl_id!("ui.look_again_for_tagged_notes")).clicked() {
-                refresh = true;
-            }
+            ui.label(egui::RichText::new(crate::tl_id!("ui.tags_group_by")).small().color(tokens.muted));
+            ui.horizontal_wrapped(|ui| {
+                for group in TagGroup::ALL {
+                    if ui.selectable_label(pane.group == group, group.label()).clicked() && pane.group != group {
+                        pane.group = group;
+                        regrouped = true;
+                    }
+                }
+            });
+            ui.horizontal_wrapped(|ui| {
+                if ui.button(crate::tl_id!("ui.refresh")).on_hover_text(crate::tl_id!("ui.look_again_for_tagged_notes")).clicked() {
+                    refresh = true;
+                }
+                // Issue #537: the lines listed, written out as a page of their own.
+                if ui
+                    .add_enabled(!pane.found.is_empty(), egui::Button::new(crate::tl_id!("ui.create_summary_page")))
+                    .on_hover_text(crate::tl_id!("ui.create_summary_page_hint"))
+                    .clicked()
+                {
+                    summary = true;
+                }
+            });
             ui.separator();
             egui::ScrollArea::vertical().id_salt("tags-summary-list").auto_shrink([false, false]).show(ui, |ui| {
                 if pane.found.is_empty() {
                     ui.weak(crate::tl_id!("ui.no_tagged_notes_here"));
                 }
-                for tag in notecraft_model::Tag::all() {
-                    let mut lines = pane.found.iter().filter(|f| f.tag == tag).peekable();
-                    if lines.peek().is_none() {
-                        continue;
-                    }
+                for (head, lines) in tag_groups(&pane.found, pane.group, tree) {
                     ui.add_space(4.0);
-                    ui.horizontal(|ui| {
-                        let (rect, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
-                        ribbon::paint_tag(ui.painter(), rect, tag, tokens.text, tokens.accent);
-                        ui.strong(crate::tl!(tag.label()));
-                    });
-                    for line in lines {
+                    let count = lines.len().to_string();
+                    match &head {
+                        TagHead::Tag(tag) => {
+                            ui.horizontal(|ui| {
+                                let (rect, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
+                                ribbon::paint_tag(ui.painter(), rect, *tag, tokens.text, tokens.accent);
+                                ui.strong(crate::i18n::format_message_id(
+                                    "ui.tags_group_count",
+                                    &[("name", crate::tl!(tag.label())), ("count", &count)],
+                                ));
+                            });
+                        }
+                        TagHead::Place { title, trail } => {
+                            ui.strong(crate::i18n::format_message_id("ui.tags_group_count", &[("name", title), ("count", &count)]));
+                            if !trail.is_empty() {
+                                ui.label(egui::RichText::new(trail).small().color(tokens.accent));
+                            }
+                        }
+                    }
+                    for line in lines.into_iter().filter_map(|i| pane.found.get(i)) {
                         let words = if line.text.is_empty() { crate::tl_id!("ui.tags_empty_line").to_string() } else { line.text.clone() };
-                        let place = if line.section.is_empty() { line.page.clone() } else { format!("{} > {}", line.section, line.page) };
+                        // Under each line, what the group's head does not already say.
+                        let place = match pane.group {
+                            TagGroup::Tag if line.section.is_empty() => line.page.clone(),
+                            TagGroup::Tag => format!("{} > {}", line.section, line.page),
+                            TagGroup::Section => format!("{} · {}", crate::tl!(line.tag.label()), line.page),
+                            TagGroup::Page => crate::tl!(line.tag.label()).to_string(),
+                        };
                         // Painted rather than laid out as labels, so the row is one target that
                         // a screen reader names once, with a To Do's box ticked or not.
                         let width = ui.available_width().max(60.0);
@@ -9595,6 +10974,10 @@ impl NoteCraftApp {
                                 let at = |x: f32, y: f32| tick.min + vec2(x, y);
                                 painter.line(vec![at(2.5, 6.5), at(5.0, 9.0), at(9.5, 3.0)], egui::Stroke::new(1.6, tokens.accent));
                             }
+                        } else if pane.group != TagGroup::Tag {
+                            // Grouped by place, each line shows its own tag where a To Do has its box.
+                            let mark = egui::Rect::from_min_size(rect.min + vec2(3.0, 3.0), vec2(14.0, 14.0));
+                            ribbon::paint_tag(painter, mark, line.tag, tokens.text, tokens.accent);
                         }
                         let below = text.size().y + 3.0;
                         painter.galley(rect.min + vec2(indent, 2.0), text, tokens.text);
@@ -9610,12 +10993,87 @@ impl NoteCraftApp {
             self.tags_pane = None;
             return;
         }
+        if regrouped && let Some(group) = self.tags_pane.as_ref().map(|p| p.group) {
+            let _ = self.session.settings.set(TAGS_GROUP_KEY, group.id());
+        }
         if refresh {
             self.refresh_tags();
+        }
+        if summary {
+            self.create_tags_summary_page();
         }
         if let Some((page, block)) = chosen {
             self.go_to_tagged(&page, block);
         }
+    }
+
+    /// Find Tags > Create Summary Page (issue #537): a new page in the open section listing the
+    /// lines the Tags Summary has found, grouped as it groups them. Each line keeps its tag, a
+    /// To Do its box, ticked or not, and ends with a link back to the page it came from. The
+    /// pages it lists are not changed. The page is written in the section's own format, as
+    /// any new page there is.
+    fn create_tags_summary_page(&mut self) {
+        use notecraft_formats::{Block, Span};
+        let Some(pane) = self.tags_pane.as_ref().filter(|p| !p.found.is_empty()) else { return };
+        let Some(section) = self.current_section(self.session.tree()).map(|n| n.path.clone()) else {
+            self.say(crate::tl_id!("ui.open_a_section_for_the_summary_page"));
+            return;
+        };
+        let mut roots = vec![self.session.root().to_path_buf()];
+        roots.extend(self.session.opened_elsewhere().iter().cloned());
+        let plain = |text: String| Span { text, ..Default::default() };
+        let mut summary: Vec<Block> = Vec::new();
+        for (head, lines) in tag_groups(&pane.found, pane.group, self.session.tree()) {
+            let heading = match head {
+                TagHead::Tag(tag) => crate::tl!(tag.label()).to_string(),
+                TagHead::Place { title, trail } if trail.is_empty() => title,
+                TagHead::Place { title, trail } => format!("{title} ({trail})"),
+            };
+            summary.push(Block::Heading { level: 2, spans: vec![plain(heading)], emoji: Vec::new() });
+            for line in lines.into_iter().filter_map(|i| pane.found.get(i)) {
+                // A To Do is a task item, its box ticked or not; any other tag is the marker in
+                // front of the words, as on the page it came from.
+                let words =
+                    if line.tag == notecraft_model::Tag::ToDo { line.text.clone() } else { notecraft_model::Tag::set(&line.text, Some(line.tag)) };
+                let mut spans = vec![plain(words)];
+                if let Some(uri) = notecraft_store::links::page_uri(&roots, &line.path) {
+                    let place = if line.section.is_empty() { line.page.clone() } else { format!("{} > {}", line.section, line.page) };
+                    spans.push(plain(" (".into()));
+                    spans.push(Span { text: place, link: Some(uri), ..Default::default() });
+                    spans.push(plain(")".into()));
+                }
+                let task = if line.tag == notecraft_model::Tag::ToDo { line.done.or(Some(false)) } else { None };
+                summary.push(Block::Item { ordered: false, number: 0, task, depth: 0, spans, emoji: Vec::new() });
+            }
+        }
+        self.save_now();
+        if self.is_dirty() {
+            return;
+        }
+        let title = crate::tl_id!("ui.tags_summary_page_title").to_string();
+        let Some(Output::Path(page)) = self.run("node.create", &params(&[("parent", &path_str(&section)), ("kind", "page"), ("title", &title)]))
+        else {
+            return;
+        };
+        self.session.refresh();
+        self.open_page(&page);
+        let Some(ed) = self.editor.as_mut().filter(|ed| ed.dir == page && ed.writable) else { return };
+        Self::remember_step(ed);
+        let at = ed.blocks.len();
+        let count = summary.len();
+        ed.blocks.extend(summary);
+        let marks = ed.blocks_inserted(at, count);
+        pageedit::renumber(&mut ed.blocks);
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_edit(ed);
+        self.save_block_marks(marks);
+        self.save_now();
+        // A save that did not happen keeps the page open and changed, and its own message.
+        if self.is_dirty() {
+            return;
+        }
+        self.say(crate::tl_id!("ui.summary_page_created"));
     }
 
     /// Opens the page a tagged line is on and puts the caret at the start of that line.
@@ -9732,10 +11190,16 @@ impl NoteCraftApp {
     fn lock_menu_row(&self, ui: &mut Ui, acts: &mut Vec<Act>) {
         let Some(ed) = self.editor.as_ref() else { return };
         let locked = notecraft_store::page::read_only(&ed.dir).unwrap_or(false);
-        let (label, icon) =
-            if locked { (crate::tl_id!("ui.unlock_read_only"), Icon::Unlock) } else { (crate::tl_id!("ui.lock_read_only"), Icon::Lock) };
-        ui.separator();
-        if floating::menu_row(ui, Some(floating::Glyph::Icon(icon)), label, &self.tokens).clicked() {
+        // It acts on the page open in the editor, not on the blank space it was opened from, so it
+        // names that page (issue #380).
+        let title = if ed.title.trim().is_empty() { crate::tl_id!("ui.untitled_page").to_owned() } else { ed.title.trim().to_owned() };
+        let (label, icon) = if locked {
+            (crate::i18n::format_message_id("ui.unlock_page_named", &[("title", &title)]), Icon::Unlock)
+        } else {
+            (crate::i18n::format_message_id("ui.lock_page_named", &[("title", &title)]), Icon::Lock)
+        };
+        floating::menu_separator(ui, &self.tokens);
+        if floating::menu_row(ui, Some(floating::Glyph::Icon(icon)), &label, &self.tokens).clicked() {
             acts.push(Act::SetReadOnly(ed.dir.clone(), !locked));
             ui.close();
         }
@@ -9752,11 +11216,13 @@ impl NoteCraftApp {
         let _ = rect;
         let mut reveal = false;
         let mut choose = false;
+        let t = &self.tokens;
         resp.context_menu(|ui| {
             match section {
                 // Under the pages: a page at the end of this section.
+                // The same rows as every other menu (issue #380): picture column, words, dividers.
                 Some(path) => {
-                    if ui.button(crate::tl_id!("ui.new_page_2")).clicked() {
+                    if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Page)), crate::tl_id!("ui.new_page_2"), t).clicked() {
                         acts.push(Act::AddKind(path.to_path_buf(), NodeKind::Section, NodeKind::Page));
                         ui.close();
                     }
@@ -9764,16 +11230,16 @@ impl NoteCraftApp {
                 }
                 // Under the notebooks: a notebook, and the ways into the folder itself.
                 None => {
-                    if ui.button(crate::tl_id!("ui.new_notebook_2")).clicked() {
+                    if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Notebook)), crate::tl_id!("ui.new_notebook_2"), t).clicked() {
                         acts.push(Act::NewNotebook);
                         ui.close();
                     }
-                    ui.separator();
-                    if ui.button(crate::tl_id!("ui.open_a_folder")).clicked() {
+                    floating::menu_separator(ui, t);
+                    if floating::menu_row(ui, Some(floating::Glyph::Icon(Icon::Folder)), crate::tl_id!("ui.open_a_folder"), t).clicked() {
                         choose = true;
                         ui.close();
                     }
-                    if ui.button(crate::tl_id!("ui.show_the_notebooks_folder")).clicked() {
+                    if floating::menu_row(ui, None, crate::tl_id!("ui.show_the_notebooks_folder"), t).clicked() {
                         reveal = true;
                         ui.close();
                     }
@@ -9980,10 +11446,15 @@ impl NoteCraftApp {
             });
         }
         let section = self.current_section(self.session.tree()).map(|n| (n.path.clone(), n.info.title.clone(), n.children.clone(), n.info.color));
-        let panel = if let Some(width) = narrow {
-            egui::Panel::left("pages-narrow").resizable(false).show_separator_line(true).exact_size((width * 0.205).floor())
-        } else {
-            egui::Panel::left("pages").resizable(true).show_separator_line(true).default_size(230.0).size_range(150.0..=520.0)
+        // In the tabs layout the pages can be on the right of the page instead (issue #534): a
+        // panel of its own name, so each side keeps the width it was dragged to.
+        let panel = match (self.tabs_layout && self.pages_right, narrow) {
+            (false, Some(width)) => egui::Panel::left("pages-narrow").resizable(false).show_separator_line(true).exact_size((width * 0.205).floor()),
+            (false, None) => egui::Panel::left("pages").resizable(true).show_separator_line(true).default_size(230.0).size_range(150.0..=520.0),
+            (true, Some(width)) => {
+                egui::Panel::right("pages-right-narrow").resizable(false).show_separator_line(true).exact_size((width * 0.205).floor())
+            }
+            (true, None) => egui::Panel::right("pages-right").resizable(true).show_separator_line(true).default_size(230.0).size_range(150.0..=520.0),
         };
         panel.show(ui, |ui| {
             ui.add_space(4.0);
@@ -10054,39 +11525,136 @@ impl NoteCraftApp {
     }
 
     /// View > Tabs layout (issues #268, #33): the open notebook's sections as tabs over the
-    /// page. Choosing one opens its first page.
+    /// page. Choosing one opens its first page. A section group's tab goes into the group, and
+    /// inside one the row shows its sections after a tab back up (issue #511).
     fn section_tabs(&mut self, ui: &mut Ui) {
         if !self.tabs_layout || self.compact {
             return;
         }
-        let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else { return };
+        // The open page, or with none open the empty section or group chosen.
+        let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()).or_else(|| self.selected.clone()) else { return };
         // From the tree the window holds, which commands keep up to date: read from disk here,
         // every frame, it asked a synced folder's mount for every section and page each time.
         let notebooks = self.session.tree();
-        let Some(notebook) = notebook_for(&dir).and_then(|nb| notebooks.iter().find(|n| n.path == nb)) else { return };
-        let tabs = crate::sectiontabs::tabs(notebook);
-        let here = section_for(&dir);
+        let Some(notebook) = notebooks.iter().find(|n| dir.starts_with(&n.path)) else { return };
+        let here = if self.editor.is_some() { section_for(&dir) } else { section_in_tree(notebooks, &dir).or_else(|| Some(dir.clone())) };
+        // The level shown: the one chosen while that section is open, else the group the open
+        // section is in, else the notebook.
+        let level = match &self.tabs_view {
+            Some((anchor, level))
+                if *anchor == here.clone().filter(|h| node_at(notebooks, h).is_some_and(|n| n.info.kind == NodeKind::Section))
+                    || (self.editor.is_none() && here.as_deref() == Some(level.as_path())) =>
+            {
+                level.clone()
+            }
+            _ => here
+                .as_ref()
+                .and_then(|h| h.parent())
+                .filter(|p| node_at(notebooks, p).is_some_and(|n| n.info.kind == NodeKind::SectionGroup))
+                .map_or_else(|| notebook.path.clone(), Path::to_path_buf),
+        };
+        let Some(level_node) = node_at(notebooks, &level).filter(|n| matches!(n.info.kind, NodeKind::SectionGroup | NodeKind::Notebook)) else {
+            return;
+        };
+        let tabs = crate::sectiontabs::tabs(level_node);
+        let all = crate::sectiontabs::tabs(notebook);
+        let up = (level_node.info.kind == NodeKind::SectionGroup)
+            .then(|| level.parent().and_then(|p| node_at(notebooks, p)).map(|n| n.info.title.clone()).unwrap_or_default());
         let tokens = self.tokens;
         let mut chosen = None;
+        let mut acts = Vec::new();
         egui::Panel::top("section-tabs")
             .frame(egui::Frame::NONE.fill(tokens.panel).inner_margin(egui::Margin { left: 8, right: 8, top: 4, bottom: 0 }))
             .show_separator_line(false)
             .show(ui, |ui| {
-                chosen = crate::sectiontabs::show(ui, &tabs, here.as_deref(), &tokens);
+                // A tab's menu is its section's own, whatever page is shown (issue #556).
+                let mut menu = |ui: &mut Ui, section: &Path| {
+                    if let Some(node) = node_at(notebooks, section) {
+                        let has_kids = node.children.iter().any(|c| c.info.kind != NodeKind::Page);
+                        self.node_menu_items(ui, node, self.open.contains(section), has_kids, &mut acts);
+                    }
+                };
+                chosen = crate::sectiontabs::show(ui, &tabs, &all, up.as_deref(), here.as_deref(), &tokens, &mut menu);
             });
-        if let Some(section) = chosen {
-            match first_page_under(self.session.tree(), &section) {
-                Some(page) => {
-                    self.expand_to(&page);
-                    self.open_page_soon(&page);
-                }
-                None => self.say(crate::tl_id!("ui.this_section_has_no_pages_yet")),
+        for act in acts {
+            self.apply(act);
+        }
+        match chosen {
+            Some(crate::sectiontabs::Pick::Section(section)) => self.open_section(&section),
+            Some(crate::sectiontabs::Pick::Group(group)) => self.open_group(&group),
+            // Moved in the row (issue #555): placed as a drag in the notebooks places it, so the
+            // tree, the list of every section and the file order all follow, and the page open
+            // stays open.
+            Some(crate::sectiontabs::Pick::Move(section, drop)) => {
+                self.place_dropped(&section, &drop);
             }
+            Some(crate::sectiontabs::Pick::Up) => {
+                if let Some(above) = level.parent() {
+                    let section = here.filter(|h| node_at(self.session.tree(), h).is_some_and(|n| n.info.kind == NodeKind::Section));
+                    self.tabs_view = Some((section, above.to_path_buf()));
+                }
+            }
+            None => {}
         }
     }
 
     fn central(&mut self, ui: &mut Ui) {
         egui::CentralPanel::default().show(ui, |ui| {
+            // A section chosen with no pages in it says so, by name, and offers its first page
+            // (issue #525), rather than the window's welcome or a page from elsewhere.
+            let empty_section = self
+                .selected
+                .as_ref()
+                .and_then(|s| node_at(self.session.tree(), s))
+                .filter(|n| n.info.kind == NodeKind::Section && first_page(std::slice::from_ref(*n), &n.path).is_none())
+                .map(|n| (n.path.clone(), n.info.title.clone()));
+            // A section group gone into that has no sections yet (issue #511).
+            let empty_group = self
+                .selected
+                .as_ref()
+                .and_then(|s| node_at(self.session.tree(), s))
+                .filter(|n| n.info.kind == NodeKind::SectionGroup && sections_under(std::slice::from_ref(*n), &n.path).is_empty())
+                .map(|n| (n.path.clone(), n.info.title.clone()));
+            if self.editor.is_none()
+                && let Some((group, title)) = empty_group
+            {
+                let mut add = false;
+                ui.vertical_centered(|ui| {
+                    ui.add_space(ui.available_height() * 0.25);
+                    ui.label(egui::RichText::new(title).size(20.0).strong().color(self.tokens.text));
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.no_sections_in_this_group_yet")).color(self.tokens.text));
+                    ui.add_space(10.0);
+                    add = modal_button(ui, &self.tokens, crate::tl_id!("ui.add_the_first_section"), true).clicked();
+                });
+                if add {
+                    self.dialog = Some(Dialog::Add {
+                        parent: group,
+                        parent_kind: NodeKind::SectionGroup,
+                        title: String::new(),
+                        kind: NodeKind::Section,
+                        format: None,
+                    });
+                }
+                return;
+            }
+            if self.editor.is_none()
+                && let Some((section, title)) = empty_section
+            {
+                let mut add = false;
+                ui.vertical_centered(|ui| {
+                    ui.add_space(ui.available_height() * 0.25);
+                    ui.label(egui::RichText::new(title).size(20.0).strong().color(self.tokens.text));
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.no_pages_in_this_section_yet")).color(self.tokens.text));
+                    ui.add_space(10.0);
+                    add = modal_button(ui, &self.tokens, crate::tl_id!("ui.add_the_first_page"), true).clicked();
+                });
+                if add {
+                    self.create_page_in(&section);
+                }
+                return;
+            }
             if self.editor.is_none() {
                 ui.vertical_centered(|ui| {
                     ui.add_space(ui.available_height() * 0.22);
@@ -10663,7 +12231,7 @@ impl NoteCraftApp {
                                 // the caret, and one that does not sense clicks cannot
                                 // carry a context menu at all. So the secondary click is
                                 // watched for directly and the menu drawn where it fell.
-                                crate::imagemenu::show(ui, body, &mut page_acts, &tokens);
+                                crate::imagemenu::show(ui, body, &ed.dir, &mut page_acts, &tokens);
                                 crate::pagemenu::show(ui, body, &mut page_acts, &tokens, ed.locked);
                             }
                             if moved.changed.blocks {
@@ -11736,8 +13304,11 @@ impl NoteCraftApp {
                             // the Add page button above them) are what the page list shows next
                             // (issue #139).
                             self.selected = Some(dir.clone());
-                            if let Some(page) = first_page(self.session.tree(), &dir) {
-                                self.open_page(&page);
+                            // And it starts with a page, opened at its title, as OneNote's new
+                            // sections do (issue #570): the section is ready to write in.
+                            match first_page(self.session.tree(), &dir).or_else(|| first_page_under(self.session.tree(), &dir)) {
+                                Some(page) => self.open_page(&page),
+                                None => self.create_page_in(&dir),
                             }
                         }
                         self.say(crate::tl_id!("ui.created"));
@@ -12393,20 +13964,11 @@ impl NoteCraftApp {
                                 ui.separator();
                                 egui::ScrollArea::vertical().max_height(380.0).auto_shrink([false, true]).show(ui, |ui| {
                                     for p in notecraft_store::authors::by(pages, who.as_deref()) {
-                                        ui.horizontal(|ui| {
-                                            let title =
-                                                if p.title.is_empty() { crate::tl_id!("ui.untitled_page").to_string() } else { p.title.clone() };
-                                            if ui.link(title).clicked() {
-                                                go = Some(p.page.clone());
-                                            }
-                                            let mut place = vec![p.notebook.clone()];
-                                            place.extend(p.section.iter().cloned());
-                                            ui.label(
-                                                egui::RichText::new(place.join(&format!(" {} ", crate::tl_id!("ui.place_separator"))))
-                                                    .small()
-                                                    .color(t.muted),
-                                            );
-                                        });
+                                        let when = notecraft_store::recent::stamp(&p.page)
+                                            .and_then(|at| notecraft_model::time::long_from_iso(&notecraft_model::time::iso_from_secs(at)));
+                                        if result_row(ui, &t, &p.title, &p.notebook, &p.section, when.as_deref(), None) {
+                                            go = Some(p.page.clone());
+                                        }
                                     }
                                 });
                                 ui.add_space(6.0);
@@ -12481,28 +14043,12 @@ impl NoteCraftApp {
                         }
                         egui::ScrollArea::vertical().max_height(380.0).auto_shrink([false, true]).show(ui, |ui| {
                             for e in shown {
-                                ui.horizontal(|ui| {
-                                    let title = if e.title.is_empty() { crate::tl_id!("ui.untitled_page").to_string() } else { e.title.clone() };
-                                    if ui.link(title).clicked() {
-                                        go = Some(e.page.clone());
-                                    }
-                                    let mut place = vec![e.notebook.clone()];
-                                    place.extend(e.section.iter().cloned());
-                                    ui.label(
-                                        egui::RichText::new(place.join(&format!(" {} ", crate::tl_id!("ui.place_separator")))).small().color(t.muted),
-                                    );
-                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        let when =
-                                            notecraft_model::time::long_from_iso(&notecraft_model::time::iso_from_secs(e.at)).unwrap_or_default();
-                                        let label = egui::RichText::new(when).small().color(t.muted);
-                                        let resp = ui.label(label);
-                                        if !e.stamped {
-                                            resp.on_hover_text(crate::tl_id!(
-                                                "ui.this_page_keeps_no_time_of_its_own_this_is_when_its_file_was_last_changed"
-                                            ));
-                                        }
-                                    });
-                                });
+                                let when = notecraft_model::time::long_from_iso(&notecraft_model::time::iso_from_secs(e.at)).unwrap_or_default();
+                                let note = (!e.stamped)
+                                    .then_some(crate::tl_id!("ui.this_page_keeps_no_time_of_its_own_this_is_when_its_file_was_last_changed"));
+                                if result_row(ui, &t, &e.title, &e.notebook, &e.section, Some(&when), note) {
+                                    go = Some(e.page.clone());
+                                }
                             }
                         });
                         ui.add_space(8.0);
@@ -12519,118 +14065,238 @@ impl NoteCraftApp {
                 }
             }
             Dialog::PageVersions { page, versions, preview } => {
+                // Issue #382: a review workspace. The list (the current page, then each saved
+                // version with when it was saved) sits beside the preview of the one selected, or
+                // above it in a narrow window. Selecting a row is how a version is looked at;
+                // Restore acts on the selected version only; Return to page or Escape leaves the
+                // page as it was.
                 let can_restore = notecraft_store::page::read_only(page).is_ok_and(|locked| !locked);
                 let mut restore: Option<String> = None;
-                let mut open: Option<(String, String)> = None;
-                let mut back = false;
+                // `Some(None)` selects the current page, `Some(Some(i))` saved version `i`.
+                let mut select: Option<Option<usize>> = None;
                 let t = self.tokens;
+                let selected = preview.as_ref().and_then(|p| versions.iter().position(|v| v.id == p.id));
+                if ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+                    keep = false;
+                }
+                // Up and Down move through the list, as in any list, while no text box has the keys.
+                if !ctx.egui_wants_keyboard_input() {
+                    let rows = versions.len();
+                    let (up, down) =
+                        ctx.input_mut(|i| (i.consume_key(Modifiers::NONE, Key::ArrowUp), i.consume_key(Modifiers::NONE, Key::ArrowDown)));
+                    if down && rows > 0 {
+                        select = Some(Some(selected.map_or(0, |n| (n + 1).min(rows - 1))));
+                    } else if up {
+                        select = Some(selected.and_then(|n| n.checked_sub(1)));
+                    }
+                }
+                // A row picked with the keys is scrolled into sight on the next frame, when it is drawn
+                // as the selected one.
+                let reveal_id = egui::Id::new("page-versions-reveal");
+                let reveal = ctx.data_mut(|d| d.remove_temp::<bool>(reveal_id)).unwrap_or(false);
+                if select.is_some() {
+                    ctx.data_mut(|d| d.insert_temp(reveal_id, true));
+                }
+                let screen = ctx.viewport_rect();
+                let width = (screen.width() - 48.0).clamp(320.0, 980.0);
+                let side_by_side = width >= 720.0;
+                let height = (screen.height() * 0.78 - 170.0).max(160.0);
+                let saved_at = page_saved_at(page).map(|iso| crate::versions::when(&iso));
+                let backdrop = modal_backdrop(ctx, "page-versions-backdrop");
                 egui::Window::new(crate::tl_id!("ui.page_versions_2"))
+                    .title_bar(false)
                     .collapsible(false)
-                    .resizable(true)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .fixed_size(vec2(width, 0.0))
                     .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&t))
                     .show(ctx, |ui| {
-                        ui.set_min_width(420.0);
+                        stay_above(ui, backdrop);
+                        ui.set_width(width);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(crate::tl_id!("ui.page_versions_2")).strong().size(18.0).color(t.strong));
+                            let title = notecraft_store::tree::read_node(page).map(|n| n.title).unwrap_or_default();
+                            if !title.is_empty() {
+                                ui.label(egui::RichText::new(title).color(t.muted));
+                            }
+                        });
                         if !can_restore {
                             ui.colored_label(t.warn, crate::tl_id!("ui.page_is_read_only"));
                         }
-                        if let Some(p) = preview.as_mut() {
-                            // An older version, read-only (issue #278): said in the window
-                            // itself, so it is never taken for the page.
-                            ui.set_min_width(560.0);
-                            ui.label(egui::RichText::new(crate::i18n::format_message_id("ui.version_saved_when", &[("when", &p.when)])).strong());
-                            ui.colored_label(t.warn, crate::tl_id!("ui.an_older_version_read_only_the_page_is_not_changed_unless_you_restore_it"));
-                            ui.add_space(4.0);
-                            ui.horizontal(|ui| {
-                                if ui.selectable_label(!p.comparing, crate::tl_id!("ui.this_version")).clicked() {
-                                    p.comparing = false;
-                                }
-                                if ui.selectable_label(p.comparing, crate::tl_id!("ui.compare_with_the_page")).clicked() {
-                                    p.comparing = true;
-                                }
-                            });
-                            ui.separator();
-                            egui::ScrollArea::vertical().max_height(420.0).auto_shrink([false, true]).show(ui, |ui| {
-                                if p.comparing {
-                                    let changed = p.changes.iter().any(|c| !matches!(c, crate::versions::Change::Same(_)));
-                                    if p.truncated {
-                                        ui.label(crate::tl_id!("ui.page_version_comparison_truncated"));
-                                    } else if !changed {
-                                        ui.label(crate::tl_id!("ui.this_version_has_the_same_words_as_the_page"));
-                                    }
-                                    for change in &p.changes {
-                                        let (mark, line, colour) = match change {
-                                            crate::versions::Change::Same(l) => ("  ", l, t.muted),
-                                            crate::versions::Change::OnlyThen(l) => ("− ", l, t.warn),
-                                            crate::versions::Change::OnlyNow(l) => ("+ ", l, t.accent),
-                                        };
-                                        ui.label(egui::RichText::new(format!("{mark}{line}")).monospace().color(colour));
-                                    }
-                                    ui.add_space(4.0);
-                                    ui.label(
-                                        egui::RichText::new(crate::tl_id!(
-                                            "ui.lines_marked_are_only_in_this_version_lines_marked_are_only_in_the_page"
-                                        ))
-                                        .small()
-                                        .color(t.muted),
+                        ui.separator();
+                        let list = |ui: &mut Ui, select: &mut Option<Option<usize>>, list_height: f32| {
+                            // A height of its own: the window is sized to what it holds, and a list left to
+                            // shrink to the room it is given showed one row and hid the next.
+                            egui::ScrollArea::vertical()
+                                .id_salt("page-versions-list")
+                                .max_height(list_height)
+                                .min_scrolled_height(list_height)
+                                .auto_shrink([false, true])
+                                .show(ui, |ui| {
+                                    ui.spacing_mut().item_spacing.y = 2.0;
+                                    let current_sub = saved_at.as_ref().map_or_else(
+                                        || crate::tl_id!("ui.the_page_as_it_is_now").to_string(),
+                                        |when| crate::i18n::format_message_id("ui.saved_when", &[("when", when)]),
                                     );
-                                } else {
-                                    let _ = crate::preview::show(ui, &p.blocks, page, &t, None, &notecraft_model::justify::Justified::default());
-                                }
-                            });
-                            ui.add_space(8.0);
-                            ui.horizontal(|ui| {
-                                if modal_button_enabled(ui, &t, crate::tl_id!("ui.restore_this_version"), true, can_restore).clicked() {
-                                    restore = Some(p.id.clone());
-                                }
-                                if modal_button(ui, &t, crate::tl_id!("ui.back_to_the_list"), false).clicked() {
-                                    back = true;
-                                }
-                                if modal_button(ui, &t, crate::tl_id!("ui.close"), false).clicked() {
-                                    keep = false;
-                                }
-                            });
-                            return;
-                        }
-                        ui.label(crate::tl_id!("ui.saved_copies_of_this_page"));
-                        ui.add_space(6.0);
-                        if versions.is_empty() {
-                            ui.label(crate::tl_id!("ui.no_saved_versions_yet_notecraft_keeps_a_copy_when_th_aa2e25acad"));
-                        } else {
-                            egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-                                for version in versions.iter() {
-                                    ui.horizontal(|ui| {
-                                        ui.label(crate::versions::when(&version.created));
-                                        let size = (version.bytes.div_ceil(1024)).to_string();
-                                        let size = crate::i18n::format_message_id("ui.size_kb", &[("size", &size)]);
-                                        ui.label(egui::RichText::new(size).small().color(t.muted));
-                                        // Issue #382: looking first is the primary step; restoring
-                                        // replaces the page, so it is the quieter of the two here.
-                                        if modal_button(ui, &t, crate::tl_id!("ui.preview"), true).clicked() {
-                                            open = Some((version.id.clone(), version.created.clone()));
+                                    let current = version_row(ui, &t, crate::tl_id!("ui.current_page"), &current_sub, selected.is_none());
+                                    if reveal && selected.is_none() {
+                                        current.scroll_to_me(None);
+                                    }
+                                    if current.clicked() {
+                                        *select = Some(None);
+                                    }
+                                    for (n, version) in versions.iter().enumerate() {
+                                        let size =
+                                            crate::i18n::format_message_id("ui.size_kb", &[("size", &version.bytes.div_ceil(1024).to_string())]);
+                                        let sub = format!("{} \u{b7} {size}", crate::versions::when(&version.created));
+                                        let row = version_row(ui, &t, crate::tl_id!("ui.saved_version"), &sub, selected == Some(n));
+                                        if reveal && selected == Some(n) {
+                                            row.scroll_to_me(None);
                                         }
-                                        if modal_button_enabled(ui, &t, crate::tl_id!("ui.restore"), false, can_restore).clicked() {
-                                            restore = Some(version.id.clone());
+                                        if row.clicked() {
+                                            *select = Some(Some(n));
                                         }
+                                    }
+                                    if versions.is_empty() {
+                                        ui.add_space(6.0);
+                                        ui.label(
+                                            egui::RichText::new(crate::tl_id!("ui.no_saved_versions_yet_notecraft_keeps_a_copy_when_th_aa2e25acad"))
+                                                .small()
+                                                .color(t.muted),
+                                        );
+                                    }
+                                });
+                        };
+                        let shown = |ui: &mut Ui, preview: &mut Option<Box<crate::versions::Preview>>, preview_height: f32| {
+                            ui.vertical(|ui| {
+                                let Some(p) = preview.as_mut() else {
+                                    ui.label(egui::RichText::new(crate::tl_id!("ui.current_page")).strong().size(15.0).color(t.text));
+                                    ui.label(egui::RichText::new(crate::tl_id!("ui.current_page_explainer")).color(t.muted));
+                                    return;
+                                };
+                                // A saved version, read-only (issue #278): said in the pane itself,
+                                // so it is never taken for the page.
+                                ui.label(
+                                    egui::RichText::new(crate::i18n::format_message_id("ui.saved_version_when", &[("when", &p.when)]))
+                                        .strong()
+                                        .size(15.0)
+                                        .color(t.text),
+                                );
+                                ui.colored_label(
+                                    t.warn,
+                                    crate::tl_id!("ui.an_older_version_read_only_the_page_is_not_changed_unless_you_restore_it"),
+                                );
+                                ui.add_space(2.0);
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new(crate::tl_id!("ui.show")).small().color(t.muted));
+                                    if ui.selectable_label(!p.comparing, crate::tl_id!("ui.this_version")).clicked() {
+                                        p.comparing = false;
+                                    }
+                                    if ui.selectable_label(p.comparing, crate::tl_id!("ui.compare_with_the_page")).clicked() {
+                                        p.comparing = true;
+                                    }
+                                });
+                                ui.separator();
+                                // The preview is its own surface: the paper colour, framed, so the
+                                // version does not read as the live page behind the window.
+                                egui::Frame::new()
+                                    .fill(t.editor)
+                                    .stroke(egui::Stroke::new(1.0, t.faint))
+                                    .corner_radius(4.0)
+                                    .inner_margin(egui::Margin::same(8))
+                                    .show(ui, |ui| {
+                                        egui::ScrollArea::vertical()
+                                            .id_salt("page-version-preview")
+                                            .max_height(preview_height)
+                                            .min_scrolled_height(preview_height)
+                                            .auto_shrink([false, false])
+                                            .show(ui, |ui| {
+                                                if p.comparing {
+                                                    let changed = p.changes.iter().any(|c| !matches!(c, crate::versions::Change::Same(_)));
+                                                    if p.truncated {
+                                                        ui.label(crate::tl_id!("ui.page_version_comparison_truncated"));
+                                                    } else if !changed {
+                                                        ui.label(crate::tl_id!("ui.this_version_has_the_same_words_as_the_page"));
+                                                    }
+                                                    for change in &p.changes {
+                                                        let (mark, line, colour) = match change {
+                                                            crate::versions::Change::Same(l) => ("  ", l, t.muted),
+                                                            crate::versions::Change::OnlyThen(l) => ("− ", l, t.warn),
+                                                            crate::versions::Change::OnlyNow(l) => ("+ ", l, t.accent),
+                                                        };
+                                                        ui.label(egui::RichText::new(format!("{mark}{line}")).monospace().color(colour));
+                                                    }
+                                                    ui.add_space(4.0);
+                                                    ui.label(
+                                                        egui::RichText::new(crate::tl_id!(
+                                                            "ui.lines_marked_are_only_in_this_version_lines_marked_are_only_in_the_page"
+                                                        ))
+                                                        .small()
+                                                        .color(t.muted),
+                                                    );
+                                                } else {
+                                                    let _ = crate::preview::show(
+                                                        ui,
+                                                        &p.blocks,
+                                                        page,
+                                                        &t,
+                                                        None,
+                                                        &notecraft_model::justify::Justified::default(),
+                                                    );
+                                                }
+                                            });
                                     });
-                                }
                             });
+                        };
+                        if side_by_side {
+                            ui.horizontal_top(|ui| {
+                                let list_width = 270.0;
+                                ui.allocate_ui_with_layout(vec2(list_width, height), egui::Layout::top_down(egui::Align::Min), |ui| {
+                                    ui.set_width(list_width);
+                                    list(ui, &mut select, height);
+                                });
+                                ui.separator();
+                                ui.allocate_ui_with_layout(vec2(ui.available_width(), height), egui::Layout::top_down(egui::Align::Min), |ui| {
+                                    shown(ui, preview, height - 110.0);
+                                });
+                            });
+                        } else {
+                            list(ui, &mut select, (height * 0.35).max(120.0));
+                            ui.separator();
+                            shown(ui, preview, (height * 0.55).max(140.0));
                         }
                         ui.add_space(8.0);
-                        if modal_button(ui, &t, crate::tl_id!("ui.close"), false).clicked() {
-                            keep = false;
-                        }
+                        ui.horizontal(|ui| {
+                            let chosen = preview.as_ref().map(|p| p.id.clone());
+                            if modal_button_enabled(ui, &t, crate::tl_id!("ui.restore_this_version"), true, can_restore && chosen.is_some()).clicked()
+                            {
+                                restore = chosen;
+                            }
+                            if modal_button(ui, &t, crate::tl_id!("ui.return_to_page"), false).clicked() {
+                                keep = false;
+                            }
+                        });
                     });
-                if back {
-                    *preview = None;
-                }
-                if let Some((id, created)) = open {
-                    // Compared with the page as it stands, unsaved words included.
-                    let now = self.editor.as_ref().filter(|e| e.dir == *page).map(|e| e.body.clone());
-                    let now = now.or_else(|| notecraft_store::page::load_page(page).ok().map(|p| p.body)).unwrap_or_default();
-                    match crate::versions::open(page, &id, &created, &now) {
-                        Ok(p) => *preview = Some(Box::new(p)),
-                        Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_open_that_version_error", &[("error", &e)])),
+                match select {
+                    Some(None) => *preview = None,
+                    Some(Some(n)) if Some(n) != selected => {
+                        if let Some(version) = versions.get(n) {
+                            // Compared with the page as it stands, unsaved words included.
+                            let now = self.editor.as_ref().filter(|e| e.dir == *page).map(|e| e.body.clone());
+                            let now = now.or_else(|| notecraft_store::page::load_page(page).ok().map(|p| p.body)).unwrap_or_default();
+                            let comparing = preview.as_ref().is_some_and(|p| p.comparing);
+                            match crate::versions::open(page, &version.id, &version.created, &now) {
+                                Ok(mut p) => {
+                                    // The mode chosen stays as one version is swapped for another.
+                                    p.comparing = comparing;
+                                    *preview = Some(Box::new(p));
+                                }
+                                Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_open_that_version_error", &[("error", &e)])),
+                            }
+                        }
                     }
+                    _ => {}
                 }
                 if let Some(id) = restore
                     && self.run("page.version.restore", &params(&[("path", &path_str(page)), ("id", &id)])).is_some()
@@ -12863,6 +14529,62 @@ impl NoteCraftApp {
                     self.open_recycle_bin(notebook.clone(), Some(id.clone()));
                 }
             }
+            Dialog::Notebooks => {
+                // Escape closes it and changes nothing (issue #559).
+                if ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) {
+                    keep = false;
+                }
+                let here = self.editor.as_ref().map(|e| e.dir.clone()).or_else(|| self.selected.clone());
+                let notebooks: Vec<(PathBuf, String)> = self.session.tree().iter().map(|n| (n.path.clone(), n.info.title.clone())).collect();
+                let mut chosen: Option<PathBuf> = None;
+                let backdrop = modal_backdrop(ctx, "notebooks-backdrop");
+                egui::Window::new(crate::tl_id!("ui.notebooks_switch"))
+                    .title_bar(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .order(egui::Order::Foreground)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .frame(modal_frame(&self.tokens))
+                    .show(ctx, |ui| {
+                        stay_above(ui, backdrop);
+                        modal_title(ui, &self.tokens, crate::tl_id!("ui.notebooks_switch"));
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_switch_hint")).small().color(self.tokens.muted));
+                        ui.add_space(6.0);
+                        ui.set_min_width(280.0);
+                        let mut rows: Vec<egui::Response> = Vec::new();
+                        let mut current: Option<usize> = None;
+                        for (path, title) in &notebooks {
+                            let on = here.as_ref().is_some_and(|h| h.starts_with(path));
+                            // Two notebooks of one name are told apart by their folders.
+                            let twin = notebooks.iter().filter(|(_, t)| t == title).count() > 1;
+                            let shown = if twin { format!("{title} ({})", self.shown(path)) } else { title.clone() };
+                            let row = ui.add_sized([ui.available_width(), 26.0], egui::Button::selectable(on, shown));
+                            if on {
+                                current = Some(rows.len());
+                            }
+                            if row.clicked() {
+                                chosen = Some(path.clone());
+                            }
+                            rows.push(row);
+                        }
+                        ui.add_space(6.0);
+                        let close = modal_button(ui, &self.tokens, crate::tl_id!("ui.close"), false);
+                        if close.clicked() {
+                            keep = false;
+                        }
+                        // The keyboard starts on the notebook that is open, and stays in the list.
+                        if let Some(first) = current.and_then(|i| rows.get(i)).or_else(|| rows.first()) {
+                            let mut inside: Vec<&egui::Response> = rows.iter().collect();
+                            inside.push(&close);
+                            hold_modal_focus(first, &inside);
+                        }
+                    });
+                if let Some(notebook) = chosen {
+                    keep = false;
+                    self.dialog = None;
+                    self.open_notebook_where_left(&notebook);
+                }
+            }
             Dialog::Symbols => {
                 let mut chosen: Option<&'static str> = None;
                 // A modal like the other dialogs (issue #262): the page behind is dimmed and
@@ -12884,6 +14606,7 @@ impl NoteCraftApp {
                         modal_title(ui, &self.tokens, crate::tl_id!("ui.insert_symbol"));
                         ui.label(crate::tl_id!("ui.choose_a_symbol_to_insert_at_the_caret"));
                         ui.add_space(6.0);
+                        let mut buttons: Vec<egui::Response> = Vec::new();
                         for row in [["©", "®", "™", "§", "¶"], ["•", "→", "←", "±", "°"], ["×", "÷", "√", "€", "£"], ["¥", "¢", "∞", "≠", "≤"]]
                         {
                             ui.horizontal(|ui| {
@@ -12892,17 +14615,30 @@ impl NoteCraftApp {
                                         .min_size(vec2(46.0, 36.0))
                                         .fill(self.tokens.panel)
                                         .stroke(egui::Stroke::new(0.8, self.tokens.faint));
-                                    if ui.add(button).clicked() {
+                                    let resp = ui.add(button);
+                                    if resp.clicked() {
                                         chosen = Some(symbol);
                                     }
+                                    buttons.push(resp);
                                 }
                             });
                         }
                         ui.add_space(6.0);
-                        if modal_button(ui, &self.tokens, crate::tl_id!("ui.close"), false).clicked() {
+                        let close = modal_button(ui, &self.tokens, crate::tl_id!("ui.close"), false);
+                        if close.clicked() {
                             keep = false;
                         }
+                        // The keyboard starts on the first symbol and stays in the picker (#374).
+                        if let Some(first) = buttons.first() {
+                            let mut inside: Vec<&egui::Response> = buttons.iter().collect();
+                            inside.push(&close);
+                            hold_modal_focus(first, &inside);
+                        }
                     });
+                // Closed with nothing picked, the keyboard goes back to the Symbol button (#374).
+                if !keep && chosen.is_none() {
+                    ribbon::return_focus_from_symbols(ctx);
+                }
                 if let Some(symbol) = chosen {
                     self.insert_in_page(symbol);
                     keep = false;
@@ -13224,9 +14960,17 @@ impl NoteCraftApp {
                 "templates": p.templates.iter().map(|t| json!({"id": t.id, "name": t.name, "category": t.category.id()})).collect::<Vec<_>>(),
                 "name": p.name,
             })),
+            // The search's results as listed, with their scope and order (issues #528 and #573).
+            "search": {
+                "query": self.searched,
+                "scope": format!("{:?}", self.search_scope).to_lowercase(),
+                "sort": format!("{:?}", self.search_sort).to_lowercase(),
+                "hits": self.hits.iter().zip(&self.hit_trails).map(|(h, trail)| json!({"title": h.title, "trail": trail})).collect::<Vec<_>>(),
+            },
             "tagsSummary": self.tags_pane.as_ref().map(|p| json!({
                 "scope": p.scope.id(),
                 "unchecked": p.unchecked,
+                "group": p.group.id(),
                 "lines": p.found.iter().map(|l| json!({"tag": l.tag.id(), "text": l.text, "done": l.done, "page": l.page, "section": l.section})).collect::<Vec<_>>(),
             })),
             // Back and Forward, and the Quick Access Toolbar's choices.
@@ -13272,6 +15016,7 @@ impl NoteCraftApp {
                 })),
                 "autoShapes": self.auto_shapes,
                 "tabsLayout": self.tabs_layout,
+                "pagesRight": self.pages_right,
                 // Draw > Ruler (issue #293): where it lies once it is out, in page points.
                 "ruler": match crate::inkpad::ruler(ctx) {
                     Some(crate::inkpad::RulerState::Placed(r)) => json!({"x": r.x, "y": r.y, "angle": r.angle, "degrees": r.shown_degrees()}),
@@ -13347,6 +15092,8 @@ impl NoteCraftApp {
                 "selectedImage": crate::containers::selected_image(ctx, &e.dir),
                 "selectedObject": crate::containers::selected_object(ctx, &e.dir).map(|(block, kind)| json!({"block": block, "kind": kind})),
                 "origin": [e.origin.x, e.origin.y],
+                // How far down the page is scrolled, in points.
+                "scrolled": self.page_offset_y,
                 // What can be taken back, and how many steps are kept.
                 "history": {"steps": e.history.len(), "at": e.history.at(), "canUndo": e.history.can_undo(), "canRedo": e.history.can_redo()},
             })),
@@ -13552,7 +15299,12 @@ impl NoteCraftApp {
                 ctx.copy_text(text);
             }
         }
+        // A search result's page opened from a synced folder: its words are found once it is in.
+        if self.find_on_open.is_some() {
+            self.apply_find_on_open(ctx);
+        }
         let queued_paste = std::mem::take(&mut self.keyboard_paste_requested);
+        let queued_plain = std::mem::take(&mut self.keyboard_paste_plain);
         // A dialog of the window's own (Copy Text from Picture) owns the keyboard: a paste goes into
         // its text box, never into the page behind it.
         let modal = self.own_modal_open();
@@ -13565,6 +15317,9 @@ impl NoteCraftApp {
             self.paste_into_modal(ctx, queued_paste);
         } else if search_focused {
             self.paste_text_into_focus(ctx, queued_paste);
+        } else if queued_paste && queued_plain {
+            log::debug!("queued keyboard paste dispatched to paste_plain");
+            self.paste_plain();
         } else if queued_paste {
             log::debug!("queued keyboard paste dispatched to paste_here");
             self.paste_here();
@@ -13587,6 +15342,33 @@ impl NoteCraftApp {
         // Ctrl+P prints the open page, as it does everywhere (issue #168).
         if self.dialog.is_none() && !self.own_modal_open() && ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::P)) {
             self.open_print();
+        }
+        // The page's own zoom from the keyboard, as OneNote has it: Ctrl+Alt with plus, minus or 0
+        // (issue #376). Ctrl alone with them stays egui's size for the whole window (issue #377
+        // keeps the two apart).
+        let page_keys_free = self.dialog.is_none() && !self.own_modal_open() && self.custom_tags.is_none();
+        if page_keys_free {
+            let keys = Modifiers::COMMAND | Modifiers::ALT;
+            let step = ctx.input_mut(|i| {
+                if i.consume_key(keys, Key::Equals) || i.consume_key(keys, Key::Plus) {
+                    Some(1)
+                } else if i.consume_key(keys, Key::Minus) {
+                    Some(-1)
+                } else if i.consume_key(keys, Key::Num0) {
+                    Some(0)
+                } else {
+                    None
+                }
+            });
+            if let Some(step) = step {
+                self.ribbon_act(ribbon::Act::Zoom(step));
+            }
+        }
+        // F11 gives the page the whole window and brings the notebooks back, as in OneNote, so Full
+        // Page View can be left from the keyboard as well as from its button (issue #376).
+        if page_keys_free && self.editor.is_some() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F11)) {
+            self.full_page = !self.full_page;
+            self.compact_full_page = false;
         }
         if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::S)) {
             if let Some(ed) = self.editor.as_mut() {
@@ -13626,6 +15408,7 @@ impl NoteCraftApp {
         }
         self.finish_pending_open(ctx);
         self.nav_keys(ctx);
+        self.onenote_keys(ctx);
         self.replay_typing(ctx);
         self.switch_by_device(ctx);
         self.pen_keys(ctx);
@@ -13658,6 +15441,13 @@ impl NoteCraftApp {
         self.storage_notice(ui);
         self.status_bar(ui);
         self.side_panel(ui);
+        // The row asked for has the keyboard now, or was not drawn in time (issue #514): ask
+        // no more, so it is not taken from wherever the user went since.
+        if ui.data_mut(|d| d.remove_temp::<bool>(egui::Id::new("nav-focus-done"))).unwrap_or(false) || self.nav_focus_tries == 0 {
+            self.nav_focus = None;
+        } else {
+            self.nav_focus_tries -= 1;
+        }
         self.tags_panel(ui);
         self.templates_panel(ui);
         // In a phone-width window a pane that fills it leaves no room for the page.
@@ -13819,6 +15609,72 @@ fn encode_screenshot(image: &egui::ColorImage, path: Option<&Path>) -> Result<Va
     }
 }
 
+/// The settings key the page last open in each section is kept under (issue #557).
+const SECTION_PAGES_KEY: &str = "section_last_pages";
+
+/// How many sections' last pages are kept; the oldest are let go beyond this.
+const SECTION_PAGES_KEPT: usize = 200;
+
+/// The node at `at`, wherever in the tree it is.
+fn node_at<'a>(tree: &'a [Node], at: &Path) -> Option<&'a Node> {
+    fn find<'a>(n: &'a Node, at: &Path) -> Option<&'a Node> {
+        if n.path == at {
+            return Some(n);
+        }
+        n.children.iter().find_map(|c| find(c, at))
+    }
+    tree.iter().find_map(|n| find(n, at))
+}
+
+/// The section a page is in, from the tree in memory: the nearest section above it.
+fn section_in_tree(tree: &[Node], page: &Path) -> Option<PathBuf> {
+    fn walk(nodes: &[Node], page: &Path, section: Option<&Path>) -> Option<PathBuf> {
+        nodes.iter().find_map(|n| {
+            let here = if n.info.kind == NodeKind::Section { Some(n.path.as_path()) } else { section };
+            if n.path == page { here.map(Path::to_path_buf) } else { walk(&n.children, page, here) }
+        })
+    }
+    walk(tree, page, None)
+}
+
+/// The sections inside the notebook or section group at `at`, groups within it included, in the
+/// order they are shown (issue #511).
+fn sections_under(tree: &[Node], at: &Path) -> Vec<PathBuf> {
+    fn walk(nodes: &[Node], out: &mut Vec<PathBuf>) {
+        for n in nodes {
+            match n.info.kind {
+                NodeKind::Section => out.push(n.path.clone()),
+                NodeKind::SectionGroup => walk(&n.children, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(node) = node_at(tree, at) {
+        walk(&node.children, &mut out);
+    }
+    out
+}
+
+/// The sections of the notebook at `notebook`, in the order the notebook shows them: each in
+/// its place, the sections of a group where the group is (issue #512).
+fn sections_in_order(tree: &[Node], notebook: &Path) -> Vec<PathBuf> {
+    fn walk(nodes: &[Node], out: &mut Vec<PathBuf>) {
+        for n in nodes {
+            match n.info.kind {
+                NodeKind::Section => out.push(n.path.clone()),
+                NodeKind::SectionGroup => walk(&n.children, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(nb) = tree.iter().find(|n| n.path == notebook) {
+        walk(&nb.children, &mut out);
+    }
+    out
+}
+
 /// The first page inside a notebook or section, at any depth.
 fn first_page(tree: &[Node], root: &Path) -> Option<PathBuf> {
     fn walk(n: &Node) -> Option<PathBuf> {
@@ -13832,13 +15688,7 @@ fn first_page(tree: &[Node], root: &Path) -> Option<PathBuf> {
 
 /// The first page inside the node at `at`, wherever in the tree that node is.
 fn first_page_under(tree: &[Node], at: &Path) -> Option<PathBuf> {
-    fn find<'a>(n: &'a Node, at: &Path) -> Option<&'a Node> {
-        if n.path == at {
-            return Some(n);
-        }
-        n.children.iter().find_map(|c| find(c, at))
-    }
-    let node = tree.iter().find_map(|n| find(n, at))?;
+    let node = node_at(tree, at)?;
     first_page(std::slice::from_ref(node), &node.path)
 }
 
@@ -16350,5 +18200,34 @@ mod tabs_layout_tests {
         }
         let open = h.state().editor.as_ref().map(|e| e.dir.clone()).expect("a page open");
         assert!(open.starts_with(&section), "a tab opens a page of its section: {open:?}");
+    }
+}
+
+#[cfg(test)]
+mod search_hit_tests {
+    use super::find_words_in_blocks;
+    use notecraft_formats::{Block, Span};
+
+    fn para(text: &str) -> Block {
+        Block::Paragraph(vec![Span { text: text.into(), ..Default::default() }], Vec::new())
+    }
+
+    /// Issue #529, from review: the phrase when the page has it; else the query's words apart, as
+    /// the search matches them, in the block with the most of them; and never in a heading that
+    /// only repeats the title shown above the page.
+    #[test]
+    fn a_search_hit_is_found_as_a_phrase_or_word_by_word() {
+        let blocks = vec![
+            Block::Heading { level: 1, spans: vec![Span { text: "Marker notes".into(), ..Default::default() }], emoji: Vec::new() },
+            para("Only a marker here."),
+            para("Distant objects carry a Marker."),
+            para("The distant marker itself."),
+        ];
+        assert_eq!(find_words_in_blocks(&blocks, "distant marker", "Marker notes"), Some((3, 4, 18)), "the phrase first");
+        let apart = &blocks[..3];
+        assert_eq!(find_words_in_blocks(apart, "distant marker", "Marker notes"), Some((2, 0, 7)), "the block with both words, its first");
+        assert_eq!(find_words_in_blocks(&blocks[..2], "marker", "Marker notes"), Some((1, 7, 13)), "the title's echo is passed over");
+        assert_eq!(find_words_in_blocks(&blocks[..2], "marker", ""), Some((0, 0, 6)), "a title not shown is the page's own heading");
+        assert_eq!(find_words_in_blocks(&blocks, "absent", ""), None);
     }
 }

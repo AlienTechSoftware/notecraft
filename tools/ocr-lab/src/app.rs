@@ -609,6 +609,7 @@ impl Lab {
             auto_shapes: false,
             replaying: false,
             tabs_layout: false,
+            pages_right: false,
             in_table: false,
             table_borders: false,
             table_align: None,
@@ -633,6 +634,10 @@ impl Lab {
             font_size: None,
             text_colour: None,
             text_highlight: None,
+            text_colour_mixed: false,
+            text_highlight_mixed: false,
+            // No page, so Home's text controls are shown as unavailable.
+            text_editable: false,
         }
     }
 

@@ -735,6 +735,19 @@ pub fn show(
             let object_rect = hits.iter().find(|(at, _, _)| at == block).map(|(_, rect, _)| *rect).unwrap_or(image_rect);
             log::debug!("embedded object affordance: block={block} kind={kind} rect={object_rect:?}");
             ui.painter().rect_stroke(object_rect, 1.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
+            // A picture's (>) menu: detected text as an overlay. View state only; see image_text.rs.
+            if kind.as_str() == "image"
+                && let Some(Block::Image { src, .. }) = blocks.get(*block)
+            {
+                let picture = page_dir.join(src);
+                if crate::image_text::showing(ui.ctx(), page_dir, *block) {
+                    let boxes = crate::image_text::read_boxes(&crate::image_text::lines_path(&picture));
+                    if let Ok((w, h)) = image::image_dimensions(&picture) {
+                        crate::image_text::paint(ui.painter(), object_rect, [w, h], &boxes, t.accent);
+                    }
+                }
+                crate::image_text::menu(ui, object_rect, page_dir, *block, &picture);
+            }
             let image_rect = object_rect;
             let size = resize_handle_size;
 
@@ -1071,51 +1084,59 @@ pub fn show(
             }
         }
     }
+    // The selected box's menu from the keyboard (issue #380): Shift+F10 or the Menu key while a
+    // box is selected opens it just inside the box's top corner, with the keyboard on its first row.
+    if let (Some(_), None, Some(frame)) = (sel, menu_at, sel_frame)
+        && caret.is_none()
+        && floating::menu_keys_pressed(ui.ctx())
+    {
+        menu_at = Some(frame.min + vec2(8.0, 8.0));
+        opened_now = true;
+        floating::focus_first_row(ui.ctx(), menu_id());
+    }
     // The selected container's menu, where the right click fell.
     let mut menu_rect: Option<Rect> = None;
+    let mut menu_escaped = false;
     if let (Some(i), Some(at)) = (sel, menu_at) {
         let mut picked = false;
         let mut copy = false;
-        let area = egui::Area::new(menu_id().with("area"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(at)
-            .show(ui.ctx(), |menu| {
-                egui::Frame::popup(menu.style()).inner_margin(egui::Margin::same(4)).show(menu, |menu| {
-                    menu.set_width(floating::MENU_W);
-                    menu.spacing_mut().item_spacing = vec2(0.0, 0.0);
-                    if floating::menu_row(menu, Some(Glyph::Mark(Mark::Cut)), crate::tl_id!("ui.cut"), t).clicked() {
-                        copy = true;
-                        delete_at = Some(i);
-                        picked = true;
-                    }
-                    if floating::menu_row(menu, Some(Glyph::Mark(Mark::Copy)), crate::tl_id!("ui.copy"), t).clicked() {
-                        copy = true;
-                        picked = true;
-                    }
-                    floating::menu_separator(menu, t);
-                    if floating::menu_row(menu, Some(Glyph::Mark(Mark::Delete)), crate::tl_id!("ui.delete"), t).clicked() {
-                        delete_at = Some(i);
-                        picked = true;
-                    }
-                    // The page's own entries stay reachable from here: a right click on a
-                    // box's words used to open the page's menu, and it still offers all of it.
-                    floating::menu_separator(menu, t);
-                    picked |= crate::pagemenu::items(menu, &mut out.acts, false, t);
-                });
-            })
-            .response;
-        menu_rect = Some(area.rect);
-        if copy {
-            let held = blocks.get(container::blocks_of(boxes, i)).unwrap_or_default();
-            let markdown = notecraft_formats::render::blocks_to_markdown(held);
-            pageedit::remember_copied(&markdown, held);
-            let html = notecraft_formats::render::blocks_to_html(held);
-            let text = notecraft_formats::render::blocks_to_text(held);
-            out.copy = Some((html, text));
-        }
-        let outside = ui.input(|i| i.pointer.any_click()) && !opened_now && !area.rect.contains(pointer.unwrap_or_default());
-        if picked || outside || ui.input(|i| i.key_pressed(Key::Escape)) {
-            menu_at = None;
+        let shown = floating::point_menu(ui.ctx(), menu_id(), Rect::from_pos(at), |menu| {
+            floating::menu_heading(menu, crate::tl_id!("ui.this_box"), t);
+            if floating::menu_row(menu, Some(Glyph::Mark(Mark::Cut)), crate::tl_id!("ui.cut"), t).clicked() {
+                copy = true;
+                delete_at = Some(i);
+                picked = true;
+            }
+            if floating::menu_row(menu, Some(Glyph::Mark(Mark::Copy)), crate::tl_id!("ui.copy"), t).clicked() {
+                copy = true;
+                picked = true;
+            }
+            // The page's own entries stay reachable from here: a right click on a
+            // box's words used to open the page's menu, and it still offers all of it.
+            floating::menu_separator(menu, t);
+            picked |= crate::pagemenu::items(menu, &mut out.acts, false, t);
+            // Delete last, in a section of its own and in the warning colour (issue #380).
+            floating::menu_separator(menu, t);
+            if floating::menu_row_danger(menu, Some(Glyph::Mark(Mark::Delete)), crate::tl_id!("ui.delete"), t).clicked() {
+                delete_at = Some(i);
+                picked = true;
+            }
+        });
+        if let Some(shown) = shown {
+            menu_rect = Some(shown.response.rect);
+            if copy {
+                let held = blocks.get(container::blocks_of(boxes, i)).unwrap_or_default();
+                let markdown = notecraft_formats::render::blocks_to_markdown(held);
+                pageedit::remember_copied(&markdown, held);
+                let html = notecraft_formats::render::blocks_to_html(held);
+                let text = notecraft_formats::render::blocks_to_text(held);
+                out.copy = Some((html, text));
+            }
+            let outside = ui.input(|i| i.pointer.any_click()) && !opened_now && !shown.response.rect.contains(pointer.unwrap_or_default());
+            menu_escaped = ui.input(|i| i.key_pressed(Key::Escape));
+            if picked || outside || menu_escaped {
+                menu_at = None;
+            }
         }
     }
     if let Some((block, kind)) = out.changed.select_object.take() {
@@ -1140,15 +1161,21 @@ pub fn show(
         let over_a_popup = |p: Pos2| ui.ctx().layer_id_at(p).is_some_and(|l| l.order == egui::Order::Foreground);
         let pressed_away =
             ui.input(|i| i.pointer.primary_pressed()) && !opened_now && pointer.is_some_and(|p| area.contains(p) && away(p) && !over_a_popup(p));
-        if pressed_away || caret.is_some() || ui.input(|i| i.key_pressed(Key::Escape)) {
+        // Escape closes the box's menu first and leaves the box selected; a second Escape lets go.
+        if pressed_away || caret.is_some() || (!menu_escaped && ui.input(|i| i.key_pressed(Key::Escape))) {
             sel = None;
             menu_at = None;
         }
     }
-    if object_sel.is_some() && (caret.is_some() || ui.input(|i| i.key_pressed(Key::Escape))) {
+    // Escape with the picture's menu open closes the menu only; the picture stays selected, so
+    // the keyboard is still on it (issue #380). A second Escape lets go of it.
+    let picture_menu_open = crate::imagemenu::state(ui.ctx()).is_some();
+    if object_sel.is_some() && (caret.is_some() || (!picture_menu_open && ui.input(|i| i.key_pressed(Key::Escape)))) {
         object_sel = None;
     }
-    if let Some((block, _)) = object_sel {
+    // With the picture's menu open the arrow keys belong to the menu's rows, not to moving off
+    // the picture.
+    if let Some(block) = object_sel.as_ref().filter(|_| !picture_menu_open).map(|(block, _)| *block) {
         let direction = ui.input(|i| {
             if i.key_pressed(Key::ArrowLeft) || i.key_pressed(Key::ArrowUp) {
                 Some(false)

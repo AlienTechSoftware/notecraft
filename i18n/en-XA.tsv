@@ -1500,6 +1500,9 @@
 @id	ui.picture_text_language	$$$Reads printed text in the Latin alphabet, such as English, French or Spanish. Your pictures stay as they are.@@@
 @id	ui.picture_text_copied	$$$The text is on the clipboard.@@@
 @id	ui.picture_text_models_folder_incomplete	$$$That folder does not hold text-detection.onnx and text-recognition.onnx.@@@
+@id	ui.image_text_detect	$$$Detect text@@@
+@id	ui.image_text_hide	$$$Hide detected text@@@
+@id	ui.image_text_none_yet	$$$No text has been read from this picture yet.@@@
 @id	ui.choose_the_ocr_models_folder	$$$Choose the folder with the text recognition models@@@
 @id	ui.picture_text_copy_failed	$$$The text could not be put on the clipboard: {error}@@@
 @id	ui.print	$$$Print@@@
@@ -1537,3 +1540,116 @@
 @id	ui.print_could_not_save_pdf	$$$The PDF could not be saved: {error}@@@
 @id	ui.print_save_first	$$$The page could not be saved, so it was not printed.@@@
 @id	ui.print_opened_in_viewer	$$$The sheets are open in your PDF viewer. Print them from there.@@@
+@id	ui.zoom_out_tip	$$$Make the page smaller (Ctrl+Alt+-)@@@
+@id	ui.zoom_in_tip	$$$Make the page larger (Ctrl+Alt+=)@@@
+@id	ui.zoom_percent_tip	$$$The page's zoom now; pick another@@@
+@id	ui.page_colour_tip	$$$The colour behind this page@@@
+@id	ui.rule_lines	$$$Rule lines@@@
+@id	ui.custom_paper_mm	$$$Custom, {w} x {h} mm@@@
+@id	ui.full_page_off_tip	$$$Give the page the whole window (F11). The page is the same; only the notebooks and pages are hidden.@@@
+@id	ui.full_page_on_tip	$$$Bring the notebooks and pages back (F11)@@@
+@id	ui.zoom_level	$$$Zoom level@@@
+@id	ui.modify_named_tool	$$$Modify {tool}@@@
+@id	ui.thickness_now	$$$Thickness: {size}@@@
+@id	ui.colour_now	$$$Colour: {colour}@@@
+@id	ui.delete_tool_confirm	$$$Take this tool off the rack? Its strokes on pages stay.@@@
+@id	ui.keep_tool	$$$Keep Tool@@@
+@id	ui.keep_tool_tip	$$$Leave the tool on the rack@@@
+@id	ui.delete_tool_ellipsis	$$$Delete Tool...@@@
+@id	ui.pressure_why	$$$Why?@@@
+@id	ui.pressure_on	$$$Pressure on@@@
+@id	ui.pressure_off	$$$Pressure off@@@
+@id	ui.dark_grey	$$$dark grey@@@
+@id	ui.mid_grey	$$$mid grey@@@
+@id	ui.light_grey	$$$light grey@@@
+@id	ui.pale_grey	$$$pale grey@@@
+@id	ui.white	$$$white@@@
+@id	ui.dark_red	$$$dark red@@@
+@id	ui.amber	$$$amber@@@
+@id	ui.pale_yellow	$$$pale yellow@@@
+@id	ui.dark_green	$$$dark green@@@
+@id	ui.light_green	$$$light green@@@
+@id	ui.teal	$$$teal@@@
+@id	ui.aqua	$$$aqua@@@
+@id	ui.navy	$$$navy@@@
+@id	ui.sky_blue	$$$sky blue@@@
+@id	ui.light_blue	$$$light blue@@@
+@id	ui.violet	$$$violet@@@
+@id	ui.plum	$$$plum@@@
+@id	ui.pink	$$$pink@@@
+@id	ui.light_pink	$$$light pink@@@
+@id	ui.brown	$$$brown@@@
+@id	ui.tan	$$$tan@@@
+@id	ui.orange_2	$$$orange@@@
+@id	ui.purple_2	$$$purple@@@
+@id	ui.magenta_2	$$$magenta@@@
+@id	ui.current_page	$$$Current page@@@
+@id	ui.saved_version	$$$Saved version@@@
+@id	ui.saved_when	$$$Saved {when}@@@
+@id	ui.the_page_as_it_is_now	$$$The page as it is now@@@
+@id	ui.current_page_explainer	$$$This is the page as it is now. Choose a saved version in the list to read it here and compare it with the page.@@@
+@id	ui.saved_version_when	$$$Saved version, {when}@@@
+@id	ui.return_to_page	$$$Return to page@@@
+@id	ui.stamp_tip_example	$$${what}. Inserts: {example}@@@
+@id	ui.date_and_time	$$$Date & Time@@@
+@id	ui.this_picture	$$$This picture@@@
+@id	ui.this_box	$$$This box@@@
+@id	ui.lock_page_named	$$$Lock “{title}” read only@@@
+@id	ui.unlock_page_named	$$$Unlock “{title}”@@@
+@id	ui.name_options	$$${name} options@@@
+@id	ui.insert_a_picture_from	$$$Insert a picture from@@@
+@id	ui.start_from_an_equation	$$$Start from an equation@@@
+@id	ui.font_mixed_tip	$$$The selected words use more than one font or size@@@
+@id	ui.font_default_tip	$$$The page's own font and size are used@@@
+@id	ui.paragraph_row	$$$Paragraph@@@
+@id	ui.add_the_first_page	$$$Add the first page@@@
+@id	ui.the_page_title_is_hidden	$$$The page title is hidden. Turn off View > Hide page title to show it.@@@
+@id	ui.notebooks_switch	$$$Switch notebook@@@
+@id	ui.notebooks_switch_hint	$$$Up and Down to choose, Enter to open, Escape to stay.@@@
+@id	ui.copy_link_to_notebook	$$$Copy link to notebook@@@
+@id	ui.copy_link_to_section_group	$$$Copy link to section group@@@
+@id	ui.copy_link_to_section	$$$Copy link to section@@@
+@id	ui.paste_options	$$$How to paste@@@
+@id	ui.keep_source_formatting	$$$Keep source formatting@@@
+@id	ui.keep_text_only	$$$Keep text only@@@
+@id	ui.pasted_as_text	$$$Pasted as text@@@
+@id	ui.it_is_at_the_top_of_its_box	$$$It is already at the top of its box.@@@
+@id	ui.it_is_at_the_bottom_of_its_box	$$$It is already at the bottom of its box.@@@
+@id	ui.page_cut_paste_it	$$$Cut “{title}”. Paste it on a page or a section.@@@
+@id	ui.page_copied_paste_it	$$$Copied “{title}”. Paste it on a page or a section.@@@
+@id	ui.the_page_held_is_no_longer_there	$$$The page that was cut or copied is no longer there.@@@
+@id	ui.a_page_cannot_go_inside_itself	$$$A page cannot be pasted inside itself.@@@
+@id	ui.paste_page	$$$Paste page@@@
+@id	ui.the_copy_is_last_in_the_section	$$$The copy was made, last in the section: it could not go after that page.@@@
+@id	ui.this_section_group	$$$This section group@@@
+@id	ui.this_section_group_name	$$$This section group ({name})@@@
+@id	ui.sort_by	$$$Sort by@@@
+@id	ui.sort_best_match	$$$Best match@@@
+@id	ui.sort_page_title	$$$Page title@@@
+@id	ui.sort_recently_changed	$$$Recently changed@@@
+@id	ui.the_note_container_is_selected	$$$The note container is selected. Ctrl+A again selects the whole page.@@@
+@id	ui.the_whole_page_is_selected	$$$The whole page is selected.@@@
+@id	ui.this_page_has_one_note_container	$$$This page has one note container.@@@
+@id	ui.this_is_the_last_note_container	$$$This is the last note container on the page.@@@
+@id	ui.this_is_the_first_note_container	$$$This is the first note container on the page.@@@
+@id	ui.that_note_container_has_nothing_to_write_in	$$$That note container has nothing to write in.@@@
+@id	ui.print_the_page_ctrl_p	$$$Print the page (Ctrl+P)@@@
+@id	ui.see_the_page_as_it_will_print	$$$See the page as it will print@@@
+@id	ui.tags_group_by	$$$Group by@@@
+@id	ui.tags_group_tag_name	$$$Tag name@@@
+@id	ui.tags_group_section	$$$Section@@@
+@id	ui.tags_group_page	$$$Page@@@
+@id	ui.tags_group_count	$$${name} ({count})@@@
+@id	ui.create_summary_page	$$$Create Summary Page@@@
+@id	ui.create_summary_page_hint	$$$Write the lines listed here on a new page in this section, each with a link back to its page@@@
+@id	ui.open_a_section_for_the_summary_page	$$$Open a section first: the summary page is made there.@@@
+@id	ui.tags_summary_page_title	$$$Tags Summary@@@
+@id	ui.summary_page_created	$$$The summary page is made, with a link back to each line's page.@@@
+@id	ui.up_to_name	$$$Up to {name}@@@
+@id	ui.this_section_group_has_no_sections_yet	$$$This section group has no sections yet.@@@
+@id	ui.no_sections_in_this_group_yet	$$$No sections in this group yet.@@@
+@id	ui.add_the_first_section	$$$Add the first section@@@
+@id	ui.page_list_on_right	$$$Page list on the right@@@
+@id	ui.page_list_on_right_tip	$$$In the tabs layout, show the list of pages on the right of the page instead of the left@@@
+@id	ui.page_list_on_the_right	$$$The list of pages is on the right of the page.@@@
+@id	ui.page_list_on_the_left	$$$The list of pages is on the left of the page.@@@

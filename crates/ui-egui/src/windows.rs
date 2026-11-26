@@ -53,8 +53,9 @@ impl Host {
         CHILDREN.with(|views| views.try_borrow_mut().ok()?.get_mut(&id).map(|child| f(&mut child.app)))
     }
 
-    pub fn queue_keyboard_paste(&mut self, id: egui::ViewportId) {
-        self.with_view(id, NoteCraftApp::queue_keyboard_paste);
+    /// `plain`: Ctrl+Shift+V, the text only (issue #535).
+    pub fn queue_keyboard_paste(&mut self, id: egui::ViewportId, plain: bool) {
+        self.with_view(id, |app| if plain { app.queue_keyboard_paste_plain() } else { app.queue_keyboard_paste() });
     }
 
     pub fn take_events(&mut self, id: egui::ViewportId) -> Vec<egui::Event> {
