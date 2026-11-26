@@ -76,7 +76,10 @@ pub fn round_button(ui: &mut Ui, glyph: &str, size: f32, enabled: bool) -> Respo
     let visuals = if enabled { *ui.style().interact(&response) } else { ui.style().visuals.widgets.noninteractive };
     let radius = size / 2.0 - visuals.bg_stroke.width / 2.0;
     ui.painter().circle(rect.center(), radius, visuals.weak_bg_fill, visuals.bg_stroke);
-    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(size * 0.6), visuals.text_color());
+    // Centred on the glyph's ink, not on its text box: emoji fonts leave space below the glyph.
+    let galley = ui.painter().layout_no_wrap(glyph.to_string(), egui::FontId::proportional(size * 0.6), visuals.text_color());
+    let top_left = rect.center() - galley.mesh_bounds.center().to_vec2();
+    ui.painter().galley(top_left, galley, visuals.text_color());
     response
 }
 

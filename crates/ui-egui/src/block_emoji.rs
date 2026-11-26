@@ -240,7 +240,13 @@ pub fn header(ui: &mut egui::Ui, page_dir: &std::path::Path, i: usize, emoji: &[
         let button = if crate::print::is_printing(ui.ctx()) {
             ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover()).1
         } else {
-            crate::floating::round_button(ui, "😀", size, editable)
+            // Shown only near its row or while a menu is open, so it does not cover the block below.
+            let near = ui.ctx().pointer_latest_pos().is_some_and(|p| area_rect.expand(40.0 * zoom).contains(p)) || egui::Popup::is_any_open(ui.ctx());
+            if near && editable {
+                crate::floating::round_button(ui, "😀", size, true)
+            } else {
+                ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover()).1
+            }
         };
         // Named for the block it belongs to, so tests and screen readers can tell the headers apart.
         button.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, editable, format!("Add emoji to block {}", i + 1)));
