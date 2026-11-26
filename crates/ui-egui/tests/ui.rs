@@ -14174,9 +14174,8 @@ fn tabs_layout_shows_sections_as_tabs_and_opens_them() {
     h.query_all_by_role_and_label(egui::accesskit::Role::Button, "Ideas").last().expect("an Ideas tab").click();
     settle(&mut h);
     assert!(page(&mut h).contains("ideas"), "the Ideas tab opened its page: {}", page(&mut h));
+    // One click goes into the group, at the section and page left open there (issue #511).
     h.get_by_label("Work (group)").click();
-    h.run_steps(2);
-    h.query_all_by_label("Projects").last().expect("the group's list").click();
     settle(&mut h);
     assert!(page(&mut h).contains("projects"), "the group's section opened: {}", page(&mut h));
 }
@@ -18251,6 +18250,13 @@ fn a_selection_across_paragraphs_replaced_or_cut_keeps_the_table_widths() {
     settle(&mut h);
     let kept = notecraft_store::page::table_columns(&page_dir).expect("widths");
     assert_eq!(kept.of(1), Some([110.0, 130.0].as_slice()), "the widths moved up with the table after a cut: {kept:?}");
+    // One Undo puts the paragraphs back, and the widths back with the table.
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    settle(&mut h);
+    assert!(h.state().body().unwrap_or_default().contains("Third line"), "Undo put the cut words back");
+    let kept = notecraft_store::page::table_columns(&page_dir).expect("widths");
+    assert_eq!(kept.of(2), Some([110.0, 130.0].as_slice()), "the widths went back with the table: {kept:?}");
+    assert_eq!(kept.of(1), None, "and none is left where the table was not: {kept:?}");
 }
 
 /// Issue #563: Alt+Shift+Up and Down move the paragraph with the caret one place within its box:
@@ -18387,4 +18393,475 @@ fn page_rows_cut_copy_and_paste_pages() {
         "moved last into Projects: {moved:?}"
     );
     assert!(!s.md_page.exists(), "and gone from Ideas");
+}
+
+/// Issues #528 and #573: with a section in a group open, the search can look in that group, named
+/// on its button, and leave out the sections outside it; and its results can be listed by title or
+/// by when each page last changed, keeping the query and the scope.
+#[test]
+fn search_looks_in_the_section_group_and_sorts_its_results() {
+    let (_t, app, s) = sample_app("ui-search-group-sort");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 860.0));
+    let hits = |h: &mut Harness<'_, NoteCraftApp>| -> Vec<(String, String)> {
+        let v = look_at(h);
+        v.pointer("/search/hits")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter().map(|x| (x["title"].as_str().unwrap_or_default().to_string(), x["trail"].as_str().unwrap_or_default().to_string())).collect()
+            })
+            .unwrap_or_default()
+    };
+    // A page outside the group with the word in it, beside those in Work > Projects.
+    page_of(&mut h, &s, "Level notes", "Level ground for every notebook.");
+    // Ideas is in no group: there is no group to offer.
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    search_for(&mut h, "Level");
+    assert_eq!(h.query_all_by_label_contains("This section group").count(), 0, "no group around Ideas");
+    let everywhere = hits(&mut h);
+    assert!(everywhere.iter().any(|(_, trail)| !trail.contains("Work")), "outside the group too: {everywhere:?}");
+
+    // Project X is in Work > Projects.
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    search_for(&mut h, "Level");
+    h.get_by_label("This section group (Work)").click();
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/search/scope").and_then(Value::as_str), Some("group"), "{v}");
+    assert_eq!(v.pointer("/search/query").and_then(Value::as_str), Some("Level"), "the query is kept");
+    let in_group = hits(&mut h);
+    assert!(!in_group.is_empty() && in_group.iter().all(|(_, trail)| trail.contains("Work")), "only the group's pages: {in_group:?}");
+
+    // By title, then by the page changed last.
+    h.get_by_label("All notebooks").click();
+    settle(&mut h);
+    h.get_by_label("Page title").click();
+    settle(&mut h);
+    let titled = hits(&mut h);
+    assert!(titled.len() >= 2, "enough to sort: {titled:?}");
+    let mut sorted = titled.clone();
+    sorted.sort_by_key(|(t, trail)| (t.to_lowercase(), trail.to_lowercase()));
+    assert_eq!(titled, sorted, "listed by title");
+    assert_eq!(look_at(&mut h).pointer("/search/scope").and_then(Value::as_str), Some("all"), "the scope is kept");
+
+    // The page outside the group was changed last: the page open is left alone, as a change to
+    // it on disk would read it again.
+    let level_notes = notecraft_store::tree::child_dirs(s.md_page.parent().expect("section"))
+        .into_iter()
+        .find(|d| notecraft_store::tree::read_node(d).is_some_and(|n| n.title == "Level notes"))
+        .expect("the page made");
+    // Its own stamp says so, which is what counts: a copied folder's file times say nothing.
+    let (_, file) = notecraft_store::tree::page_file(&level_notes).expect("its file");
+    let text = std::fs::read_to_string(&file).expect("read");
+    let restamped: String = text
+        .lines()
+        .map(|l| if l.starts_with("updated:") { "updated: 2099-01-01T00:00:00Z".to_string() } else { l.to_string() })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_ne!(text.trim_end(), restamped, "the page carries a stamp to change");
+    std::fs::write(&file, restamped + "\n").expect("write");
+    h.get_by_label("Recently changed").click();
+    settle(&mut h);
+    let recent = hits(&mut h);
+    assert_eq!(recent.first().map(|(t, _)| t.as_str()), Some("Level notes"), "the page changed last comes first: {recent:?}");
+    assert_eq!(recent.len(), titled.len(), "the same results, in another order");
+
+    // Ordered, every match is listed, not only the twenty the search ranks best.
+    for i in 0..24 {
+        ask(&mut h, "engine.execute", json!({"command": "node.create", "params": {"parent": s.md_page.parent().expect("section").to_string_lossy(), "kind": "page", "title": format!("Level {i:02}")}}))
+            .expect("page");
+    }
+    h.get_by_label("Best match").click();
+    settle(&mut h);
+    assert_eq!(hits(&mut h).len(), 20, "the twenty best");
+    h.get_by_label("Page title").click();
+    settle(&mut h);
+    let every = hits(&mut h);
+    assert!(every.len() > 20, "every match, in title order: {}", every.len());
+    let mut sorted = every.clone();
+    sorted.sort_by_key(|(t, trail)| (t.to_lowercase(), trail.to_lowercase()));
+    assert_eq!(every, sorted);
+    h.get_by_label("Best match").click();
+    settle(&mut h);
+    assert_eq!(look_at(&mut h).pointer("/search/sort").and_then(Value::as_str), Some("best"));
+}
+
+/// Issue #529: a search result opens its page with the words found selected in the page, and
+/// brought into view when they are below the fold.
+#[test]
+fn a_search_result_opens_with_its_words_selected_in_view() {
+    let (_t, app, s) = sample_app("ui-search-jump");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1280.0, 760.0));
+    let mut body = String::new();
+    for i in 0..60 {
+        body.push_str(&format!("Filler paragraph number {i} with nothing to find.\n\n"));
+    }
+    body.push_str("Here is the Distant Marker we came for.");
+    let page = page_of(&mut h, &s, "Long page", &body);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    search_for(&mut h, "distant marker");
+    // The result's row, named with its snippet: not the page's row in the notebooks.
+    h.get_all_by_label_contains("Long page (").next().expect("the result").click();
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/title").and_then(Value::as_str), Some("Long page"), "{v}");
+    let caret = v.pointer("/page/caret").cloned().unwrap_or(Value::Null);
+    let text = caret["text"].as_str().unwrap_or_default().to_string();
+    assert!(text.contains("Distant Marker"), "the caret is on the line found: {caret}");
+    let (at, anchor) = (caret["at"].as_u64().unwrap_or(0) as usize, caret["anchor"].as_u64().unwrap_or(0) as usize);
+    let picked: String = text.chars().skip(at.min(anchor)).take(at.max(anchor) - at.min(anchor)).collect();
+    assert_eq!(picked, "Distant Marker", "the words are selected, as written: {caret}");
+    assert!(v.pointer("/page/scrolled").and_then(Value::as_f64).unwrap_or(0.0) > 200.0, "the page scrolled down to them: {v}");
+    let _ = page;
+}
+
+/// Issue #536: Ctrl+A takes the paragraph, again the note container it is in, and again the
+/// whole page; a page of one container goes from the paragraph to the page.
+#[test]
+fn ctrl_a_again_takes_the_container_and_then_the_page() {
+    use notecraft_ui_egui::clipboard::Board as _;
+    let board = MemoryBoard::new();
+    let (_t, app, s) = sample_app("ui-ctrl-a-widen");
+    let app = app.with_clipboard(Box::new(board.clone()));
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 860.0));
+    let page = page_of(&mut h, &s, "Widen", "Alpha one\n\nAlpha two\n\nBeta one\n\nBeta two");
+    let v = look_at(&mut h);
+    let blocks = v.pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let first_beta = blocks - 2;
+    let line = format!("0,0,300,{}; 360,0,300,2", blocks - 2);
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": line}})).expect("arrange");
+    ask(&mut h, "ui.open", json!({"path": page.clone()})).expect("open");
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": first_beta})).expect("caret");
+    settle(&mut h);
+    let press = |h: &mut Harness<'_, NoteCraftApp>| {
+        ask(h, "ui.key", json!({"key": "A", "ctrl": true})).expect("Ctrl+A");
+        settle(h);
+        look_at(h)
+    };
+    let v = press(&mut h);
+    let caret = v.pointer("/page/caret").cloned().unwrap_or(Value::Null);
+    assert_eq!((caret["at"].as_u64(), caret["anchor"].as_u64()), (Some(8), Some(0)), "first the paragraph: {caret}");
+    let v = press(&mut h);
+    assert_eq!(v.pointer("/page/across"), Some(&json!({"from": [first_beta, 0], "to": [blocks - 1, "Beta two".len()]})), "then the container: {v}");
+    assert!(v["status"]["text"].as_str().unwrap_or_default().contains("note container"), "and it says so: {}", v["status"]);
+    let v = press(&mut h);
+    let across = v.pointer("/page/across").cloned().unwrap_or(Value::Null);
+    assert_eq!(across["to"], json!([blocks - 1, "Beta two".len()]), "then the page: {across}");
+    assert!(across["from"][0].as_u64().unwrap_or(99) <= 1 && across["from"][1] == 0, "from its first line: {across}");
+    assert!(v["status"]["text"].as_str().unwrap_or_default().contains("whole page"), "{}", v["status"]);
+    // Copy takes it all.
+    press_copy(&mut h, &board, "C");
+    let copied = board.clone().text().unwrap_or_default();
+    assert!(copied.contains("Alpha one") && copied.contains("Beta two"), "{copied:?}");
+
+    // The title's own Ctrl+A is the title's: the paragraph picked in the page is left as it is.
+    ask(&mut h, "ui.open", json!({"path": s.md_page.to_string_lossy()})).expect("away");
+    settle(&mut h);
+    ask(&mut h, "ui.open", json!({"path": page.clone()})).expect("back");
+    settle(&mut h);
+    ask(&mut h, "ui.caret", json!({"block": first_beta})).expect("caret");
+    settle(&mut h);
+    press(&mut h);
+    #[allow(deprecated)]
+    let title = egui::Id::new(("page-title-box", h.ctx.viewport_id()));
+    h.ctx.memory_mut(|m| m.request_focus(title));
+    settle(&mut h);
+    let v = press(&mut h);
+    assert!(v.pointer("/page/across").is_none_or(Value::is_null), "Ctrl+A in the title does not widen the page's selection: {v}");
+
+    // One container: the paragraph, then the page.
+    let one = page_of(&mut h, &s, "One box", "First line\n\nSecond line");
+    let _ = one;
+    let v = look_at(&mut h);
+    let last = v.pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize - 1;
+    ask(&mut h, "ui.caret", json!({"block": last})).expect("caret");
+    settle(&mut h);
+    press(&mut h);
+    let v = press(&mut h);
+    assert_eq!(v.pointer("/page/across/to"), Some(&json!([last, "Second line".len()])), "the page: {v}");
+}
+
+/// Issue #560: Alt+Down and Alt+Up take the caret to the next and the previous note container,
+/// top to bottom and, in a row, left to right, and bring it into view.
+#[test]
+fn alt_down_and_up_go_between_note_containers() {
+    let (_t, app, s) = sample_app("ui-alt-down-containers");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1400.0, 860.0));
+    let page = page_of(&mut h, &s, "Boxes", "Top left\n\nTop right\n\nLower down");
+    let blocks = look_at(&mut h).pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let lead = blocks - 3;
+    // Written in the file out of reading order: the lower box first, then the right, then the left.
+    // Each holds one line, in the file's order: "Top left" is in the first box listed.
+    let line = format!("400,4,240,{}; 0,0,240,1; 0,900,240,1", lead + 1);
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": page.clone(), "boxes": line}})).expect("arrange");
+    ask(&mut h, "ui.open", json!({"path": page.clone()})).expect("open");
+    settle(&mut h);
+    let caret_text =
+        |h: &mut Harness<'_, NoteCraftApp>| look_at(h).pointer("/page/caret/text").and_then(Value::as_str).unwrap_or_default().to_string();
+    let key = |h: &mut Harness<'_, NoteCraftApp>, down: bool| {
+        ask(h, "ui.key", json!({"key": if down { "ArrowDown" } else { "ArrowUp" }, "alt": true})).expect("Alt+arrow");
+        settle(h);
+    };
+    // No caret yet: Alt+Down goes to the first box in reading order, the one at the left.
+    key(&mut h, true);
+    assert_eq!(caret_text(&mut h), "Top right", "the box at the top left comes first");
+    key(&mut h, true);
+    assert_eq!(caret_text(&mut h), "Top left", "then the one beside it, a few points lower but in the same row");
+    key(&mut h, true);
+    assert_eq!(caret_text(&mut h), "Lower down", "then the one below");
+    assert!(look_at(&mut h).pointer("/page/scrolled").and_then(Value::as_f64).unwrap_or(0.0) > 100.0, "and it was scrolled to");
+    key(&mut h, true);
+    let v = look_at(&mut h);
+    assert!(v["status"]["text"].as_str().unwrap_or_default().contains("last note container"), "{} {}", v["status"], v["page"]["caret"]);
+    key(&mut h, false);
+    assert_eq!(caret_text(&mut h), "Top left", "Alt+Up goes back");
+
+    // A container that starts with a table is gone into at its first cell.
+    let table = page_of(&mut h, &s, "Table box", "Words first\n\n| Cell one | Cell two |\n|---|---|\n| a | b |");
+    let blocks = look_at(&mut h).pointer("/page/blocks").and_then(Value::as_u64).unwrap_or(0) as usize;
+    let line = format!("0,0,240,{}; 0,300,400,1", blocks - 1);
+    ask(&mut h, "engine.execute", json!({"command": "page.containers", "params": {"path": table.clone(), "boxes": line}})).expect("arrange");
+    ask(&mut h, "ui.open", json!({"path": table})).expect("open");
+    settle(&mut h);
+    key(&mut h, true);
+    key(&mut h, true);
+    assert_eq!(caret_text(&mut h), "Cell one", "the caret is in the table's first cell");
+}
+
+/// Issue #538: Print and Print Preview can be put on the Quick Access Toolbar, are kept across a
+/// restart, and open File > Print for the open page.
+#[test]
+fn the_quick_access_toolbar_can_hold_print_and_print_preview() {
+    let (t, mut h, _) = three_pages("ui-qat-print");
+    let settings = |t: &TempDir| std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
+    let on_strip = |h: &mut Harness<'_, NoteCraftApp>, i: usize| look_at(h).pointer(&format!("/quickAccess/shown/{i}")).and_then(Value::as_bool);
+    assert_eq!((on_strip(&mut h, 4), on_strip(&mut h, 5)), (Some(false), Some(false)), "not shown until chosen");
+    for name in ["Print", "Print preview"] {
+        h.get_by_label("Customize Quick Access Toolbar").click();
+        for _ in 0..4 {
+            pump(&mut h);
+        }
+        h.query_all_by_label(name).last().expect("the menu's row").click();
+        settle(&mut h);
+    }
+    assert_eq!((on_strip(&mut h, 4), on_strip(&mut h, 5)), (Some(true), Some(true)));
+    assert!(settings(&t).contains("qat_print = \"true\"") && settings(&t).contains("qat_print_preview = \"true\""), "{}", settings(&t));
+    assert!(!h.state().printing());
+    h.get_all_by_label("Print preview").next().expect("the strip's button").click();
+    settle(&mut h);
+    assert!(h.state().printing(), "Print Preview opens the Print dialog, which shows the sheets");
+}
+
+/// Issues #565 and #537: Find Tags can group its lines by section or by page, with a count to each
+/// group and the scope and filter kept; and the lines listed can be written out as a summary page
+/// in the open section, each with its tag and a link back to its page.
+#[test]
+fn find_tags_groups_by_place_and_makes_a_summary_page() {
+    let (t, mut app, s) = sample_app("ui-tags-group-summary");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+    settle(&mut h);
+    h.get_by_label("Find Tags").click();
+    settle(&mut h);
+    h.get_by_label("All notebooks").click();
+    settle(&mut h);
+    h.get_by_label("Only unchecked To Do items").click();
+    settle(&mut h);
+    let before = look_at(&mut h).pointer("/tagsSummary/lines").and_then(Value::as_array).map_or(0, Vec::len);
+    assert!(before > 0);
+    // The pane's own "Page", on the right of the window.
+    let pane_page = h.get_all_by_label("Page").map(|n| n.rect()).max_by(|a, b| a.min.x.total_cmp(&b.min.x)).expect("Page");
+    h.get_all_by_label("Page").find(|n| n.rect() == pane_page).expect("Page").click();
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/tagsSummary/group").and_then(Value::as_str), Some("page"), "{v}");
+    assert_eq!(v.pointer("/tagsSummary/scope").and_then(Value::as_str), Some("all"), "the scope is kept");
+    assert_eq!(v.pointer("/tagsSummary/unchecked").and_then(Value::as_bool), Some(true), "and the filter");
+    assert!(h.query_all_by_label_contains("Format ideas (").count() >= 1, "the page heads its group, with a count");
+    let settings = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
+    assert!(settings.contains("tags_group = \"page\""), "the grouping is kept: {settings}");
+    // A line still goes to its place: the pane's row, on the right.
+    let row = h.get_all_by_label("Try attaching a picture").map(|n| n.rect()).max_by(|a, b| a.min.x.total_cmp(&b.min.x)).expect("row");
+    h.get_all_by_label("Try attaching a picture").find(|n| n.rect() == row).expect("row").click();
+    settle(&mut h);
+    assert!(look_at(&mut h).pointer("/page/caret/text").and_then(Value::as_str).unwrap_or_default().contains("Try attaching a picture"));
+
+    h.get_by_label("Create Summary Page").click();
+    settle(&mut h);
+    let v = look_at(&mut h);
+    assert_eq!(v.pointer("/page/title").and_then(Value::as_str), Some("Tags Summary"), "the summary page opened: {v}");
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("Try attaching a picture"), "{body}");
+    assert!(body.contains("notecraft:/"), "with a link back to each line's page: {body}");
+    let blocks = notecraft_formats::markdown::parse(&body);
+    assert!(
+        blocks.iter().any(
+            |b| matches!(b, notecraft_formats::Block::Item { task: Some(false), spans, .. } if spans.iter().any(|s| s.text.contains("Try attaching")))
+        ),
+        "an unticked To Do stays an unticked To Do: {blocks:?}"
+    );
+    let summary = std::fs::read_dir(s.md_page.parent().expect("section"))
+        .expect("section")
+        .filter_map(Result::ok)
+        .any(|e| notecraft_store::tree::read_node(&e.path()).is_some_and(|n| n.title == "Tags Summary"));
+    assert!(summary, "made in the open section");
+    // The pages it lists are as they were.
+    let original = std::fs::read_to_string(notecraft_store::tree::page_file(&s.md_page).expect("page").1).expect("read");
+    assert!(original.contains("Try attaching a picture"));
+}
+
+/// Issue #511: a section group's tab goes into the group with one click or Enter: the row shows
+/// the group's sections after a tab back up, the section and page last open there come back,
+/// and a group with no sections says so and offers its first.
+#[test]
+fn a_section_group_tab_goes_into_the_group() {
+    let (_t, app, s) = sample_app("ui-tabs-group-enter");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    h.get_by_label("Tabs layout").click();
+    settle(&mut h);
+    let title = |h: &mut Harness<'_, NoteCraftApp>| look_at(h).pointer("/page/title").and_then(Value::as_str).unwrap_or_default().to_string();
+    // Tabs in the row of tabs: on the line the Work group's tab is on, or the way back up.
+    let tab = |h: &Harness<'_, NoteCraftApp>, name: &str| {
+        let row = h
+            .query_all_by_label_contains("(group)")
+            .chain(h.query_all_by_label_contains("Up to "))
+            .map(|n| n.rect().center().y)
+            .next()
+            .unwrap_or(f32::MAX);
+        h.query_all_by_label(name).filter(|n| (n.rect().center().y - row).abs() < 8.0).count()
+    };
+    assert_eq!(tab(&h, "Up to My Notebook"), 0, "the notebook's own level has no way up");
+    // Nothing opened in Work yet: its first section's first page.
+    h.get_by_label("Work (group)").focus();
+    h.step();
+    h.key_press(egui::Key::Enter);
+    settle(&mut h);
+    let first = title(&mut h);
+    assert!(look_at(&mut h).pointer("/page/path").and_then(Value::as_str).unwrap_or_default().contains("projects"), "{first}");
+    assert_eq!(tab(&h, "Up to My Notebook"), 1, "inside the group a tab goes back up");
+    assert!(tab(&h, "Projects") >= 1 && tab(&h, "Ideas") == 0, "the row shows the group's sections, not the notebook's");
+    // Another page of the group, then out and back: that page comes back.
+    let deep = notecraft_store::tree::child_dirs(s.html_page.parent().expect("section"))
+        .into_iter()
+        .find(|d| notecraft_store::tree::read_node(d).is_some_and(|n| n.title != first && n.kind == notecraft_model::NodeKind::Page))
+        .expect("another page");
+    let deep_title = notecraft_store::tree::read_node(&deep).map(|n| n.title).unwrap_or_default();
+    h.state_mut().open_path(&deep.to_string_lossy());
+    settle(&mut h);
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Up to My Notebook").click();
+    settle(&mut h);
+    assert!(tab(&h, "Ideas") >= 1, "back at the notebook's sections");
+    h.query_all_by_role_and_label(egui::accesskit::Role::Button, "Ideas").last().expect("Ideas").click();
+    settle(&mut h);
+    h.get_by_label("Work (group)").click();
+    settle(&mut h);
+    assert_eq!(title(&mut h), deep_title, "the page left open in the group comes back");
+
+    // A group with no sections.
+    let empty = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": s.notebook.to_string_lossy(), "kind": "section-group", "title": "Later"}}),
+    )
+    .expect("group");
+    let empty = PathBuf::from(empty.as_str().or_else(|| empty.pointer("/path").and_then(Value::as_str)).unwrap_or_default());
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("Later (group)").click();
+    settle(&mut h);
+    assert!(look_at(&mut h)["page"].is_null(), "no page from elsewhere is left showing");
+    assert!(h.query_all_by_label("No sections in this group yet.").count() == 1, "the group says it is empty");
+    assert_eq!(tab(&h, "Up to My Notebook"), 1, "and the row is inside it, with the way back up");
+    h.get_by_label("Add the first section").click();
+    settle(&mut h);
+    ask(&mut h, "ui.text", json!({"text": "Someday"})).expect("name");
+    settle(&mut h);
+    ask(&mut h, "ui.key", json!({"key": "Enter"})).expect("Enter");
+    settle(&mut h);
+    assert!(
+        notecraft_store::tree::child_dirs(&empty).iter().any(|d| notecraft_store::tree::read_node(d).is_some_and(|n| n.title == "Someday")),
+        "the first section is made in the group"
+    );
+}
+
+/// Issue #555: a section tab dragged along the row is put where it is let go, with the page
+/// open still open, and the notebooks and the order on disk follow.
+#[test]
+fn section_tabs_can_be_dragged_to_a_new_place() {
+    let (_t, app, s) = sample_app("ui-tabs-drag");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    h.get_by_label("Tabs layout").click();
+    settle(&mut h);
+    let order = |s: &Sample| -> Vec<String> {
+        notecraft_store::tree::child_dirs(&s.notebook).iter().filter_map(|d| notecraft_store::tree::read_node(d)).map(|n| n.title).collect()
+    };
+    let before = order(&s);
+    let ideas_at = before.iter().position(|t| t == "Ideas").expect("Ideas");
+    let work_at = before.iter().position(|t| t == "Work").expect("Work");
+    assert!(work_at < ideas_at, "Work comes first to begin with: {before:?}");
+    let ideas = h.query_all_by_role_and_label(egui::accesskit::Role::Button, "Ideas").last().expect("Ideas tab").rect();
+    let work = h.get_by_label("Work (group)").rect();
+    // Carried from Ideas to the first half of Work's tab.
+    h.event(egui::Event::PointerMoved(ideas.center()));
+    h.event(egui::Event::PointerButton {
+        pos: ideas.center(),
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    for step in 1..=8 {
+        let x = ideas.center().x + (work.left() + 6.0 - ideas.center().x) * step as f32 / 8.0;
+        h.event(egui::Event::PointerMoved(egui::pos2(x, work.center().y)));
+        h.step();
+    }
+    let drop_at = egui::pos2(work.left() + 6.0, work.center().y);
+    h.event(egui::Event::PointerButton { pos: drop_at, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
+    settle(&mut h);
+    let after = order(&s);
+    assert!(after.iter().position(|t| t == "Ideas") < after.iter().position(|t| t == "Work"), "Ideas is now before Work: {after:?}");
+    assert_eq!(look_at(&mut h).pointer("/page/title").and_then(Value::as_str), Some("Format ideas"), "the page open stays open");
+    let ideas_now = h.query_all_by_role_and_label(egui::accesskit::Role::Button, "Ideas").last().expect("tab").rect().min.x;
+    assert!(ideas_now < h.get_by_label("Work (group)").rect().min.x, "and the row shows it");
+}
+
+/// Issue #534: in the tabs layout the list of pages can be on the right of the page, kept across
+/// a restart, and back on the left again.
+#[test]
+fn the_page_list_can_be_on_the_right_in_the_tabs_layout() {
+    let (t, app, s) = sample_app("ui-pages-right");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("View").click();
+    settle(&mut h);
+    let add_page_x = |h: &Harness<'_, NoteCraftApp>| h.get_by_label("Add page").rect().center().x;
+    h.get_by_label("Tabs layout").click();
+    settle(&mut h);
+    // The list of pages is the navigation's second column: choosing its side shows it.
+    h.get_by_label("Page list on the right").click();
+    settle(&mut h);
+    let right = add_page_x(&h);
+    assert!(right > 1200.0, "the list is on the right: {right}");
+    let page_rect = h.state().page_rect().expect("page");
+    assert!(right > page_rect.right(), "beyond the page");
+    let settings = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
+    assert!(settings.contains("pages_right = \"true\""), "{settings}");
+    // A page row still opens its page from there.
+    let other = h.query_all_by_label("Format ideas").map(|n| n.rect()).max_by(|a, b| a.min.x.total_cmp(&b.min.x)).expect("row");
+    assert!(other.min.x > 1200.0, "its rows are on the right too");
+    h.get_by_label("Page list on the right").click();
+    settle(&mut h);
+    assert!(add_page_x(&h) < 700.0, "and back on the left");
 }

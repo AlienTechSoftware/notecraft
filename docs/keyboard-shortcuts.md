@@ -49,9 +49,13 @@ the canvas, with a button for its first page. A new section starts with a page, 
 | Heading 1 to Heading 6 | `Ctrl+Alt+1` to `Ctrl+Alt+6` | `Option+Cmd+1` to `Option+Cmd+6` |
 | Move the paragraph (or the paragraphs picked) up or down in its box | `Alt+Shift+Up` / `Alt+Shift+Down` | `Option+Shift+Up` / `Option+Shift+Down` |
 | Paste the text only, without its formatting | `Ctrl+Shift+V` | `Cmd+Shift+V` |
+| Select the paragraph; again, its note container; again, the whole page | `Ctrl+A` | `Cmd+A` |
+| The caret to the next or the previous note container | `Alt+Down` / `Alt+Up` | `Option+Down` / `Option+Up` |
 
-Each of these is one step for Undo. On a locked page they change nothing and the status line says
-the page is locked. Paste's options on the Home tab also offer **Keep text only**.
+Each of these that changes the page is one step for Undo. On a locked page they change nothing and
+the status line says the page is locked. Alt+Down and Alt+Up go through the note containers the way
+the page reads: from the top down, with containers whose tops are within a line of each other taken
+as one row, from the left, or from the right on a right-to-left page. Paste's options on the Home tab also offer **Keep text only**.
 
 ## Page view
 

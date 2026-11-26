@@ -74,8 +74,8 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   pasted into an empty one and the ribbon's Paste button was the only way in. The keys are
   read once a frame in `app::clipboard_keys` and sent to the same handlers the ribbon uses.
   Nothing is done while an egui text box holds the keyboard, or the words would be pasted
-  twice. **Not built:** Ctrl+A widening from the paragraph to the box and then to the page,
-  the way OneNote does; here it takes the paragraph and stops.
+  twice. Ctrl+A again, with the paragraph all selected, widens to its note container and then
+  to the whole page, as OneNote's does (issue #536); the status line says which is selected.
 
 - **Import is not finished.** It is a requirement, and the scope is import only
   (owner's decision, 2026-10-17). `notecraft-cli import onenote` turns a folder of `.one`
@@ -206,10 +206,12 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   gives the page its room; a tab clicked while it is folded shows its commands over the page
   until one is used, the page is clicked or Escape is pressed. The choice is kept.
 - **Find Tags is a first pass.** Home > Find Tags opens a Tags Summary beside the page. It lists the
-  tagged lines of this page, this section, this notebook or every open notebook, grouped by tag, can
-  keep only the To Do items not yet ticked, and takes the caret to a line when it is clicked. It lists
-  what the pages said when it last looked; Refresh looks again. OneNote's other groupings (by section,
-  title or date), its search box and Create Summary Page are not built.
+  tagged lines of this page, this section, this notebook or every open notebook, grouped by tag, by
+  section or by page, with a count to each group (issue #565), can keep only the To Do items not yet
+  ticked, and takes the caret to a line when it is clicked. Create Summary Page writes the lines
+  listed on a new page in the open section, each with its tag and a link back to its page (issue
+  #537). It lists what the pages said when it last looked; Refresh looks again. OneNote's grouping by
+  date and its search box are not built.
 - **Desktop note windows and Quick Notes are implemented.** View > New window (Ctrl+M)
   starts on the current page with independent navigation and zoom. View > New quick note
   (Ctrl+Shift+M) creates a durable page in the local Quick Notes section and opens a compact
@@ -431,9 +433,10 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   `page.save` with a plain body drops them. An agent that wants to keep an arrangement writes the box
   elements, or calls `page.containers` afterwards.
 - **The Quick Access Toolbar is part of OneNote's.** It has Back, Forward, Undo and Redo, a menu to
-  choose which show, to put it under the ribbon or to hide it, and the choices are kept. OneNote's
-  menu also lists Print, Print Preview, Touch/Mouse Mode and More Commands. Printing is File > Print
-  and Ctrl+P (with its own preview); the toolbar does not list it yet, nor the other two. Back and Forward are also Alt+Left and Alt+Right and the mouse's side buttons.
+  choose which show, to put it under the ribbon or to hide it, and the choices are kept. Print and
+  Print Preview can be added to it from that menu (issue #538); both open File > Print, whose dialog
+  shows the sheets. OneNote's menu also lists Touch/Mouse Mode and More Commands, which are not
+  built. Back and Forward are also Alt+Left and Alt+Right and the mouse's side buttons.
   Ctrl+Page Up and Ctrl+Page Down open the page above or below in the page list, subpages included
   when their page is expanded, and stop at the first and last page; Alt+Home and Alt+End go to the
   first and last. Ctrl+Tab and Ctrl+Shift+Tab go round the notebook's sections, each opened at the
@@ -647,9 +650,11 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   towards the theme's text colour and a highlight is washed on dark themes; the file keeps the
   chosen value. Not built: More Colors, and colours inside table cells.
 - **View > Tabs layout** (issues #268, #33) shows the open notebook's sections as coloured tabs
-  over the page, with a section group as a tab that lists its sections. The tree stays in the
-  side panel. Not built: OneNote's vertical tabs on the right and a notebook list across the
-  top; the tabs are hidden in the narrow phone layout.
+  over the page. A section group's tab goes into the group with one click, at the section and
+  page left open there, with a tab back up (issue #511). A tab dragged along the row is moved
+  there (issue #555). View > Page list on the right puts the list of pages on the other side of
+  the page (issue #534). The tree stays in the side panel. Not built: a notebook list across
+  the top; the tabs are hidden in the narrow phone layout.
 - **Unread and author history** are not built. Page version
   history stores snapshots of the page's main file; changes to attached files and drawings
   are not captured by those snapshots. (Tags are: to-do boxes and the other familiar marks,

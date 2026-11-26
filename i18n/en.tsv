@@ -1621,3 +1621,35 @@
 @id	ui.a_page_cannot_go_inside_itself	A page cannot be pasted inside itself.
 @id	ui.paste_page	Paste page
 @id	ui.the_copy_is_last_in_the_section	The copy was made, last in the section: it could not go after that page.
+@id	ui.this_section_group	This section group
+@id	ui.this_section_group_name	This section group ({name})
+@id	ui.sort_by	Sort by
+@id	ui.sort_best_match	Best match
+@id	ui.sort_page_title	Page title
+@id	ui.sort_recently_changed	Recently changed
+@id	ui.the_note_container_is_selected	The note container is selected. Ctrl+A again selects the whole page.
+@id	ui.the_whole_page_is_selected	The whole page is selected.
+@id	ui.this_page_has_one_note_container	This page has one note container.
+@id	ui.this_is_the_last_note_container	This is the last note container on the page.
+@id	ui.this_is_the_first_note_container	This is the first note container on the page.
+@id	ui.that_note_container_has_nothing_to_write_in	That note container has nothing to write in.
+@id	ui.print_the_page_ctrl_p	Print the page (Ctrl+P)
+@id	ui.see_the_page_as_it_will_print	See the page as it will print
+@id	ui.tags_group_by	Group by
+@id	ui.tags_group_tag_name	Tag name
+@id	ui.tags_group_section	Section
+@id	ui.tags_group_page	Page
+@id	ui.tags_group_count	{name} ({count})
+@id	ui.create_summary_page	Create Summary Page
+@id	ui.create_summary_page_hint	Write the lines listed here on a new page in this section, each with a link back to its page
+@id	ui.open_a_section_for_the_summary_page	Open a section first: the summary page is made there.
+@id	ui.tags_summary_page_title	Tags Summary
+@id	ui.summary_page_created	The summary page is made, with a link back to each line's page.
+@id	ui.up_to_name	Up to {name}
+@id	ui.this_section_group_has_no_sections_yet	This section group has no sections yet.
+@id	ui.no_sections_in_this_group_yet	No sections in this group yet.
+@id	ui.add_the_first_section	Add the first section
+@id	ui.page_list_on_right	Page list on the right
+@id	ui.page_list_on_right_tip	In the tabs layout, show the list of pages on the right of the page instead of the left
+@id	ui.page_list_on_the_right	The list of pages is on the right of the page.
+@id	ui.page_list_on_the_left	The list of pages is on the left of the page.

@@ -618,8 +618,19 @@ enum SearchScope {
     #[default]
     All,
     Notebook,
+    /// The section group the open section is in, with every section under it (issue #528).
+    Group,
     Section,
     Page,
+}
+
+/// The order search results are listed in (issue #573). The best matches first is the usual one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum SearchSort {
+    #[default]
+    Best,
+    Title,
+    Changed,
 }
 
 impl TagScope {
@@ -660,7 +671,103 @@ struct TagsPane {
     scope: TagScope,
     /// Only the To Do items not yet ticked.
     unchecked: bool,
+    /// How the lines found are put together (issue #565).
+    group: TagGroup,
     found: Vec<notecraft_store::tags::Tagged>,
+}
+
+/// How the Tags Summary groups what it found (issue #565): by the tag, as OneNote does first,
+/// or by where the lines are, a section or a page at a time.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum TagGroup {
+    #[default]
+    Tag,
+    Section,
+    Page,
+}
+
+impl TagGroup {
+    const ALL: [TagGroup; 3] = [TagGroup::Tag, TagGroup::Section, TagGroup::Page];
+
+    fn label(self) -> &'static str {
+        match self {
+            TagGroup::Tag => crate::tl_id!("ui.tags_group_tag_name"),
+            TagGroup::Section => crate::tl_id!("ui.tags_group_section"),
+            TagGroup::Page => crate::tl_id!("ui.tags_group_page"),
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            TagGroup::Tag => "tag",
+            TagGroup::Section => "section",
+            TagGroup::Page => "page",
+        }
+    }
+
+    fn parse(id: &str) -> TagGroup {
+        TagGroup::ALL.into_iter().find(|g| g.id() == id.trim()).unwrap_or_default()
+    }
+}
+
+/// The settings key for the page list on the right in the tabs layout (issue #534).
+const PAGES_RIGHT_KEY: &str = "pages_right";
+
+/// The settings key the Tags Summary's grouping is kept under (issue #565).
+const TAGS_GROUP_KEY: &str = "tags_group";
+
+/// What heads a group of the Tags Summary.
+#[derive(Clone, Debug, PartialEq)]
+enum TagHead {
+    Tag(notecraft_model::Tag),
+    /// A section or a page: its title, and where it is.
+    Place {
+        title: String,
+        trail: String,
+    },
+}
+
+/// The lines found, put together the way the Tags Summary groups them (issue #565): each group's
+/// head and the places of its lines in `found`, in the order they were found. Tags come in the
+/// order the Tags menu has them; sections and pages in the order they were first met.
+fn tag_groups(found: &[notecraft_store::tags::Tagged], by: TagGroup, tree: &[Node]) -> Vec<(TagHead, Vec<usize>)> {
+    match by {
+        TagGroup::Tag => notecraft_model::Tag::all()
+            .into_iter()
+            .filter_map(|tag| {
+                let lines: Vec<usize> = found.iter().enumerate().filter(|(_, f)| f.tag == tag).map(|(i, _)| i).collect();
+                (!lines.is_empty()).then_some((TagHead::Tag(tag), lines))
+            })
+            .collect(),
+        TagGroup::Section | TagGroup::Page => {
+            let mut groups: Vec<(PathBuf, TagHead, Vec<usize>)> = Vec::new();
+            for (i, line) in found.iter().enumerate() {
+                let (key, title) = if by == TagGroup::Page {
+                    (line.path.clone(), line.page.clone())
+                } else {
+                    match section_for(&line.path) {
+                        Some(section) => (section, line.section.clone()),
+                        None => (line.path.clone(), line.page.clone()),
+                    }
+                };
+                match groups.iter_mut().find(|(k, _, _)| *k == key) {
+                    Some((_, _, lines)) => lines.push(i),
+                    None => {
+                        // Where it is, without its own name: a section's notebook and groups, or
+                        // a page's notebook, groups and section.
+                        let trail = if by == TagGroup::Page { search_trail(tree, &key) } else { search_trail(tree, &line.path) };
+                        let trail = if by == TagGroup::Section {
+                            trail.rsplit_once(" > ").map(|(before, _)| before.to_string()).unwrap_or_default()
+                        } else {
+                            trail
+                        };
+                        groups.push((key, TagHead::Place { title, trail }, vec![i]));
+                    }
+                }
+            }
+            groups.into_iter().map(|(_, head, lines)| (head, lines)).collect()
+        }
+    }
 }
 
 /// The Page Templates pane (issue #173): every template, by category, each one a new page in
@@ -695,6 +802,79 @@ fn band_title_centre(centre: f32, start: f32, end: f32, width: f32) -> f32 {
 /// Where a search result is (issue #370): the titles of its notebook, any section groups and
 /// its section, from the tree already in memory, joined with " > ". A sub-page's parent pages
 /// are left out; the section is the place. Empty when the page is not in the tree.
+/// Where to put the caret for a search result (issue #529): the block, and where the words
+/// found start and end in it, counted in characters. The words as one phrase first, ignoring
+/// case; else, as the search itself matches them, any of the query's words: in the block that has
+/// the most of them, the first one. A heading that only repeats the title shown above the page
+/// (`shown_title`) is not drawn, so it is passed over.
+fn find_words_in_blocks(blocks: &[notecraft_formats::Block], words: &str, shown_title: &str) -> Option<(usize, usize, usize)> {
+    // Compared a character at a time, each lowered on its own, so the place found is a place in
+    // the text as written even where lowering changes a letter's length.
+    let lower = |c: char| c.to_lowercase().next().unwrap_or(c);
+    let needle: Vec<char> = words.split_whitespace().collect::<Vec<_>>().join(" ").chars().map(lower).collect();
+    if needle.is_empty() {
+        return None;
+    }
+    let shown = || {
+        blocks.iter().enumerate().filter(|(at, b)| {
+            pageedit::is_writable(b) && !matches!(b, notecraft_formats::Block::Table { .. }) && !pageedit::is_title_echo(blocks, *at, shown_title)
+        })
+    };
+    let phrase = shown().find_map(|(at, b)| {
+        let text: Vec<char> = pageedit::caret_text(b).chars().collect();
+        (0..text.len()).find_map(|start| {
+            let mut i = start;
+            for want in &needle {
+                let have = text.get(i).copied()?;
+                let have = if have.is_whitespace() && *want == ' ' { ' ' } else { lower(have) };
+                if have != *want {
+                    return None;
+                }
+                i += 1;
+            }
+            Some((at, start, i))
+        })
+    });
+    if phrase.is_some() {
+        return phrase;
+    }
+    // The words apart, by the search's own word rules: the block with the most different words
+    // of the query, the first such block when two have as many.
+    let mut best: Option<(usize, usize, usize, usize)> = None;
+    for (at, b) in shown() {
+        let text = pageedit::caret_text(b);
+        let ranges = notecraft_store::search::snippet_matches(&text, words);
+        let Some(first) = ranges.first() else { continue };
+        let distinct: std::collections::HashSet<String> = ranges.iter().map(|r| text[r.clone()].to_lowercase()).collect();
+        if best.is_none_or(|(count, ..)| distinct.len() > count) {
+            let start = text[..first.start].chars().count();
+            let end = start + text[first.clone()].chars().count();
+            best = Some((distinct.len(), at, start, end));
+        }
+    }
+    best.map(|(_, at, start, end)| (at, start, end))
+}
+
+/// The note containers in the order the keyboard goes through them (issue #560): from the top
+/// down, with those whose tops are within a line of each other read as one row, from the left,
+/// or from the right on a right-to-left page.
+fn container_reading_order(boxes: &[notecraft_model::container::Container], rtl: bool) -> Vec<usize> {
+    const ROW: f32 = 16.0;
+    let mut by_top: Vec<usize> = (0..boxes.len()).collect();
+    by_top.sort_by(|&a, &b| boxes[a].y.total_cmp(&boxes[b].y).then(a.cmp(&b)));
+    let mut rows: Vec<Vec<usize>> = Vec::new();
+    for i in by_top {
+        match rows.last_mut() {
+            Some(row) if boxes[i].y - boxes[row[0]].y <= ROW => row.push(i),
+            _ => rows.push(vec![i]),
+        }
+    }
+    for row in &mut rows {
+        row.sort_by(|&a, &b| if rtl { boxes[b].x.total_cmp(&boxes[a].x) } else { boxes[a].x.total_cmp(&boxes[b].x) });
+    }
+    rows.into_iter().flatten().collect()
+}
+
 fn search_trail(tree: &[Node], page: &Path) -> String {
     fn walk(nodes: &[Node], page: &Path, names: &mut Vec<String>) -> bool {
         for n in nodes {
@@ -1492,6 +1672,14 @@ pub struct NoteCraftApp {
     /// The result chosen with the arrow keys, if any (issue #370).
     search_pick: Option<usize>,
     search_scope: SearchScope,
+    search_sort: SearchSort,
+    /// The level the row of section tabs shows when it was chosen rather than followed: the
+    /// section open then (none for an empty group), and the group or notebook the row shows
+    /// (issue #511). Once another section is open, the row shows that section's own level again.
+    tabs_view: Option<(Option<PathBuf>, PathBuf)>,
+    /// A page opened from a search result, and the words to put the caret on there once it is
+    /// open (issue #529).
+    find_on_open: Option<(PathBuf, String)>,
     /// The Tags Summary, while it is open.
     tags_pane: Option<TagsPane>,
     /// Home > More tags > Customize Tags, while it is open (issue #259).
@@ -1599,6 +1787,9 @@ pub struct NoteCraftApp {
     replaying: bool,
     /// View > Tabs layout: the sections as tabs over the page (issues #268, #33). Kept.
     tabs_layout: bool,
+    /// In the tabs layout, the list of pages on the right of the page rather than the left
+    /// (issue #534).
+    pages_right: bool,
     /// View > Immersive Reader, while it is open (issue #299).
     reader: Option<crate::reader::Reader>,
     /// What the pointer does on the page (the Draw tab).
@@ -1729,6 +1920,7 @@ impl NoteCraftApp {
         let session_auto_switch = session.settings.get("switch_by_device").is_none_or(|v| v.trim() != "false");
         let session_update_check_off = session.settings.get("update_check_off_at_start").is_some_and(|v| v.trim() == "true");
         let session_tabs_layout = session.settings.get("tabs_layout").is_some_and(|v| v.trim() == "true");
+        let session_pages_right = session.settings.get(PAGES_RIGHT_KEY).is_some_and(|v| v.trim() == "true");
         let session_ribbon_collapsed = session.settings.get("ribbon_collapsed").map(|v| v.trim() == "true").unwrap_or(false);
         // Two columns in the side panel, the way OneNote separates the notebooks from the
         // pages. This is the product's default navigation layout; the one-tree view remains
@@ -1807,6 +1999,9 @@ impl NoteCraftApp {
             hit_trails: Vec::new(),
             search_pick: None,
             search_scope: SearchScope::default(),
+            search_sort: SearchSort::default(),
+            tabs_view: None,
+            find_on_open: None,
             tags_pane: None,
             custom_tags: None,
             picture_text: None,
@@ -1859,6 +2054,7 @@ impl NoteCraftApp {
             pen_picked_by_pen: false,
             replaying: false,
             tabs_layout: session_tabs_layout,
+            pages_right: session_pages_right,
             reader: None,
             canvas_drag: None,
             typed_while_inking: Vec::new(),
@@ -2310,7 +2506,19 @@ impl NoteCraftApp {
         // The notebook's too, for switching notebooks (issue #559), even for a page outside any
         // section.
         let notebook = self.session.tree().iter().find(|n| page.starts_with(&n.path)).map(|n| n.path.clone());
-        let keys: Vec<PathBuf> = section.into_iter().chain(notebook).collect();
+        // And each section group around it, for going into a group from its tab (issue #511).
+        let groups: Vec<PathBuf> = section
+            .as_ref()
+            .map(|section| {
+                section
+                    .ancestors()
+                    .skip(1)
+                    .take_while(|a| node_at(self.session.tree(), a).is_some_and(|n| n.info.kind == NodeKind::SectionGroup))
+                    .map(Path::to_path_buf)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let keys: Vec<PathBuf> = section.into_iter().chain(groups).chain(notebook).collect();
         if keys.is_empty() || keys.iter().all(|k| self.section_pages.get(k).is_some_and(|p| p == page)) {
             return;
         }
@@ -2368,6 +2576,42 @@ impl NoteCraftApp {
                 self.say(crate::tl_id!("ui.this_section_has_no_pages_yet"));
             }
         }
+    }
+
+    /// Goes into a section group from its tab (issue #511): the row of tabs shows the group's own
+    /// sections, and the page last open in the group comes back, or else its first section's
+    /// first page. A group with no sections in it is shown as such, with a way to add its first.
+    fn open_group(&mut self, group: &Path) {
+        let section = match self.page_for_section(group) {
+            Some(page) => {
+                self.expand_to(&page);
+                self.open_page_soon(&page);
+                section_in_tree(self.session.tree(), &page)
+            }
+            None => match sections_under(self.session.tree(), group).into_iter().next() {
+                Some(section) => {
+                    self.open_section(&section);
+                    Some(section)
+                }
+                None => {
+                    self.save_now();
+                    if self.is_dirty() || self.page_conflict {
+                        return;
+                    }
+                    if let Some(left) = self.editor.as_ref().map(|e| e.dir.clone()) {
+                        self.note_read(&left, false);
+                    }
+                    self.editor = None;
+                    self.pad = None;
+                    self.opening = None;
+                    self.expand_to(group);
+                    self.selected = Some(group.to_path_buf());
+                    self.say(crate::tl_id!("ui.this_section_group_has_no_sections_yet"));
+                    None
+                }
+            },
+        };
+        self.tabs_view = Some((section, group.to_path_buf()));
     }
 
     /// Opens a notebook at the page last open in it, else its first page (issue #559).
@@ -2827,8 +3071,13 @@ impl NoteCraftApp {
 
     /// The Quick Access Toolbar, drawn in whatever row it is given.
     fn quick_access(&mut self, ui: &mut Ui, tokens: Tokens) {
-        let enabled =
-            quickaccess::Enabled { back: self.nav.can_back(), forward: self.nav.can_forward(), undo: self.can_undo(), redo: self.can_redo() };
+        let enabled = quickaccess::Enabled {
+            back: self.nav.can_back(),
+            forward: self.nav.can_forward(),
+            undo: self.can_undo(),
+            redo: self.can_redo(),
+            print: self.editor.is_some(),
+        };
         let (pressed, changed) = quickaccess::show(ui, &mut self.qat, enabled, &tokens);
         if changed {
             self.qat.save(|k, v| {
@@ -2840,6 +3089,9 @@ impl NoteCraftApp {
             Some(quickaccess::Command::Forward) => self.go_forward(),
             Some(quickaccess::Command::Undo) => self.undo(),
             Some(quickaccess::Command::Redo) => self.redo(),
+            // The Print dialog is NoteCraft's print preview too: it shows each sheet as it
+            // will come out, beside the printer's settings (issue #538).
+            Some(quickaccess::Command::Print | quickaccess::Command::PrintPreview) => self.open_print(),
             None => {}
         }
     }
@@ -3451,7 +3703,8 @@ impl NoteCraftApp {
             matches!(e, egui::Event::Key { pressed: true, key, modifiers, .. }
                 if (modifiers.command && matches!(key, Key::Tab | Key::T | Key::G))
                     || (modifiers.alt && matches!(key, Key::Home | Key::End))
-                    || (modifiers.alt && modifiers.shift && matches!(key, Key::D | Key::T | Key::F | Key::ArrowUp | Key::ArrowDown))
+                    || (modifiers.alt && modifiers.shift && matches!(key, Key::D | Key::T | Key::F))
+                    || (modifiers.alt && matches!(key, Key::ArrowUp | Key::ArrowDown))
                     || (modifiers.command && modifiers.alt && matches!(key, Key::Num1 | Key::Num2 | Key::Num3 | Key::Num4 | Key::Num5 | Key::Num6)))
         };
         // Asked only when one of these keys is down: which widget has the keyboard is read through
@@ -3553,6 +3806,21 @@ impl NoteCraftApp {
         });
         if let Some(up) = shift_by {
             self.move_paragraphs(up);
+            return;
+        }
+        // Alt+Down and Alt+Up: the next or the previous note container, in reading order
+        // (issue #560).
+        let container = ctx.input_mut(|i| {
+            if i.consume_key(Modifiers::ALT, Key::ArrowDown) {
+                Some(true)
+            } else if i.consume_key(Modifiers::ALT, Key::ArrowUp) {
+                Some(false)
+            } else {
+                None
+            }
+        });
+        if let Some(down) = container {
+            self.step_container(ctx, down);
             return;
         }
         // Alt+Shift+D, T and F: the date, the time, or both, as the ribbon's Time Stamp buttons
@@ -3675,6 +3943,46 @@ impl NoteCraftApp {
         self.save_block_marks((cols, justified));
     }
 
+    /// Alt+Down and Alt+Up (issue #560): the caret to the start of the next or the previous note
+    /// container on the page, which is brought into view. Containers are read the way the page
+    /// is: from the top down, and those whose tops are within a line of each other as one row,
+    /// left to right, or right to left on a right-to-left page. The words inside a container are
+    /// left to the arrow keys as ever.
+    fn step_container(&mut self, ctx: &Context, down: bool) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        if ed.boxes.len() < 2 {
+            self.say(crate::tl_id!("ui.this_page_has_one_note_container"));
+            return;
+        }
+        let order = container_reading_order(&ed.boxes, ed.page_dir == Some(notecraft_model::Dir::Rtl));
+        let here = ed.caret.as_ref().and_then(|c| notecraft_model::container::place(&ed.boxes, c.block)).map(|(i, _)| i);
+        let position = here.and_then(|h| order.iter().position(|&i| i == h));
+        let next = match (position, down) {
+            (Some(p), true) => order.get(p + 1).copied(),
+            (Some(p), false) => p.checked_sub(1).and_then(|p| order.get(p).copied()),
+            (None, true) => order.first().copied(),
+            (None, false) => order.last().copied(),
+        };
+        let Some(next) = next else {
+            self.say(if down { crate::tl_id!("ui.this_is_the_last_note_container") } else { crate::tl_id!("ui.this_is_the_first_note_container") });
+            return;
+        };
+        let title = ed.title.clone();
+        let range = notecraft_model::container::blocks_of(&ed.boxes, next);
+        let Some(block) = range.clone().find(|&i| pageedit::is_writable(&ed.blocks[i]) && !pageedit::is_title_echo(&ed.blocks, i, &title)) else {
+            self.say(crate::tl_id!("ui.that_note_container_has_nothing_to_write_in"));
+            return;
+        };
+        // A container that starts with a table is gone into at its first cell.
+        let (text, cell) = match pageedit::cell_text(&ed.blocks[block], (0, 0)) {
+            Some(text) if matches!(ed.blocks[block], notecraft_formats::Block::Table { .. }) => (text, Some((0, 0))),
+            _ => (pageedit::text_for_caret(&ed.blocks, block), None),
+        };
+        ed.across = None;
+        ed.caret = Some(pageedit::Caret { block, text, focus: true, selection: (0, 0), place: Some(0), cell, span: None, inline: None });
+        pageedit::reveal_caret(ctx);
+    }
+
     /// The next or the previous section of the open notebook, round from one end to the other,
     /// opened where it was left (issue #512).
     fn step_section(&mut self, forward: bool) {
@@ -3756,7 +4064,12 @@ impl NoteCraftApp {
         if self.show_source {
             return false;
         }
-        ctx.memory(|m| m.focused()).and_then(|id| ctx.read_response(id)).is_some_and(|focused| page.contains(focused.rect.center()))
+        // The words' own rect runs from the page's first line to its last, so a line below it, in
+        // a container placed lower down, is still the page's: the view the page scrolls in counts
+        // too (issue #560).
+        ctx.memory(|m| m.focused())
+            .and_then(|id| ctx.read_response(id))
+            .is_some_and(|focused| page.contains(focused.rect.center()) || self.page_view.is_some_and(|view| view.contains(focused.rect.center())))
     }
 
     // ---------- page open, save ----------
@@ -6217,6 +6530,7 @@ impl NoteCraftApp {
             auto_shapes: self.auto_shapes,
             replaying: self.replaying,
             tabs_layout: self.tabs_layout,
+            pages_right: self.pages_right,
             table_borders: self.caret_table_has_borders(),
             table_align: self.caret_cells_align(),
             table_shade: self.caret_cells_shade(),
@@ -6728,7 +7042,11 @@ impl NoteCraftApp {
                 // OneNote looks in the section first; with no page open there is no section.
                 let scope = self.tags_pane.as_ref().map_or(if self.editor.is_some() { TagScope::Section } else { TagScope::All }, |p| p.scope);
                 let unchecked = self.tags_pane.as_ref().is_some_and(|p| p.unchecked);
-                self.tags_pane = Some(TagsPane { scope, unchecked, found: Vec::new() });
+                let group = self
+                    .tags_pane
+                    .as_ref()
+                    .map_or_else(|| self.session.settings.get(TAGS_GROUP_KEY).map(|g| TagGroup::parse(&g)).unwrap_or_default(), |p| p.group);
+                self.tags_pane = Some(TagsPane { scope, unchecked, group, found: Vec::new() });
                 self.refresh_tags();
             }
             ribbon::Act::CustomizeTags => {
@@ -6743,6 +7061,17 @@ impl NoteCraftApp {
                 self.tabs_layout = !self.tabs_layout;
                 let _ = self.session.settings.set("tabs_layout", if self.tabs_layout { "true" } else { "false" });
                 self.say(if self.tabs_layout { crate::tl_id!("ui.tabs_layout_on") } else { crate::tl_id!("ui.tabs_layout_off") });
+            }
+            // Issue #534: the page list on the right in the tabs layout. The list is the second
+            // column of the navigation, so it is shown if it was not.
+            ribbon::Act::TogglePagesRight => {
+                self.pages_right = !self.pages_right;
+                let _ = self.session.settings.set(PAGES_RIGHT_KEY, if self.pages_right { "true" } else { "false" });
+                if self.pages_right && !self.split_panes {
+                    self.split_panes = true;
+                    let _ = self.session.settings.set("split_panes", "true");
+                }
+                self.say(if self.pages_right { crate::tl_id!("ui.page_list_on_the_right") } else { crate::tl_id!("ui.page_list_on_the_left") });
             }
             ribbon::Act::ToggleReplay => {
                 if !self.replaying && self.pad.as_ref().is_none_or(crate::inkpad::Pad::is_empty) {
@@ -9479,6 +9808,22 @@ impl NoteCraftApp {
         if !(copy || cut || paste || all) {
             return;
         }
+        // Ctrl+A again, with the whole paragraph already taken: the note container, then the
+        // page (issue #536). Taken before any text box sees the key, or it would select its
+        // own words again.
+        // Not while another text box has the keyboard (the font size, a search): its Ctrl+A is
+        // its own.
+        // The page's title is drawn on the page, and its Ctrl+A is its own too.
+        let focused = ctx.memory(|m| m.focused());
+        let text_box_elsewhere = focused == Some(page_title_id(ctx))
+            || (focused.is_some_and(|id| egui::TextEdit::load_state(ctx, id).is_some()) && !self.page_text_has_focus(ctx));
+        if all && !text_box_elsewhere && self.widen_selection() {
+            ctx.input_mut(|i| {
+                i.consume_key(Modifiers::COMMAND, Key::A);
+                i.events.retain(|e| !matches!(e, egui::Event::Key { key: Key::A, modifiers, .. } if modifiers.command || modifiers.ctrl));
+            });
+            return;
+        }
         let ours = self.words_are_ours();
         if copy && ours {
             self.clipboard("copy");
@@ -9614,6 +9959,65 @@ impl NoteCraftApp {
     /// The paragraph and not the page. That is what a text box does, and it is the step
     /// OneNote takes first as well; pressing again there widens to the box and then to the
     /// page, which is not built here and is written down in `work\expected`.
+    /// Ctrl+A when the paragraph is already all selected: the selection grows to the note
+    /// container it is in, and from there to the whole page (issue #536), as OneNote's does. The
+    /// status line says which it is now, so what Delete or Cut would take is plain first. A
+    /// page of one container goes straight from the paragraph to the page. The title, drawn
+    /// above the page, is never part of it. False when there is nothing to grow, so Ctrl+A is
+    /// the paragraph's own.
+    fn widen_selection(&mut self) -> bool {
+        let Some(ed) = self.editor.as_mut() else { return false };
+        let title = ed.title.clone();
+        let first_body = (0..ed.blocks.len()).find(|&i| !pageedit::is_title_echo(&ed.blocks, i, &title)).unwrap_or(0);
+        let whole = |blocks: &[notecraft_formats::Block], range: std::ops::Range<usize>| -> Option<pageedit::Across> {
+            let start = range.start.max(first_body);
+            let last = range.end.checked_sub(1)?;
+            (start <= last).then(|| pageedit::Across { from: (start, 0), to: (last, blocks.get(last).map_or(0, |b| pageedit::block_text(b).len())) })
+        };
+        let page = whole(&ed.blocks, 0..ed.blocks.len());
+        let container_of = |at: usize| -> Option<pageedit::Across> {
+            if ed.boxes.len() < 2 {
+                return None;
+            }
+            let (index, _) = notecraft_model::container::place(&ed.boxes, at)?;
+            whole(&ed.blocks, notecraft_model::container::blocks_of(&ed.boxes, index))
+        };
+        let same = |a: Option<pageedit::Across>, b: Option<pageedit::Across>| match (a, b) {
+            (Some(a), Some(b)) => a.ends() == b.ends(),
+            _ => false,
+        };
+        let (next, said) = if let Some(open) = ed.across.filter(|a| !a.inside_one_block()) {
+            let (start, _) = open.ends();
+            let container = container_of(start.0);
+            if same(Some(open), page) {
+                (None, crate::tl_id!("ui.the_whole_page_is_selected"))
+            } else if container.is_some() && same(Some(open), container) {
+                (page, crate::tl_id!("ui.the_whole_page_is_selected"))
+            } else {
+                return false;
+            }
+        } else {
+            let Some(caret) = ed.caret.as_ref().filter(|c| c.cell.is_none()) else { return false };
+            let len = caret.text.chars().count();
+            let (lo, hi) = (caret.selection.0.min(caret.selection.1), caret.selection.0.max(caret.selection.1));
+            if lo != 0 || hi < len || len == 0 {
+                return false;
+            }
+            match container_of(caret.block) {
+                Some(container) if !container.inside_one_block() && !same(Some(container), page) => {
+                    (Some(container), crate::tl_id!("ui.the_note_container_is_selected"))
+                }
+                _ if page.is_some_and(|p| !p.inside_one_block()) => (page, crate::tl_id!("ui.the_whole_page_is_selected")),
+                _ => return false,
+            }
+        };
+        if let Some(next) = next {
+            ed.across = Some(next);
+        }
+        self.say(said);
+        true
+    }
+
     fn select_all_in_block(&mut self) {
         let Some(ed) = self.editor.as_mut() else { return };
         let Some(caret) = ed.caret.as_mut() else { return };
@@ -9637,6 +10041,9 @@ impl NoteCraftApp {
             self.pending_copy = Some(notecraft_formats::render::blocks_to_text(&copied));
             self.pending_copy_html = Some(notecraft_formats::render::blocks_to_html(&copied));
             if which == "cut" {
+                // The page before the cut is a step of its own, widths and justification with
+                // it, so Undo puts them back with the paragraphs.
+                Self::remember_step(ed);
                 let before = ed.blocks.len();
                 let (block, at) = pageedit::delete_span(&mut ed.blocks, open);
                 let marks = ed.blocks_removed(block + 1..block + 1 + before.saturating_sub(ed.blocks.len()));
@@ -9646,6 +10053,7 @@ impl NoteCraftApp {
                 ed.across = None;
                 ed.rebuild_body();
                 Self::mark_dirty_from_blocks(ed);
+                Self::remember_edit(ed);
                 self.save_block_marks(marks);
             }
             self.say(if which == crate::tl_id!("ui.cut_2") { crate::tl_id!("ui.cut") } else { crate::tl_id!("ui.copied") });
@@ -9973,12 +10381,23 @@ impl NoteCraftApp {
 
     fn refresh_search(&mut self) {
         self.searched.clone_from(&self.search);
-        let mut query = params(&[("q", &self.search), ("limit", "20")]);
+        // The best matches are the first twenty the search ranks. Another order is of every match
+        // there is, as far as the search goes, so its first rows are the first by that order
+        // (issue #573).
+        let limit = if self.search_sort == SearchSort::Best { "20" } else { "500" };
+        let mut query = params(&[("q", &self.search), ("limit", limit)]);
+        // A section group chosen as the scope, and the section open now in none: the section
+        // is searched, rather than every notebook (issue #528).
+        if self.search_scope == SearchScope::Group && self.current_group().is_none() {
+            self.search_scope = SearchScope::Section;
+        }
+        let group = self.current_group().map(|(path, _)| path);
         let scope = match self.search_scope {
             SearchScope::All => None,
             SearchScope::Notebook => {
                 self.selected.as_ref().and_then(|p| self.session.tree().iter().find(|n| p.starts_with(&n.path))).map(|n| &n.path)
             }
+            SearchScope::Group => group.as_ref(),
             SearchScope::Section => self.current_section(self.session.tree()).map(|n| &n.path),
             SearchScope::Page => self.editor.as_ref().map(|editor| &editor.dir),
         };
@@ -9990,7 +10409,45 @@ impl NoteCraftApp {
             _ => Vec::new(),
         };
         self.hit_trails = self.hits.iter().map(|hit| search_trail(self.session.tree(), &hit.path)).collect();
+        self.sort_hits();
         self.search_pick = None;
+    }
+
+    /// The section group the open section is in, nearest first, with its title (issue #528).
+    fn current_group(&self) -> Option<(PathBuf, String)> {
+        let section = self.current_section(self.session.tree())?.path.clone();
+        let mut at = section.parent();
+        while let Some(dir) = at {
+            match node_at(self.session.tree(), dir) {
+                Some(n) if n.info.kind == NodeKind::SectionGroup => return Some((n.path.clone(), n.info.title.clone())),
+                Some(n) if n.info.kind == NodeKind::Notebook => return None,
+                None => return None,
+                _ => at = dir.parent(),
+            }
+        }
+        None
+    }
+
+    /// Puts the results in the chosen order (issue #573). The best matches first is the order
+    /// the search gives; by title, a title that two pages share is told apart by where they are;
+    /// most recently changed reads when each page was last saved.
+    fn sort_hits(&mut self) {
+        if self.search_sort == SearchSort::Best {
+            return;
+        }
+        let mut rows: Vec<(notecraft_store::search::Ranked, String)> = self.hits.drain(..).zip(self.hit_trails.drain(..)).collect();
+        match self.search_sort {
+            SearchSort::Best => {}
+            SearchSort::Title => rows.sort_by(|(a, at), (b, bt)| {
+                a.title.to_lowercase().cmp(&b.title.to_lowercase()).then_with(|| at.to_lowercase().cmp(&bt.to_lowercase()))
+            }),
+            // When each was changed, as Recent Edits reads it: the stamp the page keeps, which a
+            // sync tool copying the folder does not move, else its file's time.
+            SearchSort::Changed => {
+                rows.sort_by_cached_key(|(hit, _)| std::cmp::Reverse(notecraft_store::recent::changed_at(&hit.path).unwrap_or(i64::MIN)))
+            }
+        }
+        (self.hits, self.hit_trails) = rows.into_iter().unzip();
     }
 
     fn open_search_result(&mut self, ctx: &Context, path: &Path) {
@@ -10005,11 +10462,57 @@ impl NoteCraftApp {
             Some(crate::preview::PictureHighlight { page_dir: path.to_path_buf(), src: format!("assets/{name}"), pixels, boxes: hit.boxes.clone() })
         });
         crate::preview::set_picture_highlight(ctx, highlight);
+        // The words searched for are found again in the page once it is open, and the caret put
+        // on them (issue #529). A page found by a picture's text has its picture outlined instead.
+        let words = self.searched.trim().to_string();
+        let in_words = self.hits.iter().find(|hit| hit.path == path).is_none_or(|hit| hit.source == notecraft_store::search::Source::Page);
+        self.find_on_open = (in_words && !words.is_empty()).then(|| (path.to_path_buf(), words));
         if self.backstage.is_some() {
             self.close_backstage();
         }
         self.expand_to(path);
         self.open_page_soon(path);
+        self.apply_find_on_open(ctx);
+    }
+
+    /// Once the page a search result named is open, selects the first place in it that has the
+    /// words searched for and brings it into view (issue #529). Words found only in the title
+    /// leave the page as it opened.
+    fn apply_find_on_open(&mut self, ctx: &Context) {
+        let Some((page, words)) = self.find_on_open.clone() else { return };
+        // Still coming from a synced folder, the page already shown included (it is read again
+        // when its files are in): wait for it.
+        if self.opening.as_ref().is_some_and(|o| o.dir == page) {
+            return;
+        }
+        let hide_title = self.hide_title;
+        let Some(ed) = self.editor.as_mut() else {
+            self.find_on_open = None;
+            return;
+        };
+        self.find_on_open = None;
+        // Anything else open means the person went elsewhere.
+        if ed.dir != page {
+            return;
+        }
+        let shown_title = if hide_title { String::new() } else { ed.title.clone() };
+        let Some((block, start, end)) = find_words_in_blocks(&ed.blocks, &words, &shown_title) else { return };
+        let Some(b) = ed.blocks.get(block) else { return };
+        ed.caret = Some(pageedit::Caret {
+            block,
+            text: pageedit::caret_text(b),
+            focus: true,
+            selection: (end, end),
+            place: Some(end),
+            cell: None,
+            span: None,
+            inline: None,
+        });
+        ed.across = None;
+        // The caret's line takes the selection as it arrives, and is scrolled to.
+        let restore = pageedit::restore_selection_id(ctx);
+        ctx.data_mut(|d| d.insert_temp(restore, (block, end, start)));
+        pageedit::reveal_caret(ctx);
     }
 
     fn search_popup(&mut self, ctx: &Context) {
@@ -10024,6 +10527,7 @@ impl NoteCraftApp {
         }
         let mut chosen: Option<PathBuf> = None;
         let mut scope = self.search_scope;
+        let mut sort = self.search_sort;
         let tokens = self.tokens;
         // Issue #370: the results hang from the search box itself, as wide as it or wider, and
         // are kept inside the window, rather than sitting at a fixed place on the right.
@@ -10048,18 +10552,44 @@ impl NoteCraftApp {
             frame.show(ui, |ui| {
                 ui.set_width(content_width);
                 ui.horizontal_wrapped(|ui| {
+                    let group = self.current_group();
+                    let group_label = group.as_ref().map_or_else(
+                        || crate::tl_id!("ui.this_section_group").to_string(),
+                        |(_, name)| crate::i18n::format_message_id("ui.this_section_group_name", &[("name", name)]),
+                    );
                     let choices = [
-                        (SearchScope::All, crate::tl_id!("ui.tags_scope_all_notebooks"), true),
-                        (SearchScope::Notebook, crate::tl_id!("ui.this_notebook"), self.selected.is_some()),
-                        (SearchScope::Section, crate::tl_id!("ui.this_section"), self.current_section(self.session.tree()).is_some()),
-                        (SearchScope::Page, crate::tl_id!("ui.find_on_this_page"), self.editor.is_some()),
+                        (SearchScope::All, crate::tl_id!("ui.tags_scope_all_notebooks").to_string(), true),
+                        (SearchScope::Notebook, crate::tl_id!("ui.this_notebook").to_string(), self.selected.is_some()),
+                        (SearchScope::Group, group_label, group.is_some()),
+                        (SearchScope::Section, crate::tl_id!("ui.this_section").to_string(), self.current_section(self.session.tree()).is_some()),
+                        (SearchScope::Page, crate::tl_id!("ui.find_on_this_page").to_string(), self.editor.is_some()),
                     ];
                     for (choice, label, available) in choices {
+                        // A section outside any group has no group to search: that choice is
+                        // left out rather than shown and never usable.
+                        if choice == SearchScope::Group && !available {
+                            continue;
+                        }
                         if ui.add_enabled(available, egui::Button::selectable(scope == choice, label)).clicked() {
                             scope = choice;
                         }
                     }
                 });
+                if !empty && !self.hits.is_empty() {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.weak(crate::tl_id!("ui.sort_by"));
+                        let sorts = [
+                            (SearchSort::Best, crate::tl_id!("ui.sort_best_match")),
+                            (SearchSort::Title, crate::tl_id!("ui.sort_page_title")),
+                            (SearchSort::Changed, crate::tl_id!("ui.sort_recently_changed")),
+                        ];
+                        for (choice, label) in sorts {
+                            if ui.add(egui::Button::selectable(sort == choice, label)).clicked() {
+                                sort = choice;
+                            }
+                        }
+                    });
+                }
                 ui.add_space(2.0);
                 if empty {
                     ui.weak(crate::tl_id!("ui.search_prompt"));
@@ -10142,6 +10672,11 @@ impl NoteCraftApp {
             if empty {
                 ctx.memory_mut(|memory| memory.request_focus(field_id));
             }
+        } else if sort != self.search_sort {
+            // The same query in the same scope, put in the other order (issue #573).
+            // Asked again, for the twenty best or for every match to put in order.
+            self.search_sort = sort;
+            self.refresh_search();
         } else if outside {
             self.dismiss_search();
         }
@@ -10315,10 +10850,13 @@ impl NoteCraftApp {
     }
 
     fn tags_panel(&mut self, ui: &mut Ui) {
+        let tree = self.session.tree();
         let Some(pane) = self.tags_pane.as_mut() else { return };
         let tokens = self.tokens;
         let mut close = false;
         let mut refresh = false;
+        let mut regrouped = false;
+        let mut summary = false;
         let mut chosen: Option<(PathBuf, usize)> = None;
         let panel = if self.compact {
             egui::Panel::right("tags-summary-compact").resizable(false).exact_size(ui.available_width())
@@ -10357,28 +10895,63 @@ impl NoteCraftApp {
             if ui.checkbox(&mut pane.unchecked, crate::tl_id!("ui.tags_only_unchecked_to_do_items")).changed() {
                 refresh = true;
             }
-            if ui.button(crate::tl_id!("ui.refresh")).on_hover_text(crate::tl_id!("ui.look_again_for_tagged_notes")).clicked() {
-                refresh = true;
-            }
+            ui.label(egui::RichText::new(crate::tl_id!("ui.tags_group_by")).small().color(tokens.muted));
+            ui.horizontal_wrapped(|ui| {
+                for group in TagGroup::ALL {
+                    if ui.selectable_label(pane.group == group, group.label()).clicked() && pane.group != group {
+                        pane.group = group;
+                        regrouped = true;
+                    }
+                }
+            });
+            ui.horizontal_wrapped(|ui| {
+                if ui.button(crate::tl_id!("ui.refresh")).on_hover_text(crate::tl_id!("ui.look_again_for_tagged_notes")).clicked() {
+                    refresh = true;
+                }
+                // Issue #537: the lines listed, written out as a page of their own.
+                if ui
+                    .add_enabled(!pane.found.is_empty(), egui::Button::new(crate::tl_id!("ui.create_summary_page")))
+                    .on_hover_text(crate::tl_id!("ui.create_summary_page_hint"))
+                    .clicked()
+                {
+                    summary = true;
+                }
+            });
             ui.separator();
             egui::ScrollArea::vertical().id_salt("tags-summary-list").auto_shrink([false, false]).show(ui, |ui| {
                 if pane.found.is_empty() {
                     ui.weak(crate::tl_id!("ui.no_tagged_notes_here"));
                 }
-                for tag in notecraft_model::Tag::all() {
-                    let mut lines = pane.found.iter().filter(|f| f.tag == tag).peekable();
-                    if lines.peek().is_none() {
-                        continue;
-                    }
+                for (head, lines) in tag_groups(&pane.found, pane.group, tree) {
                     ui.add_space(4.0);
-                    ui.horizontal(|ui| {
-                        let (rect, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
-                        ribbon::paint_tag(ui.painter(), rect, tag, tokens.text, tokens.accent);
-                        ui.strong(crate::tl!(tag.label()));
-                    });
-                    for line in lines {
+                    let count = lines.len().to_string();
+                    match &head {
+                        TagHead::Tag(tag) => {
+                            ui.horizontal(|ui| {
+                                let (rect, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
+                                ribbon::paint_tag(ui.painter(), rect, *tag, tokens.text, tokens.accent);
+                                ui.strong(crate::i18n::format_message_id(
+                                    "ui.tags_group_count",
+                                    &[("name", crate::tl!(tag.label())), ("count", &count)],
+                                ));
+                            });
+                        }
+                        TagHead::Place { title, trail } => {
+                            ui.strong(crate::i18n::format_message_id("ui.tags_group_count", &[("name", title), ("count", &count)]));
+                            if !trail.is_empty() {
+                                ui.label(egui::RichText::new(trail).small().color(tokens.accent));
+                            }
+                        }
+                    }
+                    for line in lines.into_iter().filter_map(|i| pane.found.get(i)) {
                         let words = if line.text.is_empty() { crate::tl_id!("ui.tags_empty_line").to_string() } else { line.text.clone() };
-                        let place = if line.section.is_empty() { line.page.clone() } else { format!("{} > {}", line.section, line.page) };
+                        // Under each line, what the group's head does not already say.
+                        let place = match pane.group {
+                            TagGroup::Tag if line.section.is_empty() => line.page.clone(),
+                            TagGroup::Tag => format!("{} > {}", line.section, line.page),
+                            TagGroup::Section => format!("{} · {}", crate::tl!(line.tag.label()), line.page),
+                            TagGroup::Page => crate::tl!(line.tag.label()).to_string(),
+                        };
                         // Painted rather than laid out as labels, so the row is one target that
                         // a screen reader names once, with a To Do's box ticked or not.
                         let width = ui.available_width().max(60.0);
@@ -10401,6 +10974,10 @@ impl NoteCraftApp {
                                 let at = |x: f32, y: f32| tick.min + vec2(x, y);
                                 painter.line(vec![at(2.5, 6.5), at(5.0, 9.0), at(9.5, 3.0)], egui::Stroke::new(1.6, tokens.accent));
                             }
+                        } else if pane.group != TagGroup::Tag {
+                            // Grouped by place, each line shows its own tag where a To Do has its box.
+                            let mark = egui::Rect::from_min_size(rect.min + vec2(3.0, 3.0), vec2(14.0, 14.0));
+                            ribbon::paint_tag(painter, mark, line.tag, tokens.text, tokens.accent);
                         }
                         let below = text.size().y + 3.0;
                         painter.galley(rect.min + vec2(indent, 2.0), text, tokens.text);
@@ -10416,12 +10993,87 @@ impl NoteCraftApp {
             self.tags_pane = None;
             return;
         }
+        if regrouped && let Some(group) = self.tags_pane.as_ref().map(|p| p.group) {
+            let _ = self.session.settings.set(TAGS_GROUP_KEY, group.id());
+        }
         if refresh {
             self.refresh_tags();
+        }
+        if summary {
+            self.create_tags_summary_page();
         }
         if let Some((page, block)) = chosen {
             self.go_to_tagged(&page, block);
         }
+    }
+
+    /// Find Tags > Create Summary Page (issue #537): a new page in the open section listing the
+    /// lines the Tags Summary has found, grouped as it groups them. Each line keeps its tag, a
+    /// To Do its box, ticked or not, and ends with a link back to the page it came from. The
+    /// pages it lists are not changed. The page is written in the section's own format, as
+    /// any new page there is.
+    fn create_tags_summary_page(&mut self) {
+        use notecraft_formats::{Block, Span};
+        let Some(pane) = self.tags_pane.as_ref().filter(|p| !p.found.is_empty()) else { return };
+        let Some(section) = self.current_section(self.session.tree()).map(|n| n.path.clone()) else {
+            self.say(crate::tl_id!("ui.open_a_section_for_the_summary_page"));
+            return;
+        };
+        let mut roots = vec![self.session.root().to_path_buf()];
+        roots.extend(self.session.opened_elsewhere().iter().cloned());
+        let plain = |text: String| Span { text, ..Default::default() };
+        let mut summary: Vec<Block> = Vec::new();
+        for (head, lines) in tag_groups(&pane.found, pane.group, self.session.tree()) {
+            let heading = match head {
+                TagHead::Tag(tag) => crate::tl!(tag.label()).to_string(),
+                TagHead::Place { title, trail } if trail.is_empty() => title,
+                TagHead::Place { title, trail } => format!("{title} ({trail})"),
+            };
+            summary.push(Block::Heading { level: 2, spans: vec![plain(heading)], emoji: Vec::new() });
+            for line in lines.into_iter().filter_map(|i| pane.found.get(i)) {
+                // A To Do is a task item, its box ticked or not; any other tag is the marker in
+                // front of the words, as on the page it came from.
+                let words =
+                    if line.tag == notecraft_model::Tag::ToDo { line.text.clone() } else { notecraft_model::Tag::set(&line.text, Some(line.tag)) };
+                let mut spans = vec![plain(words)];
+                if let Some(uri) = notecraft_store::links::page_uri(&roots, &line.path) {
+                    let place = if line.section.is_empty() { line.page.clone() } else { format!("{} > {}", line.section, line.page) };
+                    spans.push(plain(" (".into()));
+                    spans.push(Span { text: place, link: Some(uri), ..Default::default() });
+                    spans.push(plain(")".into()));
+                }
+                let task = if line.tag == notecraft_model::Tag::ToDo { line.done.or(Some(false)) } else { None };
+                summary.push(Block::Item { ordered: false, number: 0, task, depth: 0, spans, emoji: Vec::new() });
+            }
+        }
+        self.save_now();
+        if self.is_dirty() {
+            return;
+        }
+        let title = crate::tl_id!("ui.tags_summary_page_title").to_string();
+        let Some(Output::Path(page)) = self.run("node.create", &params(&[("parent", &path_str(&section)), ("kind", "page"), ("title", &title)]))
+        else {
+            return;
+        };
+        self.session.refresh();
+        self.open_page(&page);
+        let Some(ed) = self.editor.as_mut().filter(|ed| ed.dir == page && ed.writable) else { return };
+        Self::remember_step(ed);
+        let at = ed.blocks.len();
+        let count = summary.len();
+        ed.blocks.extend(summary);
+        let marks = ed.blocks_inserted(at, count);
+        pageedit::renumber(&mut ed.blocks);
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_edit(ed);
+        self.save_block_marks(marks);
+        self.save_now();
+        // A save that did not happen keeps the page open and changed, and its own message.
+        if self.is_dirty() {
+            return;
+        }
+        self.say(crate::tl_id!("ui.summary_page_created"));
     }
 
     /// Opens the page a tagged line is on and puts the caret at the start of that line.
@@ -10794,10 +11446,15 @@ impl NoteCraftApp {
             });
         }
         let section = self.current_section(self.session.tree()).map(|n| (n.path.clone(), n.info.title.clone(), n.children.clone(), n.info.color));
-        let panel = if let Some(width) = narrow {
-            egui::Panel::left("pages-narrow").resizable(false).show_separator_line(true).exact_size((width * 0.205).floor())
-        } else {
-            egui::Panel::left("pages").resizable(true).show_separator_line(true).default_size(230.0).size_range(150.0..=520.0)
+        // In the tabs layout the pages can be on the right of the page instead (issue #534): a
+        // panel of its own name, so each side keeps the width it was dragged to.
+        let panel = match (self.tabs_layout && self.pages_right, narrow) {
+            (false, Some(width)) => egui::Panel::left("pages-narrow").resizable(false).show_separator_line(true).exact_size((width * 0.205).floor()),
+            (false, None) => egui::Panel::left("pages").resizable(true).show_separator_line(true).default_size(230.0).size_range(150.0..=520.0),
+            (true, Some(width)) => {
+                egui::Panel::right("pages-right-narrow").resizable(false).show_separator_line(true).exact_size((width * 0.205).floor())
+            }
+            (true, None) => egui::Panel::right("pages-right").resizable(true).show_separator_line(true).default_size(230.0).size_range(150.0..=520.0),
         };
         panel.show(ui, |ui| {
             ui.add_space(4.0);
@@ -10868,18 +11525,41 @@ impl NoteCraftApp {
     }
 
     /// View > Tabs layout (issues #268, #33): the open notebook's sections as tabs over the
-    /// page. Choosing one opens its first page.
+    /// page. Choosing one opens its first page. A section group's tab goes into the group, and
+    /// inside one the row shows its sections after a tab back up (issue #511).
     fn section_tabs(&mut self, ui: &mut Ui) {
         if !self.tabs_layout || self.compact {
             return;
         }
-        let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else { return };
+        // The open page, or with none open the empty section or group chosen.
+        let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()).or_else(|| self.selected.clone()) else { return };
         // From the tree the window holds, which commands keep up to date: read from disk here,
         // every frame, it asked a synced folder's mount for every section and page each time.
         let notebooks = self.session.tree();
-        let Some(notebook) = notebook_for(&dir).and_then(|nb| notebooks.iter().find(|n| n.path == nb)) else { return };
-        let tabs = crate::sectiontabs::tabs(notebook);
-        let here = section_for(&dir);
+        let Some(notebook) = notebooks.iter().find(|n| dir.starts_with(&n.path)) else { return };
+        let here = if self.editor.is_some() { section_for(&dir) } else { section_in_tree(notebooks, &dir).or_else(|| Some(dir.clone())) };
+        // The level shown: the one chosen while that section is open, else the group the open
+        // section is in, else the notebook.
+        let level = match &self.tabs_view {
+            Some((anchor, level))
+                if *anchor == here.clone().filter(|h| node_at(notebooks, h).is_some_and(|n| n.info.kind == NodeKind::Section))
+                    || (self.editor.is_none() && here.as_deref() == Some(level.as_path())) =>
+            {
+                level.clone()
+            }
+            _ => here
+                .as_ref()
+                .and_then(|h| h.parent())
+                .filter(|p| node_at(notebooks, p).is_some_and(|n| n.info.kind == NodeKind::SectionGroup))
+                .map_or_else(|| notebook.path.clone(), Path::to_path_buf),
+        };
+        let Some(level_node) = node_at(notebooks, &level).filter(|n| matches!(n.info.kind, NodeKind::SectionGroup | NodeKind::Notebook)) else {
+            return;
+        };
+        let tabs = crate::sectiontabs::tabs(level_node);
+        let all = crate::sectiontabs::tabs(notebook);
+        let up = (level_node.info.kind == NodeKind::SectionGroup)
+            .then(|| level.parent().and_then(|p| node_at(notebooks, p)).map(|n| n.info.title.clone()).unwrap_or_default());
         let tokens = self.tokens;
         let mut chosen = None;
         let mut acts = Vec::new();
@@ -10894,13 +11574,27 @@ impl NoteCraftApp {
                         self.node_menu_items(ui, node, self.open.contains(section), has_kids, &mut acts);
                     }
                 };
-                chosen = crate::sectiontabs::show(ui, &tabs, here.as_deref(), &tokens, &mut menu);
+                chosen = crate::sectiontabs::show(ui, &tabs, &all, up.as_deref(), here.as_deref(), &tokens, &mut menu);
             });
         for act in acts {
             self.apply(act);
         }
-        if let Some(section) = chosen {
-            self.open_section(&section);
+        match chosen {
+            Some(crate::sectiontabs::Pick::Section(section)) => self.open_section(&section),
+            Some(crate::sectiontabs::Pick::Group(group)) => self.open_group(&group),
+            // Moved in the row (issue #555): placed as a drag in the notebooks places it, so the
+            // tree, the list of every section and the file order all follow, and the page open
+            // stays open.
+            Some(crate::sectiontabs::Pick::Move(section, drop)) => {
+                self.place_dropped(&section, &drop);
+            }
+            Some(crate::sectiontabs::Pick::Up) => {
+                if let Some(above) = level.parent() {
+                    let section = here.filter(|h| node_at(self.session.tree(), h).is_some_and(|n| n.info.kind == NodeKind::Section));
+                    self.tabs_view = Some((section, above.to_path_buf()));
+                }
+            }
+            None => {}
         }
     }
 
@@ -10914,6 +11608,36 @@ impl NoteCraftApp {
                 .and_then(|s| node_at(self.session.tree(), s))
                 .filter(|n| n.info.kind == NodeKind::Section && first_page(std::slice::from_ref(*n), &n.path).is_none())
                 .map(|n| (n.path.clone(), n.info.title.clone()));
+            // A section group gone into that has no sections yet (issue #511).
+            let empty_group = self
+                .selected
+                .as_ref()
+                .and_then(|s| node_at(self.session.tree(), s))
+                .filter(|n| n.info.kind == NodeKind::SectionGroup && sections_under(std::slice::from_ref(*n), &n.path).is_empty())
+                .map(|n| (n.path.clone(), n.info.title.clone()));
+            if self.editor.is_none()
+                && let Some((group, title)) = empty_group
+            {
+                let mut add = false;
+                ui.vertical_centered(|ui| {
+                    ui.add_space(ui.available_height() * 0.25);
+                    ui.label(egui::RichText::new(title).size(20.0).strong().color(self.tokens.text));
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new(crate::tl_id!("ui.no_sections_in_this_group_yet")).color(self.tokens.text));
+                    ui.add_space(10.0);
+                    add = modal_button(ui, &self.tokens, crate::tl_id!("ui.add_the_first_section"), true).clicked();
+                });
+                if add {
+                    self.dialog = Some(Dialog::Add {
+                        parent: group,
+                        parent_kind: NodeKind::SectionGroup,
+                        title: String::new(),
+                        kind: NodeKind::Section,
+                        format: None,
+                    });
+                }
+                return;
+            }
             if self.editor.is_none()
                 && let Some((section, title)) = empty_section
             {
@@ -14236,9 +14960,17 @@ impl NoteCraftApp {
                 "templates": p.templates.iter().map(|t| json!({"id": t.id, "name": t.name, "category": t.category.id()})).collect::<Vec<_>>(),
                 "name": p.name,
             })),
+            // The search's results as listed, with their scope and order (issues #528 and #573).
+            "search": {
+                "query": self.searched,
+                "scope": format!("{:?}", self.search_scope).to_lowercase(),
+                "sort": format!("{:?}", self.search_sort).to_lowercase(),
+                "hits": self.hits.iter().zip(&self.hit_trails).map(|(h, trail)| json!({"title": h.title, "trail": trail})).collect::<Vec<_>>(),
+            },
             "tagsSummary": self.tags_pane.as_ref().map(|p| json!({
                 "scope": p.scope.id(),
                 "unchecked": p.unchecked,
+                "group": p.group.id(),
                 "lines": p.found.iter().map(|l| json!({"tag": l.tag.id(), "text": l.text, "done": l.done, "page": l.page, "section": l.section})).collect::<Vec<_>>(),
             })),
             // Back and Forward, and the Quick Access Toolbar's choices.
@@ -14284,6 +15016,7 @@ impl NoteCraftApp {
                 })),
                 "autoShapes": self.auto_shapes,
                 "tabsLayout": self.tabs_layout,
+                "pagesRight": self.pages_right,
                 // Draw > Ruler (issue #293): where it lies once it is out, in page points.
                 "ruler": match crate::inkpad::ruler(ctx) {
                     Some(crate::inkpad::RulerState::Placed(r)) => json!({"x": r.x, "y": r.y, "angle": r.angle, "degrees": r.shown_degrees()}),
@@ -14359,6 +15092,8 @@ impl NoteCraftApp {
                 "selectedImage": crate::containers::selected_image(ctx, &e.dir),
                 "selectedObject": crate::containers::selected_object(ctx, &e.dir).map(|(block, kind)| json!({"block": block, "kind": kind})),
                 "origin": [e.origin.x, e.origin.y],
+                // How far down the page is scrolled, in points.
+                "scrolled": self.page_offset_y,
                 // What can be taken back, and how many steps are kept.
                 "history": {"steps": e.history.len(), "at": e.history.at(), "canUndo": e.history.can_undo(), "canRedo": e.history.can_redo()},
             })),
@@ -14563,6 +15298,10 @@ impl NoteCraftApp {
             } else {
                 ctx.copy_text(text);
             }
+        }
+        // A search result's page opened from a synced folder: its words are found once it is in.
+        if self.find_on_open.is_some() {
+            self.apply_find_on_open(ctx);
         }
         let queued_paste = std::mem::take(&mut self.keyboard_paste_requested);
         let queued_plain = std::mem::take(&mut self.keyboard_paste_plain);
@@ -14896,6 +15635,25 @@ fn section_in_tree(tree: &[Node], page: &Path) -> Option<PathBuf> {
         })
     }
     walk(tree, page, None)
+}
+
+/// The sections inside the notebook or section group at `at`, groups within it included, in the
+/// order they are shown (issue #511).
+fn sections_under(tree: &[Node], at: &Path) -> Vec<PathBuf> {
+    fn walk(nodes: &[Node], out: &mut Vec<PathBuf>) {
+        for n in nodes {
+            match n.info.kind {
+                NodeKind::Section => out.push(n.path.clone()),
+                NodeKind::SectionGroup => walk(&n.children, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(node) = node_at(tree, at) {
+        walk(&node.children, &mut out);
+    }
+    out
 }
 
 /// The sections of the notebook at `notebook`, in the order the notebook shows them: each in
@@ -17442,5 +18200,34 @@ mod tabs_layout_tests {
         }
         let open = h.state().editor.as_ref().map(|e| e.dir.clone()).expect("a page open");
         assert!(open.starts_with(&section), "a tab opens a page of its section: {open:?}");
+    }
+}
+
+#[cfg(test)]
+mod search_hit_tests {
+    use super::find_words_in_blocks;
+    use notecraft_formats::{Block, Span};
+
+    fn para(text: &str) -> Block {
+        Block::Paragraph(vec![Span { text: text.into(), ..Default::default() }], Vec::new())
+    }
+
+    /// Issue #529, from review: the phrase when the page has it; else the query's words apart, as
+    /// the search matches them, in the block with the most of them; and never in a heading that
+    /// only repeats the title shown above the page.
+    #[test]
+    fn a_search_hit_is_found_as_a_phrase_or_word_by_word() {
+        let blocks = vec![
+            Block::Heading { level: 1, spans: vec![Span { text: "Marker notes".into(), ..Default::default() }], emoji: Vec::new() },
+            para("Only a marker here."),
+            para("Distant objects carry a Marker."),
+            para("The distant marker itself."),
+        ];
+        assert_eq!(find_words_in_blocks(&blocks, "distant marker", "Marker notes"), Some((3, 4, 18)), "the phrase first");
+        let apart = &blocks[..3];
+        assert_eq!(find_words_in_blocks(apart, "distant marker", "Marker notes"), Some((2, 0, 7)), "the block with both words, its first");
+        assert_eq!(find_words_in_blocks(&blocks[..2], "marker", "Marker notes"), Some((1, 7, 13)), "the title's echo is passed over");
+        assert_eq!(find_words_in_blocks(&blocks[..2], "marker", ""), Some((0, 0, 6)), "a title not shown is the page's own heading");
+        assert_eq!(find_words_in_blocks(&blocks, "absent", ""), None);
     }
 }
