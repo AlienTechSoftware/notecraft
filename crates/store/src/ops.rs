@@ -358,15 +358,40 @@ pub fn merge_section(source: &Path, dest: &Path) -> Result<Merged> {
         return Err(e);
     }
     let mut moved: Vec<(PathBuf, PathBuf, u32)> = Vec::new();
+    // Old folders a cross-drive move could not take away whole: their pages are moved, and what
+    // is left of them goes with the section.
+    let mut left_behind: Vec<PathBuf> = Vec::new();
     let mut order = next_order(&dest);
     let mut pages = listed;
     // A few rounds at most: a page a sync tool brings in while this runs is moved as well.
     for _ in 0..4 {
         for (page, was) in &pages {
-            let target = unique_child(&dest, &tree::folder_name(page));
-            if let Err(e) = relocate(page, &target) {
-                return Err(undo_merge(&source, &dest, &moved, e));
+            // A free name, tried again should something else take it first.
+            let mut placed = None;
+            for _ in 0..3 {
+                let target = unique_child(&dest, &tree::folder_name(page));
+                match relocate(page, &target) {
+                    Ok(whole) => {
+                        placed = Some(Ok((target, whole)));
+                        break;
+                    }
+                    Err(e) if target.exists() => placed = Some(Err(e)),
+                    Err(e) => {
+                        placed = Some(Err(e));
+                        break;
+                    }
+                }
             }
+            let target = match placed {
+                Some(Ok((target, whole))) => {
+                    if !whole {
+                        left_behind.push(page.clone());
+                    }
+                    target
+                }
+                Some(Err(e)) => return Err(undo_merge(&source, &dest, &moved, e)),
+                None => return Err(undo_merge(&source, &dest, &moved, StoreError::invalid("no free name for a page"))),
+            };
             moved.push((page.clone(), target.clone(), *was));
             if let Err(e) = set_node_order(&target, order) {
                 return Err(undo_merge(&source, &dest, &moved, e));
@@ -374,14 +399,14 @@ pub fn merge_section(source: &Path, dest: &Path) -> Result<Merged> {
             order = order.saturating_add(10);
         }
         pages = match merge_pages(&source) {
-            Ok(more) => more,
+            Ok(more) => more.into_iter().filter(|(p, _)| !left_behind.contains(p)).collect(),
             Err(e) => return Err(undo_merge(&source, &dest, &moved, e)),
         };
         if pages.is_empty() {
             break;
         }
     }
-    if !node_children(&source).is_empty() {
+    if node_children(&source).iter().any(|c| !left_behind.contains(c)) {
         let e = StoreError::invalid("pages kept arriving in the section while it was merged; try again once the sync is done");
         return Err(undo_merge(&source, &dest, &moved, e));
     }
@@ -410,20 +435,41 @@ fn merge_pages(section: &Path) -> Result<Vec<(PathBuf, u32)>> {
 }
 
 /// Moves a folder to `to`: renamed where it can be, else copied whole and the old one taken
-/// away once the copy is complete. The copy is taken away again if the old one cannot be.
-fn relocate(from: &Path, to: &Path) -> Result<()> {
-    if fs::rename(from, to).is_ok() {
-        return Ok(());
+/// away once the copy is complete. `to` must not be there yet: it is made here, so a folder
+/// that something else put there in the meantime is never written into or taken away. A copy
+/// left incomplete is taken away again, being this move's own. Once the copy is complete it is
+/// kept whatever happens: if the old folder then cannot be taken away whole, `Ok(false)` says
+/// some of it is left behind, the page itself being whole in its new place.
+fn relocate(from: &Path, to: &Path) -> Result<bool> {
+    if to.exists() {
+        return Err(StoreError::io("move", to, std::io::Error::from(std::io::ErrorKind::AlreadyExists)));
     }
-    if let Err(e) = copy_tree(from, to) {
+    if fs::rename(from, to).is_ok() {
+        return Ok(true);
+    }
+    fs::create_dir(to).map_err(|e| StoreError::io("create", to, e))?;
+    let copied = (|| -> std::io::Result<()> {
+        for entry in fs::read_dir(from)? {
+            let entry = entry?;
+            let kind = entry.file_type()?;
+            let target = to.join(entry.file_name());
+            if kind.is_dir() {
+                copy_tree(&entry.path(), &target)?;
+            } else if kind.is_file() {
+                fs::copy(entry.path(), &target)?;
+            }
+        }
+        Ok(())
+    })();
+    if let Err(e) = copied {
         let _ = remove_tree(to);
         return Err(StoreError::io("copy", to, e));
     }
     if let Err(e) = remove_tree(from) {
-        let _ = remove_tree(to);
-        return Err(StoreError::io("move", from, e));
+        log::warn!("moved a page, but its old folder could not be taken away whole: from={from:?} to={to:?} error={e}");
+        return Ok(false);
     }
-    Ok(())
+    Ok(true)
 }
 
 /// Puts back the pages a merge had moved, last first, each in its old place with its old order,
@@ -433,7 +479,7 @@ fn undo_merge(source: &Path, dest: &Path, moved: &[(PathBuf, PathBuf, u32)], cau
     for (from, to, was) in moved.iter().rev() {
         let back = if from.exists() { unique_child(source, &tree::folder_name(from)) } else { from.clone() };
         match relocate(to, &back) {
-            Ok(()) => {
+            Ok(_) => {
                 let _ = set_node_order(&back, *was);
             }
             Err(_) => stuck.push(to.display().to_string()),
@@ -909,6 +955,23 @@ fn retitle_heading(body: &str, was: &str, now: &str, format: PageFormat) -> Stri
 mod tests {
     use super::*;
     use crate::testing::TempDir;
+
+    /// Issue #517 (review): a move never writes into or takes away a folder it did not make.
+    #[test]
+    fn a_move_leaves_a_folder_already_there_alone() {
+        let t = TempDir::new("relocate-taken");
+        let from = t.path().join("from");
+        let to = t.path().join("to");
+        fs::create_dir_all(&from).expect("from");
+        fs::write(from.join("a.txt"), "mine").expect("file");
+        fs::create_dir_all(&to).expect("someone else's");
+        fs::write(to.join("b.txt"), "theirs").expect("file");
+        assert!(relocate(&from, &to).is_err(), "the name is taken");
+        assert!(from.join("a.txt").is_file() && to.join("b.txt").is_file(), "both as they were");
+        let free = t.path().join("free");
+        assert!(relocate(&from, &free).expect("moved"), "a whole move");
+        assert!(!from.exists() && free.join("a.txt").is_file());
+    }
 
     /// Issue #517: a section's pages go into another section after its own, in their order,
     /// with their subpages, files and ids; a folder name taken there gets the next free one;

@@ -1760,6 +1760,19 @@ fn table(
         (Some(x0), Some(x1), Some(y0), Some(y1)) => Some(egui::Rect::from_min_max(egui::pos2(*x0, *y0), egui::pos2(*x1, *y1))),
         _ => None,
     };
+    // A place found by Find on this page in one of the cells is brought into view: that cell,
+    // not the whole table, which may be taller than the window (issue #526).
+    let marks_id = find_marks_id(ui.ctx());
+    if let Some(cell) = ui.data(|d| d.get_temp::<FindMarks>(marks_id)).filter(|m| m.reveal == Some(i)).and_then(|m| m.reveal_cell)
+        && let Some(rect) = cell_rect(cell.0, cell.1)
+    {
+        ui.scroll_to_rect(rect, Some(egui::Align::Center));
+        ui.data_mut(|d| {
+            let marks = d.get_temp_mut_or_default::<FindMarks>(marks_id);
+            marks.reveal = None;
+            marks.reveal_cell = None;
+        });
+    }
     // Every cell, as a rectangle that touches its neighbours: a pointer anywhere in the
     // table is in exactly one cell, borders and gaps included.
     // A cell under a merged cell answers as the merged cell, whose words are in its first cell,
@@ -2553,7 +2566,7 @@ pub fn show_blocks(
     }
 
     // Find on this page (issue #526): every place the words are, lit, the current one more so.
-    let found = ui.data(|d| d.get_temp::<FindMarks>(find_marks_id()));
+    let found = ui.data(|d| d.get_temp::<FindMarks>(find_marks_id(ui.ctx())));
     for i in range.start..range.end.min(count) {
         let Some(block) = blocks.get(i).cloned() else { continue };
         // The title area above the page is already showing this; see `is_title_echo`.
@@ -2589,11 +2602,13 @@ pub fn show_blocks(
             if let Some(what) = table(ui, &block, i, caret, t, page, cols, &mut changed, zoom, true) {
                 action = Some(what);
             }
-            // A place found in one of its cells is brought into view (issue #526).
-            if found.as_ref().is_some_and(|f| f.reveal == Some(i)) {
+            // A place found in one of its cells is brought into view (issue #526): the table
+            // shows the cell itself; this is for one whose cell it could not place.
+            let id = find_marks_id(ui.ctx());
+            if ui.data(|d| d.get_temp::<FindMarks>(id)).is_some_and(|f| f.reveal == Some(i)) {
                 let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().min.y.max(top + 1.0));
                 ui.scroll_to_rect(rect, Some(egui::Align::Center));
-                ui.data_mut(|d| d.get_temp_mut_or_default::<FindMarks>(find_marks_id()).reveal = None);
+                ui.data_mut(|d| d.get_temp_mut_or_default::<FindMarks>(id).reveal = None);
             }
             frame_block(ui, top, editing, t, zoom);
             continue;
@@ -3087,7 +3102,8 @@ pub fn show_blocks(
             // The current place found is brought into view once, when it becomes current.
             if found.as_ref().is_some_and(|f| f.reveal == Some(i)) {
                 ui.scroll_to_rect(resp.rect, Some(egui::Align::Center));
-                ui.data_mut(|d| d.get_temp_mut_or_default::<FindMarks>(find_marks_id()).reveal = None);
+                let id = find_marks_id(ui.ctx());
+                ui.data_mut(|d| d.get_temp_mut_or_default::<FindMarks>(id).reveal = None);
             }
             log::trace!(
                 "page block rendered: block={} stamp={} kind={} rect=({:.1},{:.1})-({:.1},{:.1}) size=({:.1}x{:.1})",
@@ -3184,11 +3200,14 @@ pub struct FindMarks {
     pub found: Vec<(usize, usize, usize)>,
     pub current: Option<usize>,
     pub reveal: Option<usize>,
+    /// The table cell to bring into view, when the place to reveal is in one.
+    pub reveal_cell: Option<(usize, usize)>,
 }
 
-/// Where the window keeps [`FindMarks`] for the page to draw.
-pub fn find_marks_id() -> egui::Id {
-    egui::Id::new("page-find-marks")
+/// Where a window keeps [`FindMarks`] for its page to draw: one place per window, so a find in
+/// one note window lights nothing in another.
+pub fn find_marks_id(ctx: &egui::Context) -> egui::Id {
+    egui::Id::new(("page-find-marks", ctx.viewport_id()))
 }
 
 /// A selection that runs across more than one block: where the drag began and where it has

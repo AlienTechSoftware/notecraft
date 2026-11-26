@@ -74,8 +74,9 @@ and the bar says which of how many it is.
 
 With the bar closed, `F3` opens it again with the words last looked for. The words are matched as a
 phrase, across marks such as bold and across a line break, letter case aside, in the page's words
-and in each cell of its tables. Places in table cells and in a line that mixes the two directions
-of writing are found and gone to, and Escape puts the caret there, but they are not lit.
+and in each cell of its tables. Places in table cells, in a paragraph with a picture or an
+equation in its line, and in a line that mixes the two directions of writing are found, counted
+and gone to, and Escape puts the caret there, but they are not lit.
 
 ## Page view
 

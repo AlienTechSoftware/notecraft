@@ -11192,10 +11192,11 @@ impl NoteCraftApp {
 
     /// Hands the places found to the page to draw, and the current one to bring into view.
     fn publish_find(&mut self, ctx: &Context, reveal: bool) {
-        let id = pageedit::find_marks_id();
+        let id = pageedit::find_marks_id(ctx);
         match self.page_find.as_ref() {
             Some(find) => {
                 let now = find.found.get(find.current).copied();
+                let reveal_cell = if reveal { now.and_then(|f| f.1) } else { None };
                 let reveal = if reveal { now.map(|f| f.0) } else { None };
                 // Places in the words are lit; one in a table cell is gone to, not lit.
                 let lit: Vec<(usize, usize, usize)> = find.found.iter().filter(|f| f.1.is_none()).map(|&(b, _, s, e)| (b, s, e)).collect();
@@ -11206,6 +11207,7 @@ impl NoteCraftApp {
                     marks.current = current;
                     if reveal.is_some() {
                         marks.reveal = reveal;
+                        marks.reveal_cell = reveal_cell;
                     }
                 });
             }

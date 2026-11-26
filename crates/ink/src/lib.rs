@@ -443,8 +443,10 @@ fn cut_round(stroke: &Stroke, x: f32, y: f32, reach: f32) -> Vec<Vec<Dab>> {
             run.clear();
         }
     };
+    // A reading in the same place as the one before is kept when its pressure differs, as
+    // `Stroke::add` keeps it: that is a press, and it shows.
     let push = |run: &mut Vec<Dab>, d: Dab| {
-        if run.last().is_none_or(|last| last.distance_to(d) > 0.01) {
+        if run.last().is_none_or(|last| last.distance_to(d) > 0.01 || (last.pressure - d.pressure).abs() >= 0.02) {
             run.push(d);
         }
     };
@@ -523,6 +525,14 @@ mod tests {
         assert_eq!(d2.strokes.len(), 1, "the line is still there");
         let end = d2.strokes[0].dabs.last().copied().expect("an end");
         assert!(end.x > 199.0 && end.x < 200.0, "cut at the edge: {end:?}");
+        // A press in one place, away from the rub, keeps its readings as they were.
+        let mut d3 = Drawing::new(300.0, 300.0);
+        let mut pressed = Stroke::new(Tool::Pen, Rgb::BLACK, 2.0);
+        pressed.dabs = vec![Dab::new(0.0, 50.0, 0.2), Dab::new(0.0, 50.0, 1.0), Dab::new(200.0, 50.0, 1.0)];
+        d3.add(pressed);
+        assert!(d3.erase_points_at(100.0, 50.0, 3.0));
+        let left = &d3.strokes[0].dabs;
+        assert!(left.len() >= 3 && (left[0].pressure - 0.2).abs() < 1e-6 && (left[1].pressure - 1.0).abs() < 1e-6, "{left:?}");
         // A dot under it goes.
         let mut dot = Stroke::new(Tool::Pen, Rgb::BLACK, 2.0);
         dot.dabs = vec![Dab::new(250.0, 250.0, 0.5)];
