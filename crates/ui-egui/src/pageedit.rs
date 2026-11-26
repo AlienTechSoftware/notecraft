@@ -835,8 +835,6 @@ pub fn wrap_selection_with(text: &str, selection: (usize, usize), open: &str, cl
     (format!("{before}{open}{middle}{close}{after}"), (start, end))
 }
 
-/// Puts `insert` where the caret is, replacing whatever is selected. Returns the new text
-/// and where the caret ends up.
 /// A web address typed just before the caret, as the next space or line ends it (issue #540): the
 /// characters it covers and where it leads. Only `http://`, `https://` and `www.` addresses, in
 /// the words of a paragraph, heading, list item or quote; not in a code block, a table cell, a
@@ -852,13 +850,19 @@ pub fn url_before_caret(blocks: &[Block], caret: &Caret) -> Option<(usize, usize
     }
     let chars: Vec<char> = caret.text.chars().collect();
     let at = caret.selection.0.min(chars.len());
-    let start = chars[..at].iter().rposition(|c| c.is_whitespace()).map_or(0, |i| i + 1);
+    let mut start = chars[..at].iter().rposition(|c| c.is_whitespace()).map_or(0, |i| i + 1);
+    // An address in brackets or quotes: what opens round it stays outside the link.
+    while start < at && matches!(chars[start], '(' | '"' | '\'' | '[' | '<' | '{' | '\u{201c}' | '\u{2018}') {
+        start += 1;
+    }
     let mut end = at;
     loop {
         let &last = chars[start..end].last()?;
         let opened = chars[start..end].iter().filter(|c| **c == '(').count();
         let closed = chars[start..end].iter().filter(|c| **c == ')').count();
-        if matches!(last, '.' | ',' | ';' | ':' | '!' | '?' | '\'' | '"') || (last == ')' && closed > opened) {
+        if matches!(last, '.' | ',' | ';' | ':' | '!' | '?' | '\'' | '"' | '\u{201d}' | '\u{2019}' | ']' | '>' | '}')
+            || (last == ')' && closed > opened)
+        {
             end -= 1;
         } else {
             break;
@@ -882,7 +886,8 @@ pub fn url_before_caret(blocks: &[Block], caret: &Caret) -> Option<(usize, usize
     let inline = caret.inline.clone().unwrap_or_else(|| InlineEdit::new(block, true));
     let mut from = 0;
     for span in inline.spans() {
-        let to = from + span.text.chars().count();
+        // A picture is one character of the line, whatever its words for a screen reader.
+        let to = from + if span.image.is_some() { 1 } else { span.text.chars().count() };
         if to > start && from < end && (span.link.is_some() || span.code) {
             return None;
         }
@@ -977,6 +982,8 @@ pub fn insert_plain_lines(blocks: &mut Vec<Block>, caret: &mut Caret, lines: &[&
     count
 }
 
+/// Puts `insert` where the caret is, replacing whatever is selected. Returns the new text
+/// and where the caret ends up.
 pub fn insert_at_caret(text: &str, selection: (usize, usize), insert: &str) -> (String, usize) {
     let chars: Vec<char> = text.chars().collect();
     let (a, b) = (selection.0.min(selection.1).min(chars.len()), selection.0.max(selection.1).min(chars.len()));
@@ -4439,6 +4446,41 @@ mod tests {
 
     fn blocks(md: &str) -> Vec<Block> {
         notecraft_formats::markdown::parse(md)
+    }
+
+    /// Issue #540: an address typed in brackets or quotes is linked without them, and a picture
+    /// earlier in the line counts as one character when looking for links and code.
+    #[test]
+    fn a_typed_address_leaves_its_brackets_and_counts_a_picture_once() {
+        let at = |md: &str, text: &str| {
+            let blocks = blocks(md);
+            let n = text.chars().count();
+            let caret =
+                Caret { block: 0, text: text.to_string(), focus: true, selection: (n, n), place: Some(n), cell: None, span: None, inline: None };
+            url_before_caret(&blocks, &caret).map(|(a, b, href)| (text.chars().skip(a).take(b - a).collect::<String>(), href))
+        };
+        for (typed, words) in [
+            ("see (https://a.test/x)", "https://a.test/x"),
+            ("see \"https://a.test/x\"", "https://a.test/x"),
+            ("see <www.a.test>", "www.a.test"),
+            ("see [https://a.test/x].", "https://a.test/x"),
+            ("see \u{201c}https://a.test/x\u{201d}", "https://a.test/x"),
+            ("see (https://a.test/x_(y))", "https://a.test/x_(y)"),
+        ] {
+            let found = at(typed, typed).unwrap_or_else(|| panic!("{typed}: an address"));
+            assert_eq!(found.0, words, "{typed}");
+        }
+        assert!(at("(", "(").is_none(), "nothing but the bracket");
+        // A picture before a typed address: its words for a screen reader are not counted, so
+        // the link that follows it is still seen as a link, and plain words after it are not.
+        let md = "![a long description](p.png) [https://b.test](https://b.test)";
+        let blocks = blocks(md);
+        let inline = InlineEdit::new(&blocks[0], true);
+        let text = inline.text().to_string();
+        let n = text.chars().count();
+        let caret =
+            Caret { block: 0, text: text.clone(), focus: true, selection: (n, n), place: Some(n), cell: None, span: None, inline: Some(inline) };
+        assert!(url_before_caret(&blocks, &caret).is_none(), "already a link: {text:?}");
     }
 
     /// Issue #163: the Link dialog finds the link the caret is in, writes one that reads back as

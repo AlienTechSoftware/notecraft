@@ -83,7 +83,9 @@ fn font_row(ui: &mut Ui, name: &str, current: bool, preview: bool, wanted: &mut 
         ui.horizontal(|ui| {
             ui.set_min_height(height);
             ui.add_space(INDENT);
-            ui.selectable_label(current, name_text(ui, name, preview))
+            // As wide as the list leaves it, a name too long for it cut short with an ellipsis
+            // rather than widening the list (issue #506).
+            ui.add_sized(egui::vec2(ui.available_width(), height), egui::Button::selectable(current, name_text(ui, name, preview)).truncate())
         })
         .inner
     } else {

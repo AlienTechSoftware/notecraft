@@ -10068,8 +10068,8 @@ fn the_size_list_opens_under_the_size_box() {
     h.key_press(egui::Key::Escape);
     settle(&mut h);
     h.get_by_label("Font Family").click();
-    h.run();
-    h.run();
+    // Its rows show each family in its own font, read in the background.
+    h.run_steps(12);
     let widest =
         h.query_all_by_role(egui::accesskit::Role::Button).filter(|n| n.rect().min.y > boxed.max.y).map(|n| n.rect().width()).fold(0.0, f32::max);
     assert!(widest < 400.0, "the family list stays narrow: {widest}");
@@ -19019,6 +19019,22 @@ fn a_section_can_keep_a_template_for_its_new_pages() {
     assert!(text.contains("This week"), "from the template: {text}");
     let after = std::fs::read_to_string(notecraft_store::tree::page_file(&s.md_page).expect("page").1).expect("read");
     assert_eq!(before, after, "the page already there is as it was");
+    // A subpage, made under a page of the section, starts from the section's template too.
+    let sub = ask(&mut h, "engine.execute", json!({"command": "node.create", "params": {"parent": s.md_page.to_string_lossy(), "kind": "page"}}))
+        .expect("subpage");
+    let sub = PathBuf::from(sub.as_str().or_else(|| sub.pointer("/path").and_then(Value::as_str)).unwrap_or_default());
+    let text = std::fs::read_to_string(notecraft_store::tree::page_file(&sub).expect("page").1).expect("read");
+    assert!(text.contains("This week"), "the subpage is from the template: {text}");
+    // One with its own title is not.
+    let titled = ask(
+        &mut h,
+        "engine.execute",
+        json!({"command": "node.create", "params": {"parent": s.md_page.to_string_lossy(), "kind": "page", "title": "Own words"}}),
+    )
+    .expect("titled subpage");
+    let titled = PathBuf::from(titled.as_str().or_else(|| titled.pointer("/path").and_then(Value::as_str)).unwrap_or_default());
+    let text = std::fs::read_to_string(notecraft_store::tree::page_file(&titled).expect("page").1).expect("read");
+    assert!(!text.contains("This week"), "{text}");
 
     // A saved template, then removed: a blank page, and a word about it.
     let saved =
@@ -19084,6 +19100,12 @@ fn several_pages_are_picked_and_moved_together() {
     settle(&mut h);
     let now = picked(&mut h);
     assert_eq!(now.len(), 3, "Gamma put down: {now:?}");
+    assert!(!now.iter().any(|p| p.ends_with("gamma-page")));
+    // Shift runs from the page last clicked, and leaves down the page Ctrl put down.
+    h.get_by_label("Beta page").click_modifiers(egui::Modifiers::SHIFT);
+    settle(&mut h);
+    let now = picked(&mut h);
+    assert_eq!(now.len(), 3, "Gamma stays down: {now:?}");
     assert!(!now.iter().any(|p| p.ends_with("gamma-page")));
 
     // Move or Copy from one of them takes all three, to Projects, in their order.

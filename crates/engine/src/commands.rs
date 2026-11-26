@@ -10,7 +10,7 @@ use notecraft_store::recycle::Recycled;
 use notecraft_store::tags::Tagged;
 use notecraft_store::{StoreError, assets, check, ops, page, page_templates, recycle, search, tags, tree};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub type Params = BTreeMap<String, String>;
 
@@ -78,8 +78,10 @@ fn node_create(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     // `title` out (or blank) creates it untitled, the "Add Page" case.
     // A new page in a section that has a template for its new pages starts from it (issue
     // #519), in the place asked for. A template no longer there gives a blank page as before.
+    // A subpage, made under a page, starts from the template of the section it is in.
+    let section = parent.ancestors().find(|a| tree::read_node(a).is_some_and(|n| n.kind != NodeKind::Page)).map(Path::to_path_buf);
     let template = (kind == NodeKind::Page && title.is_none() && p.get("format").is_none_or(|f| f.trim().is_empty()))
-        .then(|| ops::default_template(&parent))
+        .then(|| section.filter(|d| tree::read_node(d).is_some_and(|n| n.kind == NodeKind::Section)).and_then(|d| ops::default_template(&d)))
         .flatten()
         .and_then(|id| page_templates::find(s.root(), &id));
     if let Some(template) = template {

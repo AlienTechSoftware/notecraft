@@ -1749,6 +1749,10 @@ pub struct NoteCraftApp {
     quick_notes_waiting: bool,
     /// The pages picked with Ctrl or Shift, to move or copy together (issue #533).
     picked_pages: Vec<PathBuf>,
+    /// Where a Shift-range of picked pages starts: the page last Ctrl- or Shift-clicked.
+    pick_anchor: Option<PathBuf>,
+    /// The pages Ctrl put down since the picking began, which a range leaves down.
+    put_down: HashSet<PathBuf>,
     /// A page opened from a search result, and the words to put the caret on there once it is
     /// open (issue #529).
     find_on_open: Option<(PathBuf, String)>,
@@ -2076,6 +2080,8 @@ impl NoteCraftApp {
             tabs_view: None,
             quick_notes_waiting: false,
             picked_pages: Vec::new(),
+            pick_anchor: None,
+            put_down: HashSet::new(),
             find_on_open: None,
             tags_pane: None,
             custom_tags: None,
@@ -2701,8 +2707,11 @@ impl NoteCraftApp {
         let value = match section {
             Some(section) if node_at(self.session.tree(), section).is_some_and(|n| n.info.kind == NodeKind::Section) => {
                 // Kept relative to the notebooks folder when it is inside it, so the choice moves
-                // with the folder.
-                section.strip_prefix(self.session.root()).map_or_else(|_| path_str(section), path_str)
+                // with the folder, and written with `/` so it reads the same on every system.
+                match section.strip_prefix(self.session.root()) {
+                    Ok(inside) => inside.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"),
+                    Err(_) => path_str(section),
+                }
             }
             Some(_) => {
                 self.complain(crate::tl_id!("ui.quick_notes_need_a_section"));
@@ -3479,6 +3488,7 @@ impl NoteCraftApp {
     fn run(&mut self, id: &str, p: &Params) -> Option<Output> {
         self.take_saves(true);
         let result = self.run_recording(id, p);
+        self.after_template_command(id);
         // A command may have written, replaced or removed a picture or an attachment: what the
         // window kept about files is let go, so the page shows the change at once.
         crate::fscache::forget_all();
@@ -3624,34 +3634,45 @@ impl NoteCraftApp {
     }
 
     /// Ctrl+click or Ctrl+Space on a page row adds it to the picked pages or takes it out;
-    /// Shift+click or Shift+Space picks every page from the last one picked (or the page open)
-    /// to it, in its section (issue #533). The page open counts as picked to begin with.
+    /// Shift+click or Shift+Space picks every page from the anchor to it, in its section (issue
+    /// #533). The anchor is the page last Ctrl- or Shift-clicked, or the page open to begin
+    /// with, which counts as picked. A range does not pick again a page that Ctrl put down,
+    /// unless it is the page Shift-clicked.
     fn pick_page(&mut self, page: &Path, range: bool) {
         if self.picked_pages.is_empty()
             && let Some(open) = self.selected.clone().filter(|p| notecraft_store::tree::page_file(p).is_some())
         {
-            self.picked_pages.push(open);
+            self.picked_pages.push(open.clone());
+            self.pick_anchor = Some(open);
+            self.put_down.clear();
         }
         if range {
-            let anchor = self.picked_pages.last().cloned();
             let section = section_for(page);
             let listed = section.as_ref().and_then(|s| node_at(self.session.tree(), s)).map(|s| pages_in_order(&s.children)).unwrap_or_default();
             let at = |p: &Path| listed.iter().position(|l| l == p);
-            match (anchor.as_deref().and_then(at), at(page)) {
+            match (self.pick_anchor.as_deref().and_then(at), at(page)) {
                 (Some(a), Some(b)) => {
                     for p in &listed[a.min(b)..=a.max(b)] {
-                        if !self.picked_pages.contains(p) {
+                        if (p == page || !self.put_down.contains(p)) && !self.picked_pages.contains(p) {
                             self.picked_pages.push(p.clone());
                         }
                     }
                 }
-                _ => self.picked_pages.push(page.to_path_buf()),
+                _ => {
+                    if !self.picked_pages.iter().any(|p| p == page) {
+                        self.picked_pages.push(page.to_path_buf());
+                    }
+                }
             }
+            self.put_down.remove(page);
         } else if let Some(at) = self.picked_pages.iter().position(|p| p == page) {
             self.picked_pages.remove(at);
+            self.put_down.insert(page.to_path_buf());
         } else {
             self.picked_pages.push(page.to_path_buf());
+            self.put_down.remove(page);
         }
+        self.pick_anchor = Some(page.to_path_buf());
         let count = self.picked_pages.len();
         if count == 0 {
             self.say(crate::tl_id!("ui.no_pages_picked"));
@@ -5207,6 +5228,8 @@ impl NoteCraftApp {
             Act::Select(p) => {
                 // A plain click starts afresh: the pages picked are put down (issue #533).
                 self.picked_pages.clear();
+                self.pick_anchor = None;
+                self.put_down.clear();
                 // A folder with a page file is a page. Asked by its name only: reading the page,
                 // as `read_node` does, waited for it on a synced folder before it was even opened.
                 let is_page = notecraft_store::tree::page_file(&p).is_some();
@@ -11129,6 +11152,14 @@ impl NoteCraftApp {
     }
 
     /// The Tags Summary pane, on the right of the page as OneNote has it.
+    /// A command that saves or removes a template: the open Page Templates pane reads the list
+    /// again, so a section's template that is gone is shown as gone.
+    fn after_template_command(&mut self, id: &str) {
+        if matches!(id, "page.save_template" | "page.remove_template") {
+            self.refresh_templates();
+        }
+    }
+
     /// Reads the templates again: the built-in ones and those kept in the notebooks folder.
     fn refresh_templates(&mut self) {
         let found = notecraft_store::page_templates::list(self.session.root());
@@ -15266,8 +15297,9 @@ impl NoteCraftApp {
                 if !id.starts_with("export.") && (self.page_conflict || self.is_dirty()) {
                     return Err("Resolve or save the current page before running another command.".into());
                 }
-                let out = if id.starts_with("export.") { self.session.run(id, &params) } else { self.run_recording(id, &params) }
-                    .map_err(|e| e.to_string())?;
+                let out = if id.starts_with("export.") { self.session.run(id, &params) } else { self.run_recording(id, &params) };
+                self.after_template_command(id);
+                let out = out.map_err(|e| e.to_string())?;
                 if matches!(id, "window.new" | "window.quick-note")
                     && let Output::Path(path) = &out
                 {

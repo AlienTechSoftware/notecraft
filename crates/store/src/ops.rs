@@ -656,7 +656,8 @@ pub fn set_default_template(section: &Path, template: Option<&str>) -> Result<()
     }
     let file = section.join("_node.toml");
     let text = fs::read_to_string(&file).map_err(|_| StoreError::NotFound(format!("{} is not a NoteCraft folder", section.display())))?;
-    let kept: String = text.lines().filter(|l| !l.trim_start().starts_with("template =")).map(|l| format!("{l}\n")).collect();
+    // Every line the reader takes for the key, however it is spaced, so clearing clears it.
+    let kept: String = text.lines().filter(|l| l.split_once('=').is_none_or(|(key, _)| key.trim() != "template")).map(|l| format!("{l}\n")).collect();
     let out = match template.map(str::trim).filter(|t| !t.is_empty()) {
         Some(id) => format!("{kept}template = {}\n", kv::quote(id)),
         None => kept,
@@ -1062,6 +1063,13 @@ mod tests {
         assert_eq!(default_template(&section).as_deref(), Some("saved:mine"), "set again, not added twice");
         set_default_template(&section, None).expect("clear");
         assert_eq!(default_template(&section), None);
+        // Written by hand without the spaces: still read, and still cleared.
+        let file = section.join("_node.toml");
+        let text = fs::read_to_string(&file).expect("read");
+        fs::write(&file, format!("{text}template=\"builtin:grid\"\n")).expect("write");
+        assert_eq!(default_template(&section).as_deref(), Some("builtin:grid"));
+        set_default_template(&section, None).expect("clear again");
+        assert_eq!(default_template(&section), None, "however it was spaced");
         assert!(read_node(&section).is_some_and(|n| n.kind == NodeKind::Section), "the section's other lines are kept");
         set_color(&section, Some(NodeColor::Teal)).expect("set");
         assert_eq!(read_node(&section).and_then(|i| i.color), Some(NodeColor::Teal));
