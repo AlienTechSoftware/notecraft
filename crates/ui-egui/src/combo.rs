@@ -83,7 +83,9 @@ fn font_row(ui: &mut Ui, name: &str, current: bool, preview: bool, wanted: &mut 
         ui.horizontal(|ui| {
             ui.set_min_height(height);
             ui.add_space(INDENT);
-            ui.selectable_label(current, name_text(ui, name, preview))
+            // As wide as the list leaves it, a name too long for it cut short with an ellipsis
+            // rather than widening the list (issue #506).
+            ui.add_sized(egui::vec2(ui.available_width(), height), egui::Button::selectable(current, name_text(ui, name, preview)).truncate())
         })
         .inner
     } else {
@@ -112,6 +114,11 @@ fn name_text(ui: &Ui, name: &str, preview: bool) -> egui::RichText {
 }
 
 /// Shows the combo box and returns what was chosen this frame.
+/// The width of a list of font families, in points: room for a long name in its own face.
+const FAMILY_LIST_WIDTH: f32 = 240.0;
+/// The narrowest a list of sizes is drawn, in points.
+const SIZE_LIST_MIN_WIDTH: f32 = 56.0;
+
 pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
     let mut outcome = Outcome::default();
     // How the value was chosen, for usage events: typed, or picked from the list.
@@ -305,7 +312,15 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                 crate::theme::picker_popup_style(spec.tokens).apply(ui.style_mut());
             }
             Frame::popup(ui.style()).show(ui, |ui| {
-                ui.set_min_width(value_box.rect.width());
+                // As wide as its rows need, and no wider (issue #506): the sizes the width of
+                // their box and its arrow, the families wide enough for a font's name. Left to
+                // itself the list took all the room to the window's edge.
+                let width = if spec.preview || !spec.sections.is_empty() {
+                    FAMILY_LIST_WIDTH.max(value_box.rect.width())
+                } else {
+                    (value_box.rect.width() + arrow.rect.width()).max(SIZE_LIST_MIN_WIDTH)
+                };
+                ui.set_width(width);
                 // An empty list still shows its note and the Add Font row below, so a font can be
                 // added even when the installed fonts could not be read.
                 if rows.is_empty()
@@ -317,7 +332,7 @@ pub fn show(ui: &mut Ui, text: Color32, spec: Spec<'_>) -> Outcome {
                 ui.set_max_height(280.0);
                 // Paint nothing outside the popup's own rectangle, whatever the rows below do.
                 let top = ui.max_rect().min;
-                let window = egui::Rect::from_min_size(top, egui::vec2(ui.max_rect().width(), 280.0));
+                let window = egui::Rect::from_min_size(top, egui::vec2(width, 280.0));
                 ui.set_clip_rect(window);
                 ScrollArea::vertical().max_height(280.0).min_scrolled_height(280.0).auto_shrink([false, false]).show(ui, |ui| {
                     if !recent_rows.is_empty() {

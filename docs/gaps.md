@@ -150,7 +150,10 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   names, a file in the program the system has for it, or a web address in the browser; the
   target is a path as written, so a renamed page breaks the links to it. Links by id are not
   defined (`folder-format.md` section 10). Not clickable yet: a link inside a table cell, and
-  one in a line that mixes left-to-right and right-to-left text.
+  one in a line that mixes left-to-right and right-to-left text. Insert > Link (Ctrl+K) can also find a
+  notebook, section or page by name and link to it (issue #539). A web address typed in the
+  words of a paragraph, heading, list item or quote becomes a link when a space or a new line
+  ends it (issue #540); not yet in a table cell, nor when pasted.
 - **One weight per bundled script.** Arabic, Hebrew, Devanagari, Chinese, Japanese and
   Korean draw from bundled Noto faces (the CJK one is 16 MB, most of the app's size), but in
   one weight each and with Simplified Chinese forms for characters the CJK scripts share; a
@@ -624,8 +627,9 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   rather than under the line. Page Templates opens a pane
   of templates by category (Academic, Blank, Business, Planners and the user's own); a click
   adds a page to the open section from one, and the open page can be saved as a template.
-  **Not built:** previews of the templates, a default template for new pages, and removing a
-  saved template from the pane (`page.remove_template` does it). Spreadsheet is
+  A section can keep a template its new pages start from, chosen at the foot of the pane
+  (issue #519). **Not built:** previews of the templates, and removing a saved template from
+  the pane (`page.remove_template` does it). Spreadsheet is
   available through the existing GridCraft integration when installed.
   Insert Space is
   OneNote's tool: with it in hand, a drag down the page moves every box and every stroke of

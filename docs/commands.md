@@ -100,6 +100,15 @@ List the page templates, built in and saved: one line each, with the id, the cat
 
 No parameters.
 
+## `section.set_template`
+
+Set the template new pages in a section start from.
+
+Parameters:
+
+- path (required): the section
+- template: the template's id, as page.templates lists it; left out, new pages start blank
+
 ## `page.from_template`
 
 A new page started from a template (changes the tree).
