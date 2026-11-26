@@ -59,6 +59,10 @@ pub fn showing(ctx: &egui::Context, page: &Path, block: usize) -> bool {
     ctx.data(|d| d.get_temp::<bool>(overlay_id(page, block))).unwrap_or(false)
 }
 
+/// Whether a read was asked for on this picture, so its overlay is shown once the boxes exist.
+fn pending_id(page: &Path, block: usize) -> Id {
+    Id::new(("image-text-pending", page.to_path_buf(), block))
+}
 fn set_showing(ctx: &egui::Context, page: &Path, block: usize, on: bool) {
     ctx.data_mut(|d| d.insert_temp(overlay_id(page, block), on));
 }
@@ -66,6 +70,12 @@ fn set_showing(ctx: &egui::Context, page: &Path, block: usize, on: bool) {
 /// The (>) button above a picture's top left corner, and its menu. The menu only changes the overlay
 /// state. "Detect text" is offered once the picture has a `.lines` file to show.
 pub fn menu(ui: &mut egui::Ui, picture_rect: Rect, page: &Path, block: usize, picture: &Path, src: &str, acts: &mut Vec<Act>, t: &Tokens) {
+    // A read asked for by Detect text shows the overlay once the boxes exist.
+    let pending = pending_id(page, block);
+    if ui.ctx().data(|d| d.get_temp::<bool>(pending)).unwrap_or(false) && !read_boxes(picture).is_empty() {
+        set_showing(ui.ctx(), page, block, true);
+        ui.ctx().data_mut(|d| d.remove::<bool>(pending));
+    }
     // Above the picture's top left corner, in the row the frames use for their emoji.
     let at = picture_rect.left_top() + vec2(0.0, -24.0);
     // Invisible until the pointer comes near the picture or a menu is open, so it never hides the text under it.
@@ -85,6 +95,7 @@ pub fn menu(ui: &mut egui::Ui, picture_rect: Rect, page: &Path, block: usize, pi
             } else if floating::menu_row(ui, None, crate::tl_id!("ui.image_text_detect"), t).clicked() {
                 if boxes.is_empty() {
                     // No text read yet: the app reads the page's pictures; the overlay comes once they are read.
+                    ui.ctx().data_mut(|d| d.insert_temp(pending_id(page, block), true));
                     acts.push(Act::ReadPageText);
                 } else {
                     set_showing(ui.ctx(), page, block, true);
