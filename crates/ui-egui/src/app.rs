@@ -12544,7 +12544,9 @@ impl NoteCraftApp {
                             // than inside the blocks, where a container drawn later would
                             // clear what an earlier one had just set.
                             let ink_owns_canvas = pen.pointer != ribbon::Pointer::Write;
-                            let pressed = ui.input(|i| i.pointer.any_pressed().then(|| i.pointer.interact_pos()).flatten());
+                            // Only a primary press moves or clears the selection. A right click
+                            // opens the page menu and keeps the words it acts on.
+                            let pressed = ui.input(|i| i.pointer.primary_pressed().then(|| i.pointer.interact_pos()).flatten());
                             let press_in_page = pressed.is_some_and(|pos| {
                                 viewport.contains(pos) && ui.ctx().layer_id_at(pos).is_none_or(|layer| layer.order < egui::Order::Foreground)
                             });
@@ -17433,6 +17435,15 @@ mod keep_boxes_tests {
             h.state_mut().ribbon_act(ribbon::Act::Insert("table"));
             assert_kept(&mut h, &format!("html={html} table"), was, 1);
         }
+    }
+
+    /// Issue #540 follow-up: the page menu's Link row opens the Link dialog, with the selected
+    /// words as its text.
+    #[test]
+    fn the_link_action_opens_the_link_dialog_with_the_selected_words() {
+        let (_t, _page, mut h) = two_boxes(false, "link-menu-opens-dialog");
+        h.state_mut().ribbon_act(ribbon::Act::Insert("link"));
+        assert!(matches!(h.state().dialog, Some(Dialog::Link { .. })), "the Link action opens the Link dialog");
     }
 
     #[test]

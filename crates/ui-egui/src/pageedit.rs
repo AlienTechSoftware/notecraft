@@ -2210,6 +2210,51 @@ pub fn linkable_address(address: &str) -> bool {
     !matches!(scheme.as_deref(), Some("javascript" | "vbscript" | "data"))
 }
 
+/// Issue #540: the web address that ends just before a space typed at `at` (in characters), as
+/// `(start, end, markup)`: where the address starts and ends (trailing punctuation left out) and
+/// `[address](address)` to write in its place. `None` when no safe address is there.
+pub fn autolink_typed_address(text: &str, at: usize) -> Option<(usize, usize, String)> {
+    let chars: Vec<char> = text.chars().collect();
+    let at = at.min(chars.len());
+    if at == 0 || chars[at - 1] != ' ' {
+        return None;
+    }
+    let space = at - 1;
+    let start = chars[..space].iter().rposition(|c| c.is_whitespace()).map_or(0, |p| p + 1);
+    let mut end = space;
+    while end > start && matches!(chars[end - 1], '.' | ',' | ';' | ':' | '!' | '?' | '\'' | '"' | ')') {
+        end -= 1;
+    }
+    let word: String = chars[start..end].iter().collect();
+    let web = word.starts_with("https://") || word.starts_with("http://");
+    let plain = !word.contains(['[', ']', '(', ')', '<', '>', '*', '_', '`', '\\']);
+    if !web || word.chars().count() <= "https://".len() || !plain || !linkable_address(&word) {
+        return None;
+    }
+    Some((start, end, format!("[{word}]({word})")))
+}
+
+/// Issue #540: when a space is typed after a web address, the address becomes a link. The
+/// caret's text takes the link markup, which the next write turns into a real link. `true`
+/// when the text changed.
+pub fn autolink_typed(caret: &mut Caret, block: &Block) -> bool {
+    if caret.selection.0 != caret.selection.1 {
+        return false;
+    }
+    // Bring the spans up to what was typed, on a copy, so the link is made on the spans (as
+    // the Link dialog makes it) and not by writing markup into the text.
+    let mut scratch = block.clone();
+    caret.write(&mut scratch);
+    let at = caret.selection.0;
+    let Some((start, end, markup)) = autolink_typed_address(&caret.text, at) else {
+        return false;
+    };
+    caret.replace_range(block, (start, end), &markup);
+    caret.selection = (at, at);
+    caret.place = Some(at);
+    true
+}
+
 /// Sorts a table's rows by one column, as OneNote's Table > Sort does (issue #171). Whole rows
 /// move, so every cell stays with its row and keeps its formatting. The heading row is never
 /// sorted: it stays on top. `rows` limits the sort to the body rows from one table row to
@@ -2826,6 +2871,16 @@ pub fn show_blocks(
                                 });
                             }
                         }
+                        // A right click inside the words of a selection: the text box is about to
+                        // collapse it, so ask for it back for this frame. The page's menu then acts
+                        // on the words (Cut, Copy, Link) where they were.
+                        let right_here = ui.input(|input| input.pointer.button_pressed(egui::PointerButton::Secondary))
+                            && ui.input(|input| input.pointer.hover_pos()).is_some_and(|p| ui.max_rect().contains(p));
+                        if right_here && c.selection.0 != c.selection.1 {
+                            log::debug!("right click kept the selection: block={i} selection={:?}", c.selection);
+                            let restore = restore_selection_id(ui.ctx());
+                            ui.data_mut(|d| d.insert_temp(restore, (i, c.selection.0, c.selection.1)));
+                        }
                         let at = (i, c.text.clone(), c.selection);
                         steady_blink(ui, (at.0, &at.1, at.2), |ui| {
                             egui::TextEdit::singleline(&mut GraphemeBuffer(&mut c.text))
@@ -2843,6 +2898,10 @@ pub fn show_blocks(
                     #[cfg(feature = "voice")]
                     remember_caret_anchor(ui, &out, c);
                     let mut cursor_range = out.cursor_range;
+                    // Issue #540: a web address that a space has just followed becomes a link.
+                    if out.response.changed() && autolink_typed(c, &block) {
+                        ui.ctx().request_repaint();
+                    }
                     let (left, right, shift) = ui.input(|input| {
                         let mut left = false;
                         let mut right = false;
@@ -4509,6 +4568,28 @@ mod tests {
         for bad in ["", "  ", "javascript:alert(1)", "JavaScript:x", "data:text/html,x", "vbscript:x", "a\nb"] {
             assert!(!linkable_address(bad), "{bad:?}");
         }
+    }
+
+    /// Issue #540: a web address typed then followed by a space becomes a link, its display
+    /// text kept, with trailing punctuation left out of the link and literal in code.
+    #[test]
+    fn a_typed_web_address_becomes_a_link_when_a_space_follows() {
+        let typed = "see https://example.test/a. ";
+        let end = typed.chars().count();
+        let mut caret =
+            Caret { block: 0, text: typed.to_string(), focus: true, selection: (end, end), place: None, cell: None, span: None, inline: None };
+        let mut block = blocks("see https://example.test/a.").remove(0);
+        assert!(autolink_typed(&mut caret, &block), "the address before the space is linked");
+
+        caret.write(&mut block);
+        let Block::Paragraph(spans, _) = &block else { panic!("a paragraph") };
+        let linked: Vec<_> = spans.iter().filter(|s| s.link.is_some()).collect();
+        assert_eq!(linked.len(), 1, "one link: {spans:?}");
+        assert_eq!(linked[0].text, "https://example.test/a", "the period stays out of the link");
+        assert_eq!(linked[0].link.as_deref(), Some("https://example.test/a"));
+
+        let mut plain = Caret { text: "no space yet https://example.test".into(), selection: (33, 33), ..caret.clone() };
+        assert!(!autolink_typed(&mut plain, &block), "nothing happens until a space is typed");
     }
 
     /// Issue #165: the Format Painter picks up the formatting at the caret and puts exactly that
