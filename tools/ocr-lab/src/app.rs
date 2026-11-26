@@ -183,6 +183,8 @@ pub struct Lab {
     rules: ribbon::RuleLines,
     /// A text file shown in the main area instead of the picture: its path and its text.
     viewing_json: Option<(PathBuf, String)>,
+    /// The text of the open file as it is on disk. The check mark shows when the edited text differs.
+    viewing_saved: String,
     /// What the ribbon's pointer is set to: Type to select, or Draw to write with the pen in hand.
     pointer: ribbon::Pointer,
     /// The ribbon's chosen tab, and whether the ribbon is folded to its tab names.
@@ -228,6 +230,7 @@ impl Lab {
             open_path: Vec::new(),
             pointer: ribbon::Pointer::default(),
             viewing_json: None,
+            viewing_saved: String::new(),
             rules: ribbon::RuleLines::default(),
             stylus: Default::default(),
             sensitivity: 50,
@@ -1619,24 +1622,53 @@ impl Lab {
         }
     }
 
-    /// Loads a text file into the main area, read-only. Picking a sample or closing the view shows the picture again.
+    /// Loads a text file into the main area. It can be typed in; the check mark saves it. Picking a sample or closing the view shows the picture again.
     fn show_file(&mut self, path: &Path) {
         match std::fs::read_to_string(path) {
-            Ok(text) => self.viewing_json = Some((path.to_path_buf(), text.trim_start_matches('\u{feff}').to_string())),
+            Ok(text) => {
+                let text = text.trim_start_matches('\u{feff}').to_string();
+                self.viewing_saved = text.clone();
+                self.viewing_json = Some((path.to_path_buf(), text));
+            }
             Err(e) => self.status = format!("Could not read {}: {e}", path.display()),
+        }
+    }
+
+    /// Writes the open file's edited text back to its file, and makes it the saved text.
+    fn save_viewing(&mut self) {
+        let Some((path, text)) = self.viewing_json.clone() else { return };
+        match std::fs::write(&path, text.as_bytes()) {
+            Ok(()) => {
+                self.viewing_saved = text;
+                self.status = format!("Saved {}", path.display());
+            }
+            Err(e) => self.status = format!("Could not save {}: {e}", path.display()),
         }
     }
 
     fn picture_area(&mut self, ui: &mut egui::Ui) {
         // The OCR file, when it is open, replaces the picture until another sample is picked or the file row is clicked again.
-        if let Some((path, text)) = self.viewing_json.as_ref() {
-            ui.strong(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+        if let Some((path, text)) = self.viewing_json.as_mut() {
+            let dirty = *text != self.viewing_saved;
+            let mut save = false;
+            ui.horizontal(|ui| {
+                ui.strong(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+                if dirty && ui.small_button("✔").on_hover_text("Save this OCR file").clicked() {
+                    save = true;
+                }
+            });
             ui.separator();
             let font = egui::FontId::monospace(13.0);
             let plain = ui.visuals().text_color();
-            egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-                ui.label(crate::json_view::job(text, font, plain));
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                let mut layouter = |ui: &egui::Ui, s: &dyn egui::TextBuffer, _wrap: f32| {
+                    ui.fonts_mut(|f| f.layout_job(crate::json_view::job(s.as_str(), font.clone(), plain)))
+                };
+                ui.add(egui::TextEdit::multiline(text).code_editor().desired_width(f32::INFINITY).layouter(&mut layouter));
             });
+            if save {
+                self.save_viewing();
+            }
             return;
         }
         let Some(loaded) = self.loaded.as_ref() else {

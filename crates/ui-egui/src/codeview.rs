@@ -47,12 +47,14 @@ pub enum Kind {
     Text,
     /// A file shown by name, size and type only.
     Other,
+    /// An OCR file (`<picture>.ocr.json`): typed in by hand, and saved with its own save button.
+    Ocr,
 }
 
 impl Kind {
     /// Whether what is shown can be typed in.
     pub fn editable(self) -> bool {
-        matches!(self, Kind::PageFile | Kind::Ink | Kind::Svg | Kind::Diagram)
+        matches!(self, Kind::PageFile | Kind::Ink | Kind::Svg | Kind::Diagram | Kind::Ocr)
     }
 }
 
@@ -392,6 +394,9 @@ fn kind_of(path: &Path, name: &str, page_file: &str) -> Kind {
     if name == page_file {
         return Kind::PageFile;
     }
+    if name.ends_with(".ocr.json") {
+        return Kind::Ocr;
+    }
     let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
     match ext.as_str() {
         "svg" => {
@@ -551,6 +556,17 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                         state.loaded = None;
                         state.as_code = false;
                     }
+                    // An OCR file with unsaved edits shows a floppy on its row, like the lab's samples. A click saves it.
+                    if picked && entry.kind == Kind::Ocr && state.dirty {
+                        // Drawn on the row itself, at its right edge, so it sits beside the file name.
+                        let at = egui::Rect::from_min_size(egui::pos2(row.rect.right() - 24.0, row.rect.top() + 1.0), vec2(22.0, 18.0));
+                        // i18n-exempt: ✔ is the check mark that saves an edit; its meaning is in the hover text.
+                        let save = ui.put(at, egui::Button::new("✔").small()).on_hover_text(crate::tl_id!("ui.save_ocr_file"));
+                        if save.clicked() {
+                            out.wrote = Some((entry.name.clone(), state.text.clone()));
+                            state.dirty = false;
+                        }
+                    }
                 }
             });
         });
@@ -709,7 +725,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                         }
                     }
                 }
-                Kind::PageFile | Kind::Ink | Kind::Svg | Kind::Text | Kind::Diagram => {
+                Kind::PageFile | Kind::Ink | Kind::Svg | Kind::Text | Kind::Diagram | Kind::Ocr => {
                     if state.loaded.as_deref() != Some(entry.name.as_str()) {
                         let (text, cut) = read_for_view(&dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR)));
                         state.text = text;
@@ -829,7 +845,10 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                                 .show(ui);
                             if edit.response.changed() {
                                 state.dirty = true;
-                                out.wrote = Some((entry.name.clone(), state.text.clone()));
+                                // An OCR file is saved only by its floppy, not as it is typed.
+                                if entry.kind != Kind::Ocr {
+                                    out.wrote = Some((entry.name.clone(), state.text.clone()));
+                                }
                             }
                             if let Some((from, to)) = target {
                                 if jump {
