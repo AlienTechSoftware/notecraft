@@ -111,6 +111,8 @@ const DISCORD_URL: &str = "https://discord.gg/artcraft";
 
 /// Where the pen rack and the tool in hand are remembered between runs.
 const RACK_KEY: &str = "pen_rack";
+/// Which eraser the Draw tab's eraser is (issue #545).
+const ERASER_KEY: &str = "eraser";
 /// The size the whole window is drawn at, in percent: see `backstage::UI_SCALES`.
 const UI_SCALE_KEY: &str = "ui_scale";
 /// The paper File > Print used last, for the next print of a page with no paper of its own.
@@ -634,6 +636,19 @@ struct PinnedSearch {
     chosen: Option<usize>,
 }
 
+/// Find on this page (issue #526): the words looked for on the open page, every place they
+/// are, which is current, and the page's words they were found in, to find again when those
+/// change.
+struct PageFind {
+    page: PathBuf,
+    words: String,
+    found: Vec<FoundAt>,
+    current: usize,
+    seen_body: String,
+    /// The bar's field asks for the keyboard on its next frame.
+    focus: bool,
+}
+
 /// The order search results are listed in (issue #573). The best matches first is the usual one.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum SearchSort {
@@ -910,6 +925,57 @@ fn find_words_in_blocks(blocks: &[notecraft_formats::Block], words: &str, shown_
         }
     }
     best.map(|(_, at, start, end)| (at, start, end))
+}
+
+/// A place on the page the words were found (issue #526): the block, the table cell for one
+/// found in a table, and where they start and end in the characters the caret counts.
+type FoundAt = (usize, Option<(usize, usize)>, usize, usize);
+
+/// Every place on the page the words are, in reading order (issue #526). The words are matched
+/// as a phrase, letter case and the kind of space between them aside, in the blocks the page
+/// shows as words and in each cell of its tables, row by row; the title's own echo below the
+/// title is passed over, as the search's first find is.
+fn find_all_in_blocks(blocks: &[notecraft_formats::Block], words: &str, shown_title: &str) -> Vec<FoundAt> {
+    let lower = |c: char| c.to_lowercase().next().unwrap_or(c);
+    let needle: Vec<char> = words.split_whitespace().collect::<Vec<_>>().join(" ").chars().map(lower).collect();
+    let mut found = Vec::new();
+    if needle.is_empty() {
+        return found;
+    }
+    let places = |text: &str| -> Vec<(usize, usize)> {
+        let text: Vec<char> = text.chars().collect();
+        let mut out = Vec::new();
+        let mut start = 0;
+        while start + needle.len() <= text.len() {
+            let fits = needle.iter().enumerate().all(|(k, want)| {
+                let have = text[start + k];
+                (if have.is_whitespace() && *want == ' ' { ' ' } else { lower(have) }) == *want
+            });
+            if fits {
+                out.push((start, start + needle.len()));
+                start += needle.len();
+            } else {
+                start += 1;
+            }
+        }
+        out
+    };
+    for (at, b) in blocks.iter().enumerate() {
+        if let Some((rows, columns)) = pageedit::table_size(b) {
+            for row in 0..rows {
+                for column in 0..columns {
+                    let Some(text) = pageedit::cell_text(b, (row, column)) else { continue };
+                    found.extend(places(&text).into_iter().map(|(s, e)| (at, Some((row, column)), s, e)));
+                }
+            }
+            continue;
+        }
+        if !pageedit::is_writable(b) || pageedit::is_title_echo(blocks, at, shown_title) {
+            continue;
+        }
+        found.extend(places(&pageedit::caret_text(b)).into_iter().map(|(s, e)| (at, None, s, e)));
+    }
+    found
 }
 
 /// The note containers in the order the keyboard goes through them (issue #560): from the top
@@ -1413,6 +1479,12 @@ enum Dialog {
         path: PathBuf,
         title: String,
     },
+    /// Merge into Another Section (issue #517): the section whose pages go, and where.
+    MergeSection {
+        path: PathBuf,
+        title: String,
+        dest: Option<PathBuf>,
+    },
     /// Move or Copy (issue #167): where a page, section or section group goes.
     MoveOrCopy {
         path: PathBuf,
@@ -1601,6 +1673,8 @@ enum Act {
     Rename(PathBuf, String),
     /// Open Move or Copy for a page, section or section group.
     MoveOrCopy(PathBuf),
+    /// Open Merge into Another Section for a section (issue #517).
+    MergeSection(PathBuf),
     MakeSubpage(PathBuf),
     PromoteSubpage(PathBuf),
     MovePageUp(PathBuf),
@@ -1717,6 +1791,9 @@ pub struct NoteCraftApp {
     window_level_pending: bool,
     /// View > Dock to Desktop (issue #267): what docking changed, to put back on undocking.
     docked: Option<Docked>,
+    /// A window opened with View > New Docked Window docks itself once its screen is known: the
+    /// frames it has waited for that (issue #554).
+    dock_when_shown: Option<u32>,
     /// Set when docking was asked for and the window manager has not been told yet.
     dock_pending: bool,
     /// True when the window has no frame of the system's own (the app asked for none), so
@@ -1756,6 +1833,10 @@ pub struct NoteCraftApp {
     /// A page opened from a search result, and the words to put the caret on there once it is
     /// open (issue #529).
     find_on_open: Option<(PathBuf, String)>,
+    /// The find bar on the page, while it is open (issue #526).
+    page_find: Option<PageFind>,
+    /// The words last looked for on a page, which F3 looks for again (issue #526).
+    last_find: String,
     /// The Tags Summary, while it is open.
     tags_pane: Option<TagsPane>,
     /// Home > More tags > Customize Tags, while it is open (issue #259).
@@ -1851,6 +1932,8 @@ pub struct NoteCraftApp {
     ruler: bool,
     /// Draw > Automatic Shapes is on (issue #294). Kept in the settings.
     auto_shapes: bool,
+    /// Which eraser the eraser is (issue #545). Kept in the settings.
+    eraser: crate::inkpad::Eraser,
     /// Draw > Auto-switch (issue #9): the pen picks up a pen, and typing or the trackpad puts it
     /// down. On unless turned off.
     auto_switch: bool,
@@ -1993,6 +2076,7 @@ impl NoteCraftApp {
         let session_hide_title = session.settings.get("hide_title").map(|v| v.trim() == "true").unwrap_or(false);
         let session_snap = session.settings.get("snap_to_grid").map(|v| v.trim() == "true").unwrap_or(false);
         let session_auto_shapes = session.settings.get("auto_shapes").is_some_and(|v| v.trim() == "true");
+        let session_eraser = session.settings.get(ERASER_KEY).and_then(|v| crate::inkpad::Eraser::parse(&v)).unwrap_or_default();
         let session_auto_switch = session.settings.get("switch_by_device").is_none_or(|v| v.trim() != "false");
         let session_update_check_off = session.settings.get("update_check_off_at_start").is_some_and(|v| v.trim() == "true");
         let session_tabs_layout = session.settings.get("tabs_layout").is_some_and(|v| v.trim() == "true");
@@ -2047,6 +2131,7 @@ impl NoteCraftApp {
             always_on_top: false,
             window_level_pending: false,
             docked: None,
+            dock_when_shown: None,
             dock_pending: false,
             frameless: false,
             editor: None,
@@ -2083,6 +2168,8 @@ impl NoteCraftApp {
             pick_anchor: None,
             put_down: HashSet::new(),
             find_on_open: None,
+            page_find: None,
+            last_find: String::new(),
             tags_pane: None,
             custom_tags: None,
             picture_text: None,
@@ -2130,6 +2217,7 @@ impl NoteCraftApp {
             space_tool: false,
             ruler: false,
             auto_shapes: session_auto_shapes,
+            eraser: session_eraser,
             auto_switch: session_auto_switch,
             update_check_off: session_update_check_off,
             pen_picked_by_pen: false,
@@ -3535,6 +3623,63 @@ impl NoteCraftApp {
         self.dialog = Some(Dialog::MoveOrCopy { path: path.to_path_buf(), title: info.title, kind: info.kind, dest: None, with });
     }
 
+    /// Opens Merge into Another Section for a section (issue #517).
+    pub fn open_merge_section(&mut self, path: &Path) {
+        let Some(info) = notecraft_store::tree::read_node(path).filter(|n| n.kind == NodeKind::Section) else { return };
+        self.dialog = Some(Dialog::MergeSection { path: path.to_path_buf(), title: info.title, dest: None });
+    }
+
+    /// Merges the section `from` into `into` (issue #517): its pages go after those there, the
+    /// emptied section goes, and the window follows the pages: the page open, if it was one of
+    /// them, is opened where it went, and the section it went to is shown.
+    fn merge_section(&mut self, from: &Path, into: &Path) {
+        self.save_now();
+        if self.is_dirty() {
+            return;
+        }
+        let editor_path = self.editor.as_ref().map(|editor| editor.dir.clone());
+        let title = notecraft_store::tree::read_node(from).map(|n| n.title).unwrap_or_default();
+        let place = notecraft_store::tree::read_node(into).map(|n| n.title).unwrap_or_default();
+        let Some(Output::Text(report)) = self.run("section.merge", &params(&[("path", &path_str(from)), ("into", &path_str(into))])) else {
+            return;
+        };
+        // Where each page went, as the store moved it, by folder name: followed exactly, a
+        // name taken there and given the next free one included.
+        let moved: Vec<(PathBuf, PathBuf)> = serde_json::from_str::<serde_json::Value>(&report)
+            .ok()
+            .and_then(|v| v.get("moved").and_then(|m| m.as_array()).cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|pair| Some((from.join(pair.get(0)?.as_str()?), into.join(pair.get(1)?.as_str()?))))
+            .collect();
+        let mut opened = false;
+        for (old, new) in &moved {
+            self.nav.relocate(old, new);
+            let remap = |candidate: &Path| candidate.strip_prefix(old).map_or_else(|_| candidate.to_path_buf(), |suffix| new.join(suffix));
+            self.open = self.open.iter().map(|branch| remap(branch)).collect();
+            self.selected = self.selected.as_deref().map(remap);
+            // A page held by Cut or Copy is held where it went, cut or copied as it was.
+            if let Some((held, _)) = self.held_page.as_mut() {
+                *held = remap(held);
+            }
+            if let Some(editor_path) = editor_path.as_ref().filter(|p| p.starts_with(old)) {
+                self.open_page_inner(&remap(editor_path));
+                opened = true;
+            }
+        }
+        self.open.retain(|p| !p.starts_with(from));
+        // The section the pages went to is shown, with the groups it is in opened.
+        self.expand_to(into);
+        self.open.insert(into.to_path_buf());
+        if !opened && self.selected.as_deref().is_some_and(|p| p.starts_with(from)) {
+            self.selected = Some(into.to_path_buf());
+        }
+        self.say(crate::i18n::format_message_id(
+            "ui.section_merged",
+            &[("title", title.as_str()), ("place", place.as_str()), ("count", &moved.len().to_string())],
+        ));
+    }
+
     /// The places a node of `kind` can be moved or copied to, as (path, title, depth), in tree
     /// order: sections for a page, notebooks and section groups for a section or group. Never
     /// the node itself or anything inside it.
@@ -3897,6 +4042,23 @@ impl NoteCraftApp {
         self.ribbon_peek = false;
         self.always_on_top = true;
         self.say(crate::tl_id!("ui.the_window_is_docked"));
+    }
+
+    /// A window opened by View > New Docked Window (issue #554) docks itself as soon as the
+    /// screen it is on is known, which is a frame or two after it first shows. If the screen
+    /// is never told, it says so as Dock to Desktop does, after a second or so of frames.
+    fn dock_if_asked(&mut self, ctx: &Context) {
+        let Some(waited) = self.dock_when_shown else { return };
+        let known = ctx.input(|i| i.viewport().monitor_size.is_some());
+        if self.docked.is_some() {
+            self.dock_when_shown = None;
+        } else if known || waited >= 60 {
+            self.dock_when_shown = None;
+            self.toggle_dock(ctx);
+        } else {
+            self.dock_when_shown = Some(waited + 1);
+            ctx.request_repaint();
+        }
     }
 
     /// True while View > Dock to Desktop is on.
@@ -5328,6 +5490,7 @@ impl NoteCraftApp {
             Act::SetReadOnly(path, locked) => self.set_read_only(&path, locked),
             Act::Rename(path, title) => self.dialog = Some(Dialog::Rename { path, title }),
             Act::MoveOrCopy(path) => self.open_move_or_copy(&path),
+            Act::MergeSection(path) => self.open_merge_section(&path),
             Act::MakeSubpage(path) => self.reparent_page(&path, "node.demote"),
             Act::PromoteSubpage(path) => self.reparent_page(&path, "node.promote"),
             Act::MovePageUp(path) => {
@@ -5686,6 +5849,14 @@ impl NoteCraftApp {
                 .clicked()
         {
             acts.push(Act::MoveOrCopy(node.path.clone()));
+            ui.close();
+        }
+        // OneNote's Merge into Another Section, on a section's own menu (issue #517).
+        if node.info.kind == NodeKind::Section
+            && floating::menu_row_if(ui, !edits_off, Some(floating::Glyph::Icon(Icon::MoveDown)), crate::tl_id!("ui.merge_into_another_section"), t)
+                .clicked()
+        {
+            acts.push(Act::MergeSection(node.path.clone()));
             ui.close();
         }
         if has_kids
@@ -6938,6 +7109,8 @@ impl NoteCraftApp {
             can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo),
             can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
             can_ink_redo: self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
+            ink_held: self.pad.as_ref().is_some_and(|pad| pad.holding() > 0),
+            eraser: self.eraser,
             sensitivity: self.sensitivity,
             pressure_available: self.stylus.sample().pen,
             has_page: self.editor.is_some(),
@@ -7236,6 +7409,7 @@ impl NoteCraftApp {
         }
         match act {
             ribbon::Act::NewWindow => self.request_window(false),
+            ribbon::Act::NewDockedWindow => self.request_window_with(false, true),
             ribbon::Act::QuickNote => self.request_window(true),
             #[cfg(feature = "voice")]
             ribbon::Act::Dictate => self.toggle_dictation(),
@@ -7477,6 +7651,13 @@ impl NoteCraftApp {
                     self.replaying = !self.replaying;
                 }
             }
+            ribbon::Act::InkEraser(eraser) => {
+                self.eraser = eraser;
+                let _ = self.session.settings.set(ERASER_KEY, eraser.id());
+                self.pointer = ribbon::Pointer::Erase;
+                self.say(crate::i18n::format_message_id("ui.eraser_chosen", &[("eraser", crate::tl!(eraser.label()))]));
+            }
+            ribbon::Act::TurnInk(how) => self.turn_ink(how),
             ribbon::Act::ToggleAutoShapes => {
                 self.auto_shapes = !self.auto_shapes;
                 let _ = self.session.settings.set("auto_shapes", if self.auto_shapes { "true" } else { "false" });
@@ -8115,6 +8296,7 @@ impl NoteCraftApp {
             width: nib.width() * Self::sensitivity_width(self.sensitivity),
             gain: self.gain(),
             auto_shapes: self.auto_shapes,
+            eraser: self.eraser,
         }
     }
 
@@ -8157,6 +8339,22 @@ impl NoteCraftApp {
     }
 
     /// Takes the last stroke back out of the drawing on this page.
+    /// Draw > Rotate (issue #544): turns or mirrors the ink picked up, as one group about its
+    /// middle, and writes the drawing. It stays picked up, to be turned again or moved.
+    fn turn_ink(&mut self, how: notecraft_ink::pick::Turn) {
+        self.take_ink_save(true);
+        let Some(pad) = self.pad.as_mut().filter(|pad| pad.holding() > 0) else {
+            self.say(crate::tl_id!("ui.pick_up_ink_first"));
+            return;
+        };
+        pad.turn_held(how);
+        match pad.save() {
+            Ok(()) => self.say(crate::tl_id!("ui.ink_turned")),
+            Err(e) => self.complain(&crate::i18n::format_message_id("ui.cannot_write_the_drawing_error", &[("error", &e.to_string())])),
+        }
+        self.tell_kept_ink();
+    }
+
     fn ink_undo(&mut self) {
         // A write of the ink under way is finished before the drawing changes under it.
         self.take_ink_save(true);
@@ -10850,6 +11048,17 @@ impl NoteCraftApp {
     fn open_search_result(&mut self, ctx: &Context, path: &Path) {
         let hit = self.hits.iter().find(|hit| hit.path == path).cloned();
         let words = self.searched.trim().to_string();
+        // Find on this page, on the page open: every place on it is lit and gone through with
+        // the find bar, rather than the first alone (issue #526).
+        let same = |a: &Path, b: &Path| a == b || std::fs::canonicalize(a).ok().is_some_and(|a| std::fs::canonicalize(b).ok().as_ref() == Some(&a));
+        if self.search_scope == SearchScope::Page
+            && self.editor.as_ref().is_some_and(|ed| same(&ed.dir, path))
+            && hit.as_ref().is_none_or(|hit| hit.source == notecraft_store::search::Source::Page)
+        {
+            self.dismiss_search();
+            self.start_page_find(ctx, &words);
+            return;
+        }
         self.open_hit(ctx, path, hit.as_ref(), &words);
     }
 
@@ -10942,6 +11151,232 @@ impl NoteCraftApp {
             pinned.chosen = Some(index);
             let (hit, words) = (pinned.hits[index].clone(), pinned.query.trim().to_string());
             self.open_hit(ui.ctx(), &hit.path.clone(), Some(&hit), &words);
+        }
+    }
+
+    /// Opens the find bar on the open page with these words (issue #526): every place they are
+    /// is lit, the first is current and brought into view, and the bar says how many there are.
+    /// The caret is put down while the bar is open, so every place can be seen; closing the bar
+    /// puts it on the current place.
+    fn start_page_find(&mut self, ctx: &Context, words: &str) {
+        let Some(ed) = self.editor.as_mut() else {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        };
+        ed.caret = None;
+        ed.across = None;
+        self.page_find =
+            Some(PageFind { page: ed.dir.clone(), words: words.to_string(), found: Vec::new(), current: 0, seen_body: String::new(), focus: true });
+        self.refind_on_page(ctx, true);
+    }
+
+    /// Finds the words again on the page as it now is: when the bar opens, when the words in it
+    /// change, and when the page's words do. The current place stays the one it was, as near as
+    /// it can.
+    fn refind_on_page(&mut self, ctx: &Context, reveal: bool) {
+        let shown_title = if self.hide_title { String::new() } else { self.editor.as_ref().map(|ed| ed.title.clone()).unwrap_or_default() };
+        let (Some(find), Some(ed)) = (self.page_find.as_mut(), self.editor.as_ref()) else { return };
+        let was = find.found.get(find.current).copied();
+        find.found = find_all_in_blocks(&ed.blocks, &find.words, &shown_title);
+        find.seen_body.clone_from(&ed.body);
+        find.current = was.and_then(|w| find.found.iter().position(|f| *f >= w)).unwrap_or(0);
+        let count = find.found.len();
+        if reveal {
+            let message = if find.words.trim().is_empty() {
+                None
+            } else if count == 0 {
+                Some(crate::tl_id!("ui.find_no_matches").to_string())
+            } else {
+                Some(crate::i18n::format_message_id("ui.find_count", &[("current", "1"), ("count", &count.to_string())]))
+            };
+            if let Some(message) = message {
+                self.say(message);
+            }
+        }
+        self.publish_find(ctx, reveal);
+    }
+
+    /// Hands the places found to the page to draw, and the current one to bring into view.
+    fn publish_find(&mut self, ctx: &Context, reveal: bool) {
+        let id = pageedit::find_marks_id(ctx);
+        match self.page_find.as_ref() {
+            Some(find) => {
+                let now = find.found.get(find.current).copied();
+                let reveal_cell = if reveal { now.and_then(|f| f.1) } else { None };
+                let reveal = if reveal { now.map(|f| f.0) } else { None };
+                // Places in the words are lit; one in a table cell is gone to, not lit.
+                let lit: Vec<(usize, usize, usize)> = find.found.iter().filter(|f| f.1.is_none()).map(|&(b, _, s, e)| (b, s, e)).collect();
+                let current = now.filter(|f| f.1.is_none()).and_then(|f| lit.iter().position(|&(b, s, e)| (b, s, e) == (f.0, f.2, f.3)));
+                ctx.data_mut(|d| {
+                    let marks = d.get_temp_mut_or_default::<pageedit::FindMarks>(id);
+                    marks.found = lit;
+                    marks.current = current;
+                    if reveal.is_some() {
+                        marks.reveal = reveal;
+                        marks.reveal_cell = reveal_cell;
+                    }
+                });
+            }
+            None => ctx.data_mut(|d| d.remove::<pageedit::FindMarks>(id)),
+        }
+    }
+
+    /// F3 or Next, Shift+F3 or Previous: the next or previous place found becomes current,
+    /// round from the last to the first, and is brought into view.
+    fn page_find_step(&mut self, ctx: &Context, forward: bool) {
+        let Some(find) = self.page_find.as_mut() else { return };
+        let count = find.found.len();
+        if count == 0 {
+            self.say(crate::tl_id!("ui.find_no_matches"));
+            return;
+        }
+        find.current = if forward { (find.current + 1) % count } else { (find.current + count - 1) % count };
+        let message = crate::i18n::format_message_id("ui.find_count", &[("current", &(find.current + 1).to_string()), ("count", &count.to_string())]);
+        self.say(message);
+        self.publish_find(ctx, true);
+    }
+
+    /// Closes the find bar: the caret goes back to the page, on the current place found with
+    /// its words picked, so writing carries on there (issue #526).
+    fn close_page_find(&mut self, ctx: &Context) {
+        let Some(find) = self.page_find.take() else { return };
+        self.publish_find(ctx, false);
+        let Some(ed) = self.editor.as_mut().filter(|ed| ed.dir == find.page) else { return };
+        let Some(&(block, cell, start, end)) = find.found.get(find.current) else { return };
+        let Some(b) = ed.blocks.get(block) else { return };
+        if let Some(cell) = cell {
+            let Some(text) = pageedit::cell_text(b, cell) else { return };
+            ed.caret = Some(pageedit::Caret {
+                block,
+                text,
+                focus: true,
+                selection: (end, start),
+                place: Some(end),
+                cell: Some(cell),
+                span: None,
+                inline: None,
+            });
+            pageedit::reveal_caret(ctx);
+            return;
+        }
+        ed.caret = Some(pageedit::Caret {
+            block,
+            text: pageedit::caret_text(b),
+            focus: true,
+            selection: (end, end),
+            place: Some(end),
+            cell: None,
+            span: None,
+            inline: None,
+        });
+        let restore = pageedit::restore_selection_id(ctx);
+        ctx.data_mut(|d| d.insert_temp(restore, (block, end, start)));
+        pageedit::reveal_caret(ctx);
+    }
+
+    /// The find bar along the top of the page (issue #526): the words, how many places and which
+    /// is current, Previous and Next, and Close. Enter goes to the next place, Shift+Enter to
+    /// the one before, and Escape closes it.
+    fn page_find_bar(&mut self, ui: &mut Ui) {
+        let ctx = ui.ctx().clone();
+        // Another page open, or none: the bar was for the page that was.
+        if let Some(find) = self.page_find.as_ref().filter(|f| !f.words.trim().is_empty()) {
+            self.last_find.clone_from(&find.words);
+        }
+        if self.page_find.as_ref().is_some_and(|f| self.editor.as_ref().is_none_or(|ed| ed.dir != f.page)) {
+            self.page_find = None;
+            self.publish_find(&ctx, false);
+        }
+        let Some(find) = self.page_find.as_ref() else { return };
+        if self.editor.as_ref().is_some_and(|ed| ed.body != find.seen_body) {
+            self.refind_on_page(&ctx, false);
+        }
+        let Some(find) = self.page_find.as_mut() else { return };
+        let (mut step, mut close, mut changed) = (None, false, false);
+        let field_id = Id::new(("page-find-field", ctx.viewport_id()));
+        let count = find.found.len();
+        egui::Panel::top("page-find").show(ui, |ui| {
+            ui.add_space(3.0);
+            ui.horizontal(|ui| {
+                // Named apart from Search's own "Find on this page", which opened it.
+                let name = ui.label(crate::tl_id!("ui.find_on_page_field"));
+                let field = ui
+                    .add(
+                        egui::TextEdit::singleline(&mut find.words)
+                            .id(field_id)
+                            .desired_width(220.0)
+                            .hint_text(crate::tl_id!("ui.find_on_page_hint")),
+                    )
+                    .labelled_by(name.id);
+                if find.focus {
+                    field.request_focus();
+                    find.focus = false;
+                }
+                changed = field.changed();
+                if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                    step = Some(!ui.input(|i| i.modifiers.shift));
+                    field.request_focus();
+                }
+                let said = if find.words.trim().is_empty() {
+                    String::new()
+                } else if count == 0 {
+                    crate::tl_id!("ui.find_no_matches").to_string()
+                } else {
+                    crate::i18n::format_message_id("ui.find_count", &[("current", &(find.current + 1).to_string()), ("count", &count.to_string())])
+                };
+                ui.label(egui::RichText::new(said).color(self.tokens.muted));
+                if ui
+                    .add_enabled(count > 0, egui::Button::new(crate::tl_id!("ui.find_previous")))
+                    .on_hover_text(crate::tl_id!("ui.find_previous_tip"))
+                    .clicked()
+                {
+                    step = Some(false);
+                }
+                if ui
+                    .add_enabled(count > 0, egui::Button::new(crate::tl_id!("ui.find_next")))
+                    .on_hover_text(crate::tl_id!("ui.find_next_tip"))
+                    .clicked()
+                {
+                    step = Some(true);
+                }
+                if ui.button(crate::tl_id!("ui.find_close")).on_hover_text(crate::tl_id!("ui.find_close_tip")).clicked() {
+                    close = true;
+                }
+            });
+            ui.add_space(3.0);
+        });
+        if changed {
+            self.refind_on_page(&ctx, true);
+        }
+        if let Some(forward) = step {
+            self.page_find_step(&ctx, forward);
+        }
+        if close {
+            self.close_page_find(&ctx);
+        }
+    }
+
+    /// F3 and Shift+F3 go through the places found, and Escape closes the bar, before the page
+    /// or the search box sees them (issue #526). With no bar open, F3 opens it on the page with
+    /// the words last searched for, or else last looked for on a page.
+    fn page_find_keys(&mut self, ctx: &Context) {
+        // Shift+F3 first: a plain F3 asked for also takes one with Shift held.
+        let (previous, next) = ctx.input_mut(|i| {
+            let previous = i.consume_key(Modifiers::SHIFT, Key::F3);
+            (previous, !previous && i.consume_key(Modifiers::NONE, Key::F3))
+        });
+        if self.page_find.is_some() {
+            if next || previous {
+                self.page_find_step(ctx, next);
+            }
+            if self.dialog.is_none() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+                self.close_page_find(ctx);
+            }
+        } else if (next || previous) && self.editor.is_some() {
+            let words = if self.searched.trim().is_empty() { self.last_find.trim().to_string() } else { self.searched.trim().to_string() };
+            if !words.is_empty() {
+                self.start_page_find(ctx, &words);
+            }
         }
     }
 
@@ -13823,6 +14258,53 @@ impl NoteCraftApp {
                     keep = false;
                 }
             }
+            Dialog::MergeSection { path, title, dest } => {
+                let places = self.move_destinations(path, NodeKind::Page);
+                let mut go = false;
+                egui::Window::new(crate::tl_id!("ui.merge_section"))
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .show(ctx, |ui| {
+                        ui.label(crate::i18n::format_message_id("ui.merge_section_into", &[("title", title.as_str())]));
+                        ui.label(
+                            egui::RichText::new(crate::i18n::format_message_id("ui.merge_section_note", &[("title", title.as_str())]))
+                                .small()
+                                .color(self.tokens.muted),
+                        );
+                        egui::ScrollArea::vertical().max_height(300.0).min_scrolled_height(160.0).show(ui, |ui| {
+                            ui.set_min_width(320.0);
+                            for (place, name, depth) in &places {
+                                ui.horizontal(|ui| {
+                                    ui.add_space(*depth as f32 * 16.0);
+                                    let section = notecraft_store::tree::read_node(place).is_some_and(|n| n.kind == NodeKind::Section);
+                                    if section {
+                                        if ui.selectable_label(dest.as_deref() == Some(place.as_path()), name).clicked() {
+                                            *dest = Some(place.clone());
+                                        }
+                                    } else {
+                                        ui.label(egui::RichText::new(name).color(self.tokens.muted));
+                                    }
+                                });
+                            }
+                        });
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() || ui.input(|i| i.key_pressed(Key::Escape))
+                            {
+                                keep = false;
+                            }
+                            if modal_button_enabled(ui, &self.tokens, crate::tl_id!("ui.merge"), true, dest.is_some()).clicked() {
+                                go = true;
+                            }
+                        });
+                    });
+                if let (true, Some(to)) = (go, dest.clone()) {
+                    let from = path.clone();
+                    self.merge_section(&from, &to);
+                    keep = false;
+                }
+            }
             Dialog::MoveOrCopy { path, title, kind, dest, with } => {
                 let places = self.move_destinations(path, *kind);
                 // Several pages: none of them is a place to go to.
@@ -15312,7 +15794,7 @@ impl NoteCraftApp {
                 if matches!(id, "window.new" | "window.quick-note")
                     && let Output::Path(path) = &out
                 {
-                    self.window_requests.push(crate::windows::Request { path: path.clone(), quick: id == "window.quick-note" });
+                    self.window_requests.push(crate::windows::Request { path: path.clone(), quick: id == "window.quick-note", docked: false });
                 }
                 if self.editor.as_ref().is_some_and(|ed| !ed.dir.exists()) {
                     self.editor = None;
@@ -15550,6 +16032,12 @@ impl NoteCraftApp {
             // The pages picked to move or copy together (issue #533).
             "pickedPages": self.picked_in_order().iter().map(|p| self.shown(p)).collect::<Vec<_>>(),
             "pinnedSearch": self.pinned_search.as_ref().map(|p| json!({"query": p.query, "scope": p.scope, "hits": p.hits.len(), "chosen": p.chosen})),
+            "pageFind": self.page_find.as_ref().map(|f| json!({
+                "words": f.words,
+                "count": f.found.len(),
+                "current": (!f.found.is_empty()).then_some(f.current),
+                "found": f.found.iter().map(|(b, cell, s, e)| json!([b, s, e, cell])).collect::<Vec<_>>(),
+            })),
             "tagsSummary": self.tags_pane.as_ref().map(|p| json!({
                 "scope": p.scope.id(),
                 "unchecked": p.unchecked,
@@ -15585,6 +16073,8 @@ impl NoteCraftApp {
                 "nib": self.nib,
                 "sensitivity": self.sensitivity,
                 "holding": self.pad.as_ref().map_or(0, crate::inkpad::Pad::holding),
+                // Which eraser the eraser is (issue #545).
+                "eraser": self.eraser.id(),
                 "bounds": self.pad.as_ref().and_then(crate::inkpad::Pad::bounds),
                 "gain": self.gain(),
                 "strokes": self.pad.as_ref().map(crate::inkpad::Pad::strokes),
@@ -15662,7 +16152,7 @@ impl NoteCraftApp {
                 "writable": e.writable,
                 // `selection` is (where the caret is, where the selection began), in
                 // characters: the two are equal when nothing is selected.
-                "caret": e.caret.as_ref().map(|c| json!({"block": c.block, "text": c.text, "at": c.selection.0, "anchor": c.selection.1})),
+                "caret": e.caret.as_ref().map(|c| json!({"block": c.block, "text": c.text, "at": c.selection.0, "anchor": c.selection.1, "cell": c.cell})),
                 // A selection dragged across more than one block, as block and byte at each
                 // end. Null for the ordinary selection inside one block, which `caret` has.
                 "across": e.across.map(|a| json!({"from": [a.from.0, a.from.1], "to": [a.to.0, a.to.1]})),
@@ -15716,6 +16206,7 @@ impl NoteCraftApp {
 
     pub fn show(&mut self, ui: &mut Ui) {
         self.take_saves(false);
+        self.dock_if_asked(ui.ctx());
         crate::ribbon::sync_recent_fonts(
             ui.ctx(),
             || self.session.settings.get(RECENT_FONTS_KEY),
@@ -15895,7 +16386,10 @@ impl NoteCraftApp {
         let modal = self.own_modal_open();
         // So does the search box when it has the keyboard: Ctrl+V there was pasted into the page
         // (issue #498).
-        let search_focused = ctx.memory(|memory| memory.has_focus(search_id));
+        // And the find bar's field (issue #526): the caret is put down while it is open, and a
+        // paste meant for the field went into the page.
+        let find_field = Id::new(("page-find-field", ctx.viewport_id()));
+        let search_focused = ctx.memory(|memory| memory.has_focus(search_id) || memory.has_focus(find_field));
         if emoji_picker_open {
             self.paste_into_emoji_search(ctx, queued_paste);
         } else if modal {
@@ -15968,7 +16462,7 @@ impl NoteCraftApp {
         // Not while a dialog is open: it owns the keyboard, and the page behind it must not
         // change unseen (issue #262: Ctrl+Z undid and saved an edit behind Insert symbol). A
         // text box in the dialog keeps its own undo.
-        let page_keys = self.dialog.is_none() && !self.own_modal_open() && !emoji_picker_open && !ctx.memory(|memory| memory.has_focus(search_id));
+        let page_keys = self.dialog.is_none() && !self.own_modal_open() && !emoji_picker_open && !search_focused;
         if page_keys && ctx.input_mut(|i| i.consume_key(ctrl_shift, Key::Z) || i.consume_key(Modifiers::COMMAND, Key::Y)) {
             // The ink's as well as the page's, whichever Undo took back.
             self.redo();
@@ -15991,6 +16485,7 @@ impl NoteCraftApp {
             }
             self.focus_search = true;
         }
+        self.page_find_keys(ctx);
         self.finish_pending_open(ctx);
         self.nav_keys(ctx);
         self.onenote_keys(ctx);
@@ -16036,6 +16531,7 @@ impl NoteCraftApp {
         self.tags_panel(ui);
         self.templates_panel(ui);
         self.pinned_search_panel(ui);
+        self.page_find_bar(ui);
         // In a phone-width window a pane that fills it leaves no room for the page.
         if !self.compact_list_fills() && !(self.compact && (self.tags_pane.is_some() || self.templates_pane.is_some())) {
             self.section_tabs(ui);

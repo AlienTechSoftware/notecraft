@@ -239,6 +239,44 @@ pub fn scale_about(drawing: &mut Drawing, held: &[usize], ox: f32, oy: f32, fx: 
     }
 }
 
+/// A quarter turn or a mirror of held ink (issue #544).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Turn {
+    /// A quarter turn clockwise, as the page is seen.
+    Right,
+    /// A quarter turn anticlockwise.
+    Left,
+    /// Mirrored left to right.
+    FlipHorizontal,
+    /// Mirrored top to bottom.
+    FlipVertical,
+}
+
+/// Turns or mirrors the strokes at these places as one group about (`ox`, `oy`), which the
+/// caller gives as the middle of the box round them, so the group stays where it was. Each
+/// stroke keeps its pen, colour, width, pressure readings and place in the order.
+pub fn turn_about(drawing: &mut Drawing, held: &[usize], ox: f32, oy: f32, turn: Turn) {
+    if !ox.is_finite() || !oy.is_finite() {
+        return;
+    }
+    for i in held {
+        if let Some(s) = drawing.strokes.get_mut(*i) {
+            for d in &mut s.dabs {
+                let (dx, dy) = (d.x - ox, d.y - oy);
+                // The page's y grows downward, so a clockwise turn takes right to down.
+                let (nx, ny) = match turn {
+                    Turn::Right => (-dy, dx),
+                    Turn::Left => (dy, -dx),
+                    Turn::FlipHorizontal => (-dx, dy),
+                    Turn::FlipVertical => (dx, -dy),
+                };
+                d.x = ox + nx;
+                d.y = oy + ny;
+            }
+        }
+    }
+}
+
 /// Takes the strokes at these places out, and gives back how many went. Places that are not
 /// there are ignored, so a stale selection cannot remove the wrong ink.
 pub fn remove(drawing: &mut Drawing, held: &[usize]) -> usize {
@@ -255,6 +293,51 @@ pub fn remove(drawing: &mut Drawing, held: &[usize]) -> usize {
 mod tests {
     use super::*;
     use crate::{Dab, Rgb, Stroke, Tool};
+
+    /// Issue #544: held ink turns and mirrors as one group about the middle of its box, keeps
+    /// its width and order, and four quarter turns or two mirrors put it back.
+    #[test]
+    fn held_ink_turns_and_mirrors_about_its_middle() {
+        let mut d = Drawing::new(200.0, 200.0);
+        d.add(line(10.0, 50.0, 20.0));
+        d.add(line(10.0, 30.0, 40.0));
+        d.add(line(100.0, 120.0, 100.0));
+        let before = d.clone();
+        let held = [0, 1];
+        let (x0, y0, x1, y1) = bounds(&d, &held).expect("box");
+        let (ox, oy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+        turn_about(&mut d, &held, ox, oy, Turn::Right);
+        let (a0, b0, a1, b1) = bounds(&d, &held).expect("box");
+        assert!(((a0 + a1) / 2.0 - ox).abs() < 0.01 && ((b0 + b1) / 2.0 - oy).abs() < 0.01, "the middle stays put");
+        assert!(((a1 - a0) - (y1 - y0)).abs() < 0.01 && ((b1 - b0) - (x1 - x0)).abs() < 0.01, "width and height swap");
+        // The long line ran left to right at the top; turned clockwise it runs top to bottom on the right.
+        let first = &d.strokes[0].dabs;
+        assert!((first[0].x - first[first.len() - 1].x).abs() < 0.01 && first[0].y < first[first.len() - 1].y);
+        assert_eq!(d.strokes[2], before.strokes[2], "ink not held is left alone");
+        assert_eq!(d.strokes[0].width, before.strokes[0].width);
+        for _ in 0..3 {
+            turn_about(&mut d, &held, ox, oy, Turn::Right);
+        }
+        for (a, b) in d.strokes.iter().zip(&before.strokes) {
+            for (p, q) in a.dabs.iter().zip(&b.dabs) {
+                assert!((p.x - q.x).abs() < 0.01 && (p.y - q.y).abs() < 0.01, "four turns put it back");
+            }
+        }
+        turn_about(&mut d, &held, ox, oy, Turn::Left);
+        turn_about(&mut d, &held, ox, oy, Turn::Right);
+        turn_about(&mut d, &held, ox, oy, Turn::FlipHorizontal);
+        let first = &d.strokes[0].dabs;
+        assert!(first[0].x > first[first.len() - 1].x, "mirrored left to right: {first:?}");
+        turn_about(&mut d, &held, ox, oy, Turn::FlipHorizontal);
+        turn_about(&mut d, &held, ox, oy, Turn::FlipVertical);
+        assert!((d.strokes[1].dabs[0].y - (oy + (oy - 40.0))).abs() < 0.01, "mirrored top to bottom");
+        turn_about(&mut d, &held, ox, oy, Turn::FlipVertical);
+        for (a, b) in d.strokes.iter().zip(&before.strokes) {
+            for (p, q) in a.dabs.iter().zip(&b.dabs) {
+                assert!((p.x - q.x).abs() < 0.01 && (p.y - q.y).abs() < 0.01);
+            }
+        }
+    }
 
     /// A straight stroke from (x0, y) to (x1, y).
     fn line(x0: f32, x1: f32, y: f32) -> Stroke {

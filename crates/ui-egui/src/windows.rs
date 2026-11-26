@@ -12,6 +12,9 @@ use std::path::PathBuf;
 pub struct Request {
     pub path: PathBuf,
     pub quick: bool,
+    /// View > New Docked Window (issue #554): the new window docks itself to the side of the
+    /// screen once it is shown, and the window it came from stays as it is.
+    pub docked: bool,
 }
 
 pub(crate) use notecraft_store::coordination::Revision;
@@ -289,7 +292,7 @@ mod tests {
         settings.set("privacy_welcome_seen", "true").expect("settings");
         let session = notecraft_engine::Session::new(&t.path().join("notebooks"), settings).expect("session");
         let primary = NoteCraftApp::new(session);
-        let child = primary.child_window(&Request { path: primary.session().root().to_path_buf(), quick: true }).expect("child");
+        let child = primary.child_window(&Request { path: primary.session().root().to_path_buf(), quick: true, docked: false }).expect("child");
         let mut host = Host::new(primary);
         host.add_window(child, true);
         let ctx = egui::Context::default();
@@ -305,7 +308,7 @@ mod tests {
         settings.set("privacy_welcome_seen", "true").expect("settings");
         let session = notecraft_engine::Session::new(&t.path().join("notebooks"), settings).expect("session");
         let primary = NoteCraftApp::new(session);
-        let child = primary.child_window(&Request { path: primary.session().root().to_path_buf(), quick: true }).expect("child");
+        let child = primary.child_window(&Request { path: primary.session().root().to_path_buf(), quick: true, docked: false }).expect("child");
         let mut host = Host::new(primary);
         host.primary_closed = true;
         host.add_window(child, true);

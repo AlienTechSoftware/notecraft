@@ -109,6 +109,16 @@ Parameters:
 - path (required): the section
 - template: the template's id, as page.templates lists it; left out, new pages start blank
 
+## `section.merge`
+
+Merge a section into another: its pages go after the other's, and the emptied section goes, a copy of it in the recycle bin (changes the tree).
+
+Parameters:
+
+- path (required): the section whose pages move
+- into (required): the section they go into
+- Returns JSON: `into`, and `moved`, each page as [its folder name before, its folder name now]
+
 ## `page.from_template`
 
 A new page started from a template (changes the tree).

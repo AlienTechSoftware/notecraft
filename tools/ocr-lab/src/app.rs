@@ -621,6 +621,8 @@ impl Lab {
             can_undo: false,
             can_redo: false,
             can_ink_redo: false,
+            ink_held: false,
+            eraser: notecraft_ui_egui::inkpad::Eraser::Stroke,
             sensitivity: self.sensitivity,
             pressure_available: self.stylus.sample().pen,
             has_page: false,
