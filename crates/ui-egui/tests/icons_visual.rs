@@ -24,7 +24,7 @@ fn gpu() -> std::sync::MutexGuard<'static, ()> {
 
 const CANVAS: f32 = 40.0;
 const SIZE: f32 = 17.0;
-const ALL: [Icon; 67] = [
+const ALL: [Icon; 69] = [
     Icon::Notebook,
     Icon::SectionGroup,
     Icon::SectionGroupOpen,
@@ -92,6 +92,8 @@ const ALL: [Icon; 67] = [
     Icon::Symbol,
     Icon::TableRow,
     Icon::TableColumn,
+    Icon::Print,
+    Icon::PrintPreview,
 ];
 
 const LIGHT_INK: Color32 = Color32::from_rgb(0x7A, 0x45, 0xB8);
@@ -137,6 +139,8 @@ fn name(icon: Icon) -> &'static str {
         Icon::Symbol => "symbol",
         Icon::TableRow => "table-row",
         Icon::TableColumn => "table-column",
+        Icon::Print => "print",
+        Icon::PrintPreview => "print-preview",
         Icon::Search => "search",
         Icon::FullPage => "full-page",
         Icon::ExitFullPage => "exit-full-page",
@@ -321,6 +325,20 @@ fn reference(painter: &Painter, origin: Pos2, color: Color32, icon: Icon, nudge:
             closed(&[(4.0, 5.5), (20.0, 5.5), (20.0, 19.0), (4.0, 19.0)]),
             seg((9.5, 5.5), (9.5, 19.0)),
             seg((14.5, 5.5), (14.5, 19.0)),
+        ],
+        Icon::Print => vec![
+            closed(&[(7.0, 3.5), (17.0, 3.5), (17.0, 8.5), (7.0, 8.5)]),
+            closed(&[(3.5, 8.5), (20.5, 8.5), (20.5, 16.5), (3.5, 16.5)]),
+            poly(&[(7.0, 13.5), (17.0, 13.5), (17.0, 20.5), (7.0, 20.5)], shade(color, 20)),
+            closed(&[(7.0, 13.5), (17.0, 13.5), (17.0, 20.5), (7.0, 20.5)]),
+            Shape::circle_filled(at(17.5, 11.0), SIZE / 24.0, color),
+        ],
+        Icon::PrintPreview => vec![
+            closed(&[(4.0, 3.5), (15.0, 3.5), (15.0, 20.5), (4.0, 20.5)]),
+            seg((6.5, 7.5), (12.5, 7.5)),
+            seg((6.5, 10.5), (10.5, 10.5)),
+            Shape::circle_stroke(at(15.0, 14.0), SIZE * 4.0 / 24.0, stroke),
+            seg((17.8, 16.8), (21.0, 20.0)),
         ],
         Icon::Plus => vec![seg((12.0, 4.5), (12.0, 19.5)), seg((4.5, 12.0), (19.5, 12.0))],
         Icon::Minus => vec![seg((4.5, 12.0), (19.5, 12.0))],

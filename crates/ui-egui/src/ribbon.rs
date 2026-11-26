@@ -286,6 +286,8 @@ pub enum Act {
     ToggleReplay,
     /// View > Tabs layout: sections as tabs across the top of the page, or not (#268, #33).
     ToggleTabsLayout,
+    /// View > Page List on the Right, in the tabs layout (issue #534).
+    TogglePagesRight,
     /// View > Immersive Reader: the page as plain, large reading (issue #299).
     ImmersiveReader,
     /// Open the Page Templates pane: new pages from templates, and this page kept as one
@@ -663,6 +665,8 @@ pub struct View<'a> {
     pub replaying: bool,
     /// True while View > Tabs layout shows the sections as tabs (issues #268, #33).
     pub tabs_layout: bool,
+    /// True while the tabs layout has the list of pages on the right (issue #534).
+    pub pages_right: bool,
     /// True while the caret is in a table, which is when the Table tab is offered.
     pub in_table: bool,
     /// Whether the table the caret is in is drawn with lines round its cells.
@@ -4453,6 +4457,13 @@ fn view_tab(ui: &mut Ui, source: bool, view: &View<'_>, t: &Tokens, acts: &mut V
             if small_check(ui, crate::tl_id!("ui.tabs_layout"), crate::tl_id!("ui.tabs_layout_tip"), view.tabs_layout, t).clicked() {
                 acts.push(Act::ToggleTabsLayout);
             }
+            // Which side of the page the list of pages is on, in the tabs layout (issue #534).
+            ui.add_enabled_ui(view.tabs_layout, |ui| {
+                if small_check(ui, crate::tl_id!("ui.page_list_on_right"), crate::tl_id!("ui.page_list_on_right_tip"), view.pages_right, t).clicked()
+                {
+                    acts.push(Act::TogglePagesRight);
+                }
+            });
         });
     });
     group(ui, crate::tl_id!("ui.tools"), t, |ui| {

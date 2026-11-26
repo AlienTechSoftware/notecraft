@@ -609,6 +609,7 @@ impl Lab {
             auto_shapes: false,
             replaying: false,
             tabs_layout: false,
+            pages_right: false,
             in_table: false,
             table_borders: false,
             table_align: None,

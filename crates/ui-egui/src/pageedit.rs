@@ -60,6 +60,18 @@ pub fn restore_selection_id(ctx: &egui::Context) -> egui::Id {
     egui::Id::new(("restore-selection", ctx.viewport_id()))
 }
 
+/// Asks the page to bring the caret's line into view the next time it is drawn: a search hit
+/// (issue #529) or a note container (issue #560) the keyboard has just gone to, below the fold.
+pub fn reveal_caret(ctx: &egui::Context) {
+    // The id first: it reads the context, which is locked while its data is written.
+    let id = reveal_caret_id(ctx);
+    ctx.data_mut(|d| d.insert_temp(id, true));
+}
+
+fn reveal_caret_id(ctx: &egui::Context) -> egui::Id {
+    egui::Id::new(("reveal-caret", ctx.viewport_id()))
+}
+
 /// What the caret is in, and the text it is editing.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Caret {
@@ -2845,6 +2857,11 @@ pub fn show_blocks(
                 let restore_id = restore_selection_id(ui.ctx());
                 ui.data_mut(|d| d.remove::<(usize, usize, usize)>(restore_id));
             }
+            // Brought into view when the keyboard has just sent the caret here from afar.
+            let reveal = reveal_caret_id(ui.ctx());
+            if ui.data_mut(|d| d.remove_temp::<bool>(reveal)).unwrap_or(false) {
+                resp.scroll_to_me(Some(egui::Align::Center));
+            }
             if resp.changed() {
                 // What was typed goes into the block at once, so the page and the file
                 // follow the caret without waiting for it to leave the block.
@@ -3579,6 +3596,10 @@ pub fn write_rtl(ui: &mut Ui, c: &mut Caret, size: f32, t: &Tokens, id: egui::Id
         // them crammed into one paragraph.
         let at = c.place.take().unwrap_or_else(|| c.text.chars().count()).min(c.text.chars().count());
         c.selection = (at, at);
+    }
+    let reveal = reveal_caret_id(ui.ctx());
+    if ui.data_mut(|d| d.remove_temp::<bool>(reveal)).unwrap_or(false) {
+        resp.scroll_to_me(Some(egui::Align::Center));
     }
     let restore_id = restore_selection_id(ui.ctx());
     let wanted = ui.data(|d| d.get_temp::<(usize, usize, usize)>(restore_id));
