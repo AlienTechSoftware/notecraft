@@ -7594,6 +7594,7 @@ impl NoteCraftApp {
             ribbon::Act::SavePictureAs(src) => self.save_picture_as(&src),
             ribbon::Act::TurnPicture(src, how) => self.turn_picture(&src, how),
             ribbon::Act::CopyTextFromPicture { src, whole_printout } => self.copy_text_from_picture(&src, whole_printout),
+            ribbon::Act::ConvertPermanently(src) => self.convert_permanently(&src),
             ribbon::Act::ReadPageText => match self.editor.as_ref().map(|e| e.dir.clone()) {
                 Some(dir) if self.ocr_models().is_some() => self.read_pictures(&dir),
                 Some(_) => self.complain(crate::tl_id!("ui.image_text_models_not_set")),
@@ -7602,6 +7603,35 @@ impl NoteCraftApp {
         }
     }
 
+    /// Convert permanently (!): the picture's OCR text becomes paragraphs in the page, in place of the
+    /// picture. The page changes for good: nothing is put on the undo history. The text comes from the
+    /// picture's saved OCR file, so Detect text (or the page's OCR) must have read it first.
+    fn convert_permanently(&mut self, src: &str) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some(index) = ed.blocks.iter().position(|b| matches!(b, notecraft_formats::Block::Image { src: s, .. } if s.trim() == src)) else {
+            return;
+        };
+        let Some(lines) = crate::image_text::saved_text_lines(&ed.dir.join(src)) else {
+            self.complain(crate::tl_id!("ui.image_text_none_yet"));
+            return;
+        };
+        let paragraphs: Vec<notecraft_formats::Block> = lines
+            .into_iter()
+            .map(|line| notecraft_formats::Block::Paragraph(vec![notecraft_formats::markdown::Span { text: line, ..Default::default() }], Vec::new()))
+            .collect();
+        let added = paragraphs.len();
+        ed.blocks.splice(index..=index, paragraphs);
+        // The box that held the picture now holds the paragraphs in its place.
+        let mut start = 0;
+        for container in ed.boxes.iter_mut() {
+            if index < start + container.blocks {
+                container.blocks = container.blocks + added - 1;
+                break;
+            }
+            start += container.blocks;
+        }
+        Self::mark_dirty_from_blocks(ed);
+    }
     /// Adds, removes, moves or changes a tool on the rack, and remembers the result. The
     /// rules about what may not happen - the last tool cannot be taken off, a tool cannot
     /// be moved off either end - live in `notecraft_ink::rack`, so they hold wherever the

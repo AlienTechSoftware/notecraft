@@ -31,6 +31,13 @@ fn ocr_json_path(picture: &Path) -> PathBuf {
     name.push(".ocr.json");
     picture.with_file_name(name)
 }
+/// The text lines of a picture's saved OCR file, when it has any. Used by Convert permanently.
+pub fn saved_text_lines(picture: &Path) -> Option<Vec<String>> {
+    let text = std::fs::read_to_string(ocr_json_path(picture)).ok()?;
+    let value: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
+    let lines: Vec<String> = value.get("lines")?.as_array()?.iter().filter_map(|l| l.get("text")?.as_str().map(str::to_string)).collect();
+    (!lines.is_empty()).then_some(lines)
+}
 /// Draws the boxes over a picture shown at `rect`. `size` is the picture's size in pixels.
 pub fn paint(painter: &egui::Painter, rect: Rect, size: [u32; 2], boxes: &[[[f32; 2]; 4]], colour: Color32) {
     let sx = rect.width() / size[0].max(1) as f32;
@@ -58,7 +65,7 @@ fn set_showing(ctx: &egui::Context, page: &Path, block: usize, on: bool) {
 
 /// The (>) button above a picture's top left corner, and its menu. The menu only changes the overlay
 /// state. "Detect text" is offered once the picture has a `.lines` file to show.
-pub fn menu(ui: &mut egui::Ui, picture_rect: Rect, page: &Path, block: usize, picture: &Path, acts: &mut Vec<Act>, t: &Tokens) {
+pub fn menu(ui: &mut egui::Ui, picture_rect: Rect, page: &Path, block: usize, picture: &Path, src: &str, acts: &mut Vec<Act>, t: &Tokens) {
     // Above the picture's top left corner, in the row the frames use for their emoji.
     let at = picture_rect.left_top() + vec2(0.0, -24.0);
     // Invisible until the pointer comes near the picture or a menu is open, so it never hides the text under it.
@@ -89,8 +96,12 @@ pub fn menu(ui: &mut egui::Ui, picture_rect: Rect, page: &Path, block: usize, pi
                 .on_disabled_hover_text(crate::tl_id!("ui.image_text_why_page_format"));
             floating::menu_row_if(ui, false, None, crate::tl_id!("ui.image_text_convert_equation"), t)
                 .on_disabled_hover_text(crate::tl_id!("ui.image_text_why_equation_model"));
-            floating::menu_row_if(ui, false, None, crate::tl_id!("ui.image_text_convert_permanent"), t)
-                .on_disabled_hover_text(crate::tl_id!("ui.image_text_why_page_format"));
+            let permanent = floating::menu_row_if(ui, !boxes.is_empty(), None, crate::tl_id!("ui.image_text_convert_permanent"), t);
+            if permanent.clicked() {
+                acts.push(Act::ConvertPermanently(src.to_string()));
+                ui.close();
+            }
+            permanent.on_disabled_hover_text(crate::tl_id!("ui.image_text_detect_first"));
             if boxes.is_empty() {
                 ui.small(crate::tl_id!("ui.image_text_none_yet"));
             }

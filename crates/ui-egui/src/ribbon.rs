@@ -211,6 +211,8 @@ pub enum Act {
     /// Read the text of the page's pictures, for a picture's Detect text, without copying anything: the
     /// boxes it writes are what the overlay shows.
     ReadPageText,
+    /// Convert permanently (!): the picture's OCR text replaces the picture in the page. It cannot be undone.
+    ConvertPermanently(String),
     /// Copy Text from Picture (issue #274): the picture's source, and whether every page of the
     /// printout it belongs to is read rather than this page alone.
     CopyTextFromPicture {

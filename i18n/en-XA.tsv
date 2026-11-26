@@ -1504,6 +1504,7 @@
 @id	ui.image_text_hide	$$$Hide detected text@@@
 @id	ui.image_text_none_yet	$$$No text has been read from this picture yet.@@@
 @id	ui.image_text_models_not_set	$$$Set up the text recognition models first: choose the OCR models folder in Copy Text from Picture.@@@
+@id	ui.image_text_detect_first	$$$Read the text first: choose Detect text on this picture.@@@
 @id	ui.image_text_convert_text	$$$Convert to text@@@
 @id	ui.image_text_convert_equation	$$$Convert to equation@@@
 @id	ui.image_text_convert_permanent	$$$(!) Convert permanently@@@

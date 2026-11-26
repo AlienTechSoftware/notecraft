@@ -625,7 +625,7 @@ pub fn show(
             let Some(rect) = object_hits.iter().find(|(at, _, kind)| *at == block && kind == "image").map(|(_, rect, _)| *rect) else {
                 continue;
             };
-            crate::image_text::menu(ui, rect, page_dir, block, &page_dir.join(src), &mut out.acts, t);
+            crate::image_text::menu(ui, rect, page_dir, block, &page_dir.join(src), src, &mut out.acts, t);
         }
         // A picture among other blocks in one box (a page that was never arranged is one box
         // holding everything). It is moved by its body like any picture, which takes it out of
