@@ -60,6 +60,22 @@ the status line says the page is locked. Alt+Down and Alt+Up go through the note
 the page reads: from the top down, with containers whose tops are within a line of each other taken
 as one row, from the left, or from the right on a right-to-left page. Paste's options on the Home tab also offer **Keep text only**.
 
+## Find on this page
+
+Search's **Find on this page**, with a result on the open page chosen, opens the find bar over
+the page (issue #526). Every place the words are is lit, the current one in a stronger colour,
+and the bar says which of how many it is.
+
+| Action | Windows and Linux | macOS |
+|---|---|---|
+| The next place found, round from the last | `F3`, or `Enter` in the bar | `F3`, or `Enter` in the bar |
+| The place found before | `Shift+F3`, or `Shift+Enter` in the bar | `Shift+F3`, or `Shift+Enter` in the bar |
+| Close the bar, the caret on the current place with its words picked | `Escape` | `Escape` |
+
+With the bar closed, `F3` opens it again with the words last looked for. The words are matched as a
+phrase, across marks such as bold and across a line break, letter case aside. Places in tables
+and in a line that mixes the two directions of writing are found and gone to, but not lit.
+
 ## Page view
 
 These act on the open page from anywhere in the window, except while a dialog is open.

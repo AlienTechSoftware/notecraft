@@ -104,6 +104,12 @@ fn node_create(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
 
 /// The template a section's new pages start from (issue #519): `template` is one
 /// `page.templates` lists, or left out to clear it.
+fn section_merge(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let into = s.resolve(req(p, "into")?)?;
+    ops::merge_section(&s.resolve(req(p, "path")?)?, &into)?;
+    Ok(Output::Path(into))
+}
+
 fn section_set_template(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let section = s.resolve(req(p, "path")?)?;
     let template = p.get("template").map(|t| t.trim()).filter(|t| !t.is_empty());
@@ -819,6 +825,14 @@ to (required): where the copy goes; it is put last there, and every node in it g
 template: the template's id, as page.templates lists it; left out, new pages start blank",
         changes_tree: false,
         run: section_set_template,
+    },
+    CommandSpec {
+        id: "section.merge",
+        label: "Merge a section into another: its pages go after the other's, and the emptied section goes, a copy of it in the recycle bin",
+        params: "path (required): the section whose pages move
+into (required): the section they go into",
+        changes_tree: true,
+        run: section_merge,
     },
     CommandSpec {
         id: "page.from_template",

@@ -2552,6 +2552,8 @@ pub fn show_blocks(
         return changed;
     }
 
+    // Find on this page (issue #526): every place the words are, lit, the current one more so.
+    let found = ui.data(|d| d.get_temp::<FindMarks>(find_marks_id()));
     for i in range.start..range.end.min(count) {
         let Some(block) = blocks.get(i).cloned() else { continue };
         // The title area above the page is already showing this; see `is_title_echo`.
@@ -3038,6 +3040,20 @@ pub fn show_blocks(
             // The date under the title is drawn as a stamp: grey and quiet, the way
             // OneNote shows it, rather than as another paragraph of the page.
             let stamp = is_page_stamp(blocks, i);
+            let lit: Vec<(usize, usize, bool)> = found
+                .as_ref()
+                .map(|f| {
+                    f.found
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, (b, _, _))| *b == i)
+                        .filter_map(|(k, &(_, a, b))| {
+                            drawn_covering(&block, byte_of_caret(&block, a), byte_of_caret(&block, b)).map(|(x, y)| (x, y, f.current == Some(k)))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let _lit = preview::light_found(lit);
             let out = ui
                 .scope(|ui| {
                     if stamp {
@@ -3062,6 +3078,11 @@ pub fn show_blocks(
                 })
                 .inner;
             let resp = out.response;
+            // The current place found is brought into view once, when it becomes current.
+            if found.as_ref().is_some_and(|f| f.reveal == Some(i)) {
+                ui.scroll_to_rect(resp.rect, Some(egui::Align::Center));
+                ui.data_mut(|d| d.get_temp_mut_or_default::<FindMarks>(find_marks_id()).reveal = None);
+            }
             log::trace!(
                 "page block rendered: block={} stamp={} kind={} rect=({:.1},{:.1})-({:.1},{:.1}) size=({:.1}x{:.1})",
                 i,
@@ -3147,6 +3168,21 @@ pub fn show_blocks(
         apply_keeping_widths(a, blocks, caret, &mut changed, cols);
     }
     changed
+}
+
+/// Find on this page (issue #526): every place on the page the words are, as (block, start,
+/// end) in the characters the caret counts, which of them is the current one, and the block
+/// to bring into view once. The window sets it while the find bar is open.
+#[derive(Clone, Debug, Default)]
+pub struct FindMarks {
+    pub found: Vec<(usize, usize, usize)>,
+    pub current: Option<usize>,
+    pub reveal: Option<usize>,
+}
+
+/// Where the window keeps [`FindMarks`] for the page to draw.
+pub fn find_marks_id() -> egui::Id {
+    egui::Id::new("page-find-marks")
 }
 
 /// A selection that runs across more than one block: where the drag began and where it has
