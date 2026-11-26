@@ -1694,3 +1694,4 @@
 @id	ui.search_results	Search results
 @id	ui.close_the_pinned_results	Close the pinned results
 @id	ui.pinned_results_about	“{query}” in {scope}: {count} found
+@id	ui.image_text_read_failed	Could not read the text of the pictures. Try again.

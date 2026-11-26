@@ -1694,3 +1694,4 @@
 @id	ui.search_results	[[RLI]]$$$Search results@@@[[PDI]]
 @id	ui.close_the_pinned_results	[[RLI]]$$$Close the pinned results@@@[[PDI]]
 @id	ui.pinned_results_about	[[RLI]]$$$“{query}” in {scope}: {count} found@@@[[PDI]]
+@id	ui.image_text_read_failed	[[RLI]]$$$Could not read the text of the pictures. Try again.@@@[[PDI]]

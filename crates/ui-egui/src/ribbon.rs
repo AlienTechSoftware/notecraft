@@ -212,7 +212,10 @@ pub enum Act {
     /// boxes it writes are what the overlay shows.
     ReadPageText,
     /// Convert permanently (!): the picture's OCR text replaces the picture in the page. It cannot be undone.
-    ConvertPermanently(String),
+    ConvertPermanently {
+        src: String,
+        block: usize,
+    },
     /// Copy Text from Picture (issue #274): the picture's source, and whether every page of the
     /// printout it belongs to is read rather than this page alone.
     CopyTextFromPicture {

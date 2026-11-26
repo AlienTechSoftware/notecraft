@@ -727,6 +727,13 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                 }
                 Kind::PageFile | Kind::Ink | Kind::Svg | Kind::Text | Kind::Diagram | Kind::Ocr => {
                     if state.loaded.as_deref() != Some(entry.name.as_str()) {
+                        // Unsaved OCR edits are written before another file replaces them, so they are never lost.
+                        if state.dirty
+                            && let Some(prev) = state.loaded.clone()
+                            && prev.ends_with(".ocr.json")
+                        {
+                            out.wrote = Some((prev, state.text.clone()));
+                        }
                         let (text, cut) = read_for_view(&dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR)));
                         state.text = text;
                         state.loaded = Some(entry.name.clone());

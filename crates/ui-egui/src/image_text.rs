@@ -35,6 +35,10 @@ fn ocr_json_path(picture: &Path) -> PathBuf {
 pub fn saved_text_lines(picture: &Path) -> Option<Vec<String>> {
     let text = std::fs::read_to_string(ocr_json_path(picture)).ok()?;
     let value: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
+    // Only a file of this format counts, the same test the search applies.
+    if value.get("schema")?.as_str()? != "notecraft.ocr" || value.get("version")?.as_u64()? != 1 {
+        return None;
+    }
     let lines: Vec<String> = value.get("lines")?.as_array()?.iter().filter_map(|l| l.get("text")?.as_str().map(str::to_string)).collect();
     (!lines.is_empty()).then_some(lines)
 }
@@ -109,7 +113,7 @@ pub fn menu(ui: &mut egui::Ui, picture_rect: Rect, page: &Path, block: usize, pi
                 .on_disabled_hover_text(crate::tl_id!("ui.image_text_why_equation_model"));
             let permanent = floating::menu_row_if(ui, !boxes.is_empty(), None, crate::tl_id!("ui.image_text_convert_permanent"), t);
             if permanent.clicked() {
-                acts.push(Act::ConvertPermanently(src.to_string()));
+                acts.push(Act::ConvertPermanently { src: src.to_string(), block });
                 ui.close();
             }
             permanent.on_disabled_hover_text(crate::tl_id!("ui.image_text_detect_first"));

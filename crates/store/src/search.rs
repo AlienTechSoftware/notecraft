@@ -115,8 +115,8 @@ fn read_ocr_json(path: &Path) -> Option<(String, Vec<(String, Quad)>)> {
     }
     let mut lines = Vec::new();
     for item in value.get("lines")?.as_array()? {
-        let polygon = item.get("polygon")?.as_array()?;
-        // A line without four finite corners is not a box: it is skipped.
+        // A line without a polygon, four finite corners or text is skipped; the rest of the file still counts.
+        let Some(polygon) = item.get("polygon").and_then(|p| p.as_array()) else { continue };
         let corners: Option<Vec<[f32; 2]>> = polygon
             .iter()
             .map(|c| {
@@ -127,7 +127,8 @@ fn read_ocr_json(path: &Path) -> Option<(String, Vec<(String, Quad)>)> {
             .collect();
         let Some(corners) = corners.filter(|c| c.len() == 4) else { continue };
         let quad = [corners[0], corners[1], corners[2], corners[3]];
-        lines.push((item.get("text")?.as_str()?.to_string(), quad));
+        let Some(line_text) = item.get("text").and_then(|t| t.as_str()) else { continue };
+        lines.push((line_text.to_string(), quad));
     }
     let text = value.get("text")?.as_str()?.to_string();
     Some((text, lines))
@@ -628,6 +629,23 @@ mod tests {
         let hits = ranked(&root, &[], "sourdough", 10);
         let hit = hits.iter().find(|h| h.path == page).expect("the page is still found from its text");
         assert_eq!(hit.boxes.len(), 1, "the valid line is a box, the malformed one is not: {:?}", hit.boxes);
+    }
+
+    /// One line with no polygon, or no text, does not hide the other lines of the file from search.
+    #[test]
+    fn a_line_without_polygon_or_text_does_not_drop_the_file() {
+        let t = TempDir::new("search-missing-keys");
+        let (root, page) = picture_fixture(&t);
+        let good = ("Sourdough", corners([0.0, 0.0, 110.0, 0.0, 110.0, 40.0, 10.0, 40.0]));
+        let mut value: serde_json::Value = serde_json::from_str(&ocr_json_for(&[good])).expect("json");
+        value["lines"].as_array_mut().expect("lines").extend([
+            serde_json::json!({ "text": "no polygon" }),
+            serde_json::json!({ "polygon": corners([0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0]) }),
+        ]);
+        std::fs::write(page.join("assets").join("receipt.png.ocr.json"), value.to_string()).expect("ocr file");
+        let hits = ranked(&root, &[], "sourdough", 10);
+        let hit = hits.iter().find(|h| h.path == page).expect("the page is found from its text");
+        assert_eq!(hit.boxes.len(), 1, "the good line still counts: {:?}", hit.boxes);
     }
 
     #[test]

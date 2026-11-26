@@ -323,9 +323,17 @@ impl Lab {
     //     self.open_path = path;
     // }
 
+    /// Closes the open file. Unsaved edits are written first, so they are never lost.
+    fn leave_viewing(&mut self) {
+        if self.viewing_json.as_ref().is_some_and(|(_, text)| *text != self.viewing_saved) {
+            self.save_viewing();
+        }
+        self.viewing_json = None;
+    }
+
     fn select(&mut self, ctx: &egui::Context, index: usize) {
         // Picking a sample shows the picture again, so the OCR file is hidden.
-        self.viewing_json = None;
+        self.leave_viewing();
         let path = self.pictures[index].clone();
         // The new picture's texture has no adjustments yet, so the sliders must be applied to it again.
         self.applied_adjust = None;
@@ -1435,7 +1443,7 @@ impl Lab {
         // Clicking the file's row shows it, and clicking it again hides it.
         if let Some(path) = view_json {
             if self.viewing_json.as_ref().is_some_and(|(p, _)| *p == path) {
-                self.viewing_json = None;
+                self.leave_viewing();
             } else {
                 self.show_file(&path);
             }
@@ -1624,6 +1632,7 @@ impl Lab {
 
     /// Loads a text file into the main area. It can be typed in; the check mark saves it. Picking a sample or closing the view shows the picture again.
     fn show_file(&mut self, path: &Path) {
+        self.leave_viewing();
         match std::fs::read_to_string(path) {
             Ok(text) => {
                 let text = text.trim_start_matches('\u{feff}').to_string();
@@ -1641,6 +1650,10 @@ impl Lab {
             Ok(()) => {
                 self.viewing_saved = text;
                 self.status = format!("Saved {}", path.display());
+                // An edited run of the open picture shows at once, not after the next pick.
+                if let Some(index) = self.pictures.iter().position(|p| ocr_json_path(p) == path) {
+                    self.reload_run(index);
+                }
             }
             Err(e) => self.status = format!("Could not save {}: {e}", path.display()),
         }
