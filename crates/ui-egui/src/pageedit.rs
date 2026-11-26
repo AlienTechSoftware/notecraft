@@ -837,6 +837,77 @@ pub fn wrap_selection_with(text: &str, selection: (usize, usize), open: &str, cl
 
 /// Puts `insert` where the caret is, replacing whatever is selected. Returns the new text
 /// and where the caret ends up.
+/// A web address typed just before the caret, as the next space or line ends it (issue #540): the
+/// characters it covers and where it leads. Only `http://`, `https://` and `www.` addresses, in
+/// the words of a paragraph, heading, list item or quote; not in a code block, a table cell, a
+/// piece of code or words already a link. Punctuation that ends a sentence after it is not
+/// part of it, nor a closing bracket it did not open.
+pub fn url_before_caret(blocks: &[Block], caret: &Caret) -> Option<(usize, usize, String)> {
+    let block = blocks.get(caret.block)?;
+    if caret.cell.is_some() || !matches!(block, Block::Paragraph(..) | Block::Heading { .. } | Block::Item { .. } | Block::Quote(..)) {
+        return None;
+    }
+    if caret.selection.0 != caret.selection.1 {
+        return None;
+    }
+    let chars: Vec<char> = caret.text.chars().collect();
+    let at = caret.selection.0.min(chars.len());
+    let start = chars[..at].iter().rposition(|c| c.is_whitespace()).map_or(0, |i| i + 1);
+    let mut end = at;
+    loop {
+        let &last = chars[start..end].last()?;
+        let opened = chars[start..end].iter().filter(|c| **c == '(').count();
+        let closed = chars[start..end].iter().filter(|c| **c == ')').count();
+        if matches!(last, '.' | ',' | ';' | ':' | '!' | '?' | '\'' | '"') || (last == ')' && closed > opened) {
+            end -= 1;
+        } else {
+            break;
+        }
+    }
+    let token: String = chars[start..end].iter().collect();
+    let lower = token.to_ascii_lowercase();
+    let rest = ["https://", "http://", "www."].iter().find_map(|p| lower.strip_prefix(p))?;
+    // Something after the scheme, with a dot in a www. address, and nothing that is markup.
+    if rest.is_empty()
+        || (lower.starts_with("www.") && !rest.contains('.'))
+        || token.chars().any(|c| matches!(c, '[' | ']' | '<' | '>' | '`') || c.is_control())
+    {
+        return None;
+    }
+    let href = if lower.starts_with("www.") { format!("https://{token}") } else { token.clone() };
+    if !linkable_address(&href) {
+        return None;
+    }
+    // Not words that are already a link, or code.
+    let inline = caret.inline.clone().unwrap_or_else(|| InlineEdit::new(block, true));
+    let mut from = 0;
+    for span in inline.spans() {
+        let to = from + span.text.chars().count();
+        if to > start && from < end && (span.link.is_some() || span.code) {
+            return None;
+        }
+        from = to;
+    }
+    Some((start, end, href))
+}
+
+/// Makes the characters `start..end` of the caret's line a link to `href`, the words as they
+/// are (issue #540). The caret stays where it was.
+pub fn link_caret_range(blocks: &mut [Block], caret: &mut Caret, (start, end, href): (usize, usize, String)) {
+    let Some(block) = blocks.get_mut(caret.block) else { return };
+    let source = caret.ensure_inline(block).clone();
+    let len = source.text().chars().count();
+    let (start, end) = (start.min(len), end.min(len));
+    let mut head = source.slice(0..start);
+    let middle: Vec<Span> = source.slice(start..end).spans().iter().cloned().map(|s| Span { link: Some(href.clone()), ..s }).collect();
+    head.join(InlineEdit::from_spans(&middle));
+    head.join(source.slice(end..len));
+    let text = head.text().to_owned();
+    head.write(block, &text);
+    caret.text = head.text().to_owned();
+    caret.inline = Some(head);
+}
+
 /// Puts plain text in at the caret exactly as written: no Markdown is read in it, so stars,
 /// brackets and backticks stay words (Ctrl+Shift+V, issue #535). The words on both sides of
 /// the caret keep their own formatting. The first line replaces the selection; with more than

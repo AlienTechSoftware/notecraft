@@ -641,6 +641,29 @@ pub fn set_color(dir: &Path, color: Option<NodeColor>) -> Result<()> {
     write_atomic(&file, &out)
 }
 
+/// The template a section's new pages start from (issue #519), as `page_templates` names it
+/// (`builtin:<id>` or `saved:<folder>`), if the section has one.
+pub fn default_template(section: &Path) -> Option<String> {
+    let text = fs::read_to_string(section.join("_node.toml")).ok()?;
+    kv::parse(&text).get("template").map(|t| t.trim().to_string()).filter(|t| !t.is_empty())
+}
+
+/// Sets the template a section's new pages start from (issue #519), or with `None` clears it.
+/// Only a section has one; the pages already in it are not changed.
+pub fn set_default_template(section: &Path, template: Option<&str>) -> Result<()> {
+    if read_node(section).is_none_or(|n| n.kind != NodeKind::Section) {
+        return Err(StoreError::invalid("only a section has a template for its new pages"));
+    }
+    let file = section.join("_node.toml");
+    let text = fs::read_to_string(&file).map_err(|_| StoreError::NotFound(format!("{} is not a NoteCraft folder", section.display())))?;
+    let kept: String = text.lines().filter(|l| !l.trim_start().starts_with("template =")).map(|l| format!("{l}\n")).collect();
+    let out = match template.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(id) => format!("{kept}template = {}\n", kv::quote(id)),
+        None => kept,
+    };
+    write_atomic(&file, &out)
+}
+
 /// Changes the title of a node. The folder name is not changed.
 ///
 /// A new page is written with its title in two places: where the page records it, and as
@@ -1033,6 +1056,13 @@ mod tests {
         let nb = create_notebook(&root(&t), "NB", None, &s).expect("nb");
         let section = create_node(&nb, "Work", NodeKind::Section, None, &s).expect("section");
         assert_eq!(read_node(&section).and_then(|i| i.color), None, "a new section has no colour");
+        set_default_template(&section, Some("builtin:to-do")).expect("template");
+        assert_eq!(default_template(&section).as_deref(), Some("builtin:to-do"));
+        set_default_template(&section, Some("saved:mine")).expect("again");
+        assert_eq!(default_template(&section).as_deref(), Some("saved:mine"), "set again, not added twice");
+        set_default_template(&section, None).expect("clear");
+        assert_eq!(default_template(&section), None);
+        assert!(read_node(&section).is_some_and(|n| n.kind == NodeKind::Section), "the section's other lines are kept");
         set_color(&section, Some(NodeColor::Teal)).expect("set");
         assert_eq!(read_node(&section).and_then(|i| i.color), Some(NodeColor::Teal));
         // Setting it again replaces the line instead of adding a second one.
