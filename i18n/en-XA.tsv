@@ -1503,6 +1503,7 @@
 @id	ui.image_text_detect	$$$Detect text@@@
 @id	ui.image_text_hide	$$$Hide detected text@@@
 @id	ui.image_text_none_yet	$$$No text has been read from this picture yet.@@@
+@id	ui.image_text_models_not_set	$$$Set up the text recognition models first: choose the OCR models folder in Copy Text from Picture.@@@
 @id	ui.choose_the_ocr_models_folder	$$$Choose the folder with the text recognition models@@@
 @id	ui.picture_text_copy_failed	$$$The text could not be put on the clipboard: {error}@@@
 @id	ui.print	$$$Print@@@

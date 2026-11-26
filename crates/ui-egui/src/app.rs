@@ -7197,6 +7197,11 @@ impl NoteCraftApp {
             ribbon::Act::SavePictureAs(src) => self.save_picture_as(&src),
             ribbon::Act::TurnPicture(src, how) => self.turn_picture(&src, how),
             ribbon::Act::CopyTextFromPicture { src, whole_printout } => self.copy_text_from_picture(&src, whole_printout),
+            ribbon::Act::ReadPageText => match self.editor.as_ref().map(|e| e.dir.clone()) {
+                Some(dir) if self.ocr_models().is_some() => self.read_pictures(&dir),
+                Some(_) => self.complain(crate::tl_id!("ui.image_text_models_not_set")),
+                None => {}
+            },
         }
     }
 
