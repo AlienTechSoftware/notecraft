@@ -2542,6 +2542,9 @@ pub fn show_blocks(
             let mut selection = None;
             let mut ticked = None;
             let mut input_caret = None;
+            // The laid-out words and where they were drawn, to find the caret's line again once
+            // its place is settled for this frame.
+            let mut drawn_words: Option<(std::sync::Arc<egui::Galley>, egui::Pos2)> = None;
             let id = ui.make_persistent_id(("page-block", i));
             changed.mark = formatting_key(ui, id);
             // A line that reads right to left is written from the right: its bullet, box or
@@ -2808,6 +2811,7 @@ pub fn show_blocks(
                     if let Some(range) = cursor_range {
                         input_caret = Some(out.galley.pos_from_cursor(range.primary).translate(out.galley_pos.to_vec2()));
                     }
+                    drawn_words = Some((out.galley.clone(), out.galley_pos));
                     if let Some(r) = cursor_range {
                         selection = Some((r.primary.index.0, r.secondary.index.0));
                     }
@@ -2864,10 +2868,15 @@ pub fn show_blocks(
             }
             // Brought into view when the keyboard has just sent the caret here from afar: the
             // caret's own line, which in a long block is not the block's middle.
+            // Measured from where the caret is now, after the arrival and any selection put back
+            // above have moved it.
             let reveal = reveal_caret_id(ui.ctx());
             if ui.data_mut(|d| d.remove_temp::<bool>(reveal)).unwrap_or(false) {
-                match input_caret {
-                    Some(line) => ui.scroll_to_rect(line.expand2(vec2(0.0, 24.0)), Some(egui::Align::Center)),
+                match &drawn_words {
+                    Some((galley, at)) => {
+                        let line = galley.pos_from_cursor(egui::text::CCursor::new(c.selection.0)).translate(at.to_vec2());
+                        ui.scroll_to_rect(line.expand2(vec2(0.0, 24.0)), Some(egui::Align::Center));
+                    }
                     None => resp.scroll_to_me(Some(egui::Align::Center)),
                 }
             }
