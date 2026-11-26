@@ -1749,6 +1749,44 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
             });
         });
     });
+    group(ui, crate::tl_id!("ui.styles"), t, |ui| {
+        gallery(ui, "styles", view.style, t, acts, |ui, acts| {
+            // The box shows two rows, as OneNote's does: the first two, or, when the caret is in
+            // a later style, that one and the next (the last two for the last), so the current
+            // style is in sight. Ordinary text keeps the headings in the box.
+            let first = STYLES.iter().position(|(_, k)| *k == view.style && *k != "p").filter(|i| *i >= 2).map_or(0, |i| i.min(STYLES.len() - 2));
+            for (label, kind) in STYLES.iter().skip(first).take(2) {
+                if style_row(ui, label, kind, *kind == view.style, t).clicked() {
+                    acts.push(Act::Block(leak(kind)));
+                }
+            }
+        });
+    });
+    group(ui, crate::tl_id!("ui.tags"), t, |ui| {
+        gallery(ui, "tags", "", t, acts, |ui, acts| {
+            for tag in [Tag::ToDo, Tag::Important] {
+                if tag_row(ui, tag, t).clicked() {
+                    acts.push(Act::Tag(tag));
+                }
+            }
+        });
+        if big(ui, Icon::Todo, crate::tl_id!("ui.to_do_tag_2"), crate::tl_id!("ui.a_to_do_box_on_this_line_ctrl_1"), t).clicked() {
+            acts.push(Act::Block("todo"));
+        }
+        if big(ui, Icon::Search, crate::tl_id!("ui.find_tags_3"), crate::tl_id!("ui.list_the_tagged_notes_and_go_to_them"), t).clicked() {
+            acts.push(Act::FindTags);
+        }
+    });
+    group(ui, crate::tl_id!("ui.email"), t, |ui| {
+        if big(ui, Icon::Attach, crate::tl_id!("ui.send_page_3"), crate::tl_id!("ui.portable_send_hint"), t).clicked() {
+            acts.push(Act::SendPage);
+        }
+    });
+    group(ui, crate::tl_id!("ui.meetings"), t, |ui| {
+        if big(ui, Icon::Calendar, crate::tl_id!("ui.meeting_details_3"), crate::tl_id!("ui.meeting_details_tip"), t).clicked() {
+            acts.push(Act::MeetingDetails);
+        }
+    });
     // Page direction is NoteCraft's own: OneNote has no such thing, and a notebook written
     // in Arabic wants one. It stays visible in the ribbon as page setup rather than being
     // hidden in a Word-style dialog. Paragraph direction remains available beside it,
@@ -1842,44 +1880,6 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
             });
             run_direction_menu(ui, t, acts);
         });
-    });
-    group(ui, crate::tl_id!("ui.styles"), t, |ui| {
-        gallery(ui, "styles", view.style, t, acts, |ui, acts| {
-            // The box shows two rows, as OneNote's does: the first two, or, when the caret is in
-            // a later style, that one and the next (the last two for the last), so the current
-            // style is in sight. Ordinary text keeps the headings in the box.
-            let first = STYLES.iter().position(|(_, k)| *k == view.style && *k != "p").filter(|i| *i >= 2).map_or(0, |i| i.min(STYLES.len() - 2));
-            for (label, kind) in STYLES.iter().skip(first).take(2) {
-                if style_row(ui, label, kind, *kind == view.style, t).clicked() {
-                    acts.push(Act::Block(leak(kind)));
-                }
-            }
-        });
-    });
-    group(ui, crate::tl_id!("ui.tags"), t, |ui| {
-        gallery(ui, "tags", "", t, acts, |ui, acts| {
-            for tag in [Tag::ToDo, Tag::Important] {
-                if tag_row(ui, tag, t).clicked() {
-                    acts.push(Act::Tag(tag));
-                }
-            }
-        });
-        if big(ui, Icon::Todo, crate::tl_id!("ui.to_do_tag_2"), crate::tl_id!("ui.a_to_do_box_on_this_line_ctrl_1"), t).clicked() {
-            acts.push(Act::Block("todo"));
-        }
-        if big(ui, Icon::Search, crate::tl_id!("ui.find_tags_3"), crate::tl_id!("ui.list_the_tagged_notes_and_go_to_them"), t).clicked() {
-            acts.push(Act::FindTags);
-        }
-    });
-    group(ui, crate::tl_id!("ui.email"), t, |ui| {
-        if big(ui, Icon::Attach, crate::tl_id!("ui.send_page_3"), crate::tl_id!("ui.portable_send_hint"), t).clicked() {
-            acts.push(Act::SendPage);
-        }
-    });
-    group(ui, crate::tl_id!("ui.meetings"), t, |ui| {
-        if big(ui, Icon::Calendar, crate::tl_id!("ui.meeting_details_3"), crate::tl_id!("ui.meeting_details_tip"), t).clicked() {
-            acts.push(Act::MeetingDetails);
-        }
     });
 }
 
