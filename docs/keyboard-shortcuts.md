@@ -22,7 +22,8 @@ Page order is preserved when either action changes the hierarchy.
 ## Notebooks, sections and pages
 
 These work from the page's words and title, and from the notebooks; another text box with the
-keyboard (the search box, a rename) and an open dialog keep the keys.
+keyboard (the search box, a rename) and an open dialog keep the keys. Pages picked together are
+moved or copied together by Move or Copy, in their order; a plain click puts them down.
 
 | Action | Windows and Linux | macOS |
 |---|---|---|
@@ -34,6 +35,8 @@ keyboard (the search box, a rename) and an open dialog keep the keys.
 | Switch notebook (a list; Up, Down, Enter; Escape stays) | `Ctrl+G` | `Cmd+G` |
 | Keyboard to the open section's row | `Ctrl+Shift+G` | `Cmd+Shift+G` |
 | Keyboard to the open page's row | `Ctrl+Alt+G` | `Option+Cmd+G` |
+| On a page row: pick it with others, or put it down | `Ctrl+Space` or `Ctrl`+click | `Cmd+Space` or `Cmd`+click |
+| On a page row: pick every page from the last picked to it | `Shift+Space` or `Shift`+click | `Shift+Space` or `Shift`+click |
 | Keyboard to the page's title (Escape goes back to the words) | `Ctrl+Shift+T` | `Cmd+Shift+T` |
 
 A section opens at the page last open in it, or at its first page; an empty section says so on

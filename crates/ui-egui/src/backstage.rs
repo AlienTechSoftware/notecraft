@@ -42,6 +42,9 @@ pub enum Act {
     SetUiScale(u16),
     /// Options > switch tools with the device in hand, on or off (issue #9).
     SetAutoSwitch(bool),
+    /// Options > Quick Notes (issue #567): new Quick Notes go into this section, or with `None`
+    /// into the Quick Notes notebook NoteCraft keeps for them.
+    SetQuickNotesSection(Option<std::path::PathBuf>),
     /// Don't check for updates at start up: the setting is saved, and on by default is off.
     SetUpdateCheckOff(bool),
     SetWelcomeNotebookUpdatePrompt(bool),
@@ -178,6 +181,19 @@ fn version_and_updates(ui: &mut Ui, update: &crate::update::Status, t: &Tokens, 
     ui.label(egui::RichText::new(line).size(11.5).color(if error { t.warn } else { t.muted }));
 }
 
+/// Options > Quick Notes (issue #567): where new Quick Notes go, and where they can go.
+#[derive(Clone, Debug, Default)]
+pub struct QuickNotes {
+    /// The section chosen, or `None` for the Quick Notes notebook kept for them.
+    pub chosen: Option<std::path::PathBuf>,
+    /// Where the chosen section is, as "Notebook > Section"; empty for the default.
+    pub chosen_place: String,
+    /// The setting names a place that is not a section any more.
+    pub broken: bool,
+    /// Every section that can take them: its folder, and where it is.
+    pub sections: Vec<(std::path::PathBuf, String)>,
+}
+
 /// Draws the File screen over the whole window. Returns what the user asked for.
 pub fn show(
     ui: &mut Ui,
@@ -193,6 +209,7 @@ pub fn show(
     languages: &[crate::i18n::LanguageChoice],
     ui_scale: u16,
     auto_switch: bool,
+    quick_notes: &QuickNotes,
     update_check_off: bool,
     welcome_notebook_update_prompt: bool,
     update: &crate::update::Status,
@@ -233,6 +250,7 @@ pub fn show(
                         languages,
                         ui_scale,
                         auto_switch,
+                        quick_notes,
                         update_check_off,
                         welcome_notebook_update_prompt,
                         update,
@@ -666,6 +684,41 @@ fn scale_label(percent: u16) -> String {
     crate::i18n::format_message_id("ui.interface_size_percent", &[("percent", &percent.to_string())])
 }
 
+/// Options > Quick Notes (issue #567): the section new Quick Notes go into, chosen from the
+/// sections there are, or the Quick Notes notebook kept for them. What is chosen is said before
+/// any Quick Note is made; notes already made stay where they were saved.
+fn quick_notes_options(ui: &mut Ui, choice: &QuickNotes, width: f32, t: &Tokens, acts: &mut Vec<Act>) {
+    ui.label(egui::RichText::new(crate::tl_id!("ui.quick_notes")).strong().color(t.strong));
+    let now = if choice.broken {
+        crate::tl_id!("ui.quick_notes_section_missing").to_string()
+    } else if choice.chosen.is_some() {
+        crate::i18n::format_message_id("ui.quick_notes_go_to", &[("place", &choice.chosen_place)])
+    } else {
+        crate::tl_id!("ui.quick_notes_go_to_the_default").to_string()
+    };
+    ui.label(egui::RichText::new(now).size(12.0).color(if choice.broken { t.warn } else { t.text }));
+    let shown =
+        if choice.chosen.is_some() && !choice.broken { choice.chosen_place.clone() } else { crate::tl_id!("ui.quick_notes_notebook").to_string() };
+    egui::ComboBox::from_label(crate::tl_id!("ui.quick_notes_section"))
+        .width(width)
+        .truncate()
+        .selected_text(shown)
+        .popup_style(crate::theme::picker_popup_style(*t))
+        .show_ui(ui, |ui| {
+            if ui.selectable_label(choice.chosen.is_none(), crate::tl_id!("ui.quick_notes_notebook")).clicked() {
+                acts.push(Act::SetQuickNotesSection(None));
+                ui.close();
+            }
+            for (path, place) in &choice.sections {
+                if ui.selectable_label(choice.chosen.as_ref() == Some(path), place).clicked() {
+                    acts.push(Act::SetQuickNotesSection(Some(path.clone())));
+                    ui.close();
+                }
+            }
+        });
+    ui.label(egui::RichText::new(crate::tl_id!("ui.quick_notes_section_hint")).size(11.5).color(t.muted));
+}
+
 fn options_page(
     ui: &mut Ui,
     root: &std::path::Path,
@@ -677,6 +730,7 @@ fn options_page(
     languages: &[crate::i18n::LanguageChoice],
     ui_scale: u16,
     auto_switch: bool,
+    quick_notes: &QuickNotes,
     update_check_off: bool,
     welcome_notebook_update_prompt: bool,
     update: &crate::update::Status,
@@ -777,6 +831,8 @@ fn options_page(
         }
     });
     ui.label(egui::RichText::new(crate::tl_id!("ui.notebooks_folder_hint")).size(11.5).color(t.muted));
+    ui.add_space(12.0);
+    quick_notes_options(ui, quick_notes, field_width, t, acts);
     ui.add_space(12.0);
     ui.separator();
     ui.add_space(4.0);
@@ -900,6 +956,7 @@ mod tests {
                 &crate::i18n::available_languages(),
                 100,
                 true,
+                &QuickNotes::default(),
                 false,
                 true,
                 &crate::update::Status::Idle,
