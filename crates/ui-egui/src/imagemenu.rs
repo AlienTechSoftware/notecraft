@@ -6,6 +6,7 @@
 use crate::floating::{self, Glyph};
 use crate::icons::Icon;
 use crate::ribbon::Act;
+use crate::ribbon_icons::Mark;
 use crate::theme::Tokens;
 use egui::Ui;
 use std::path::{Path, PathBuf};
@@ -87,6 +88,23 @@ pub fn show(ui: &mut Ui, body: egui::Rect, page: &Path, acts: &mut Vec<Act>, t: 
     let mut picked = false;
     let Some(menu) = floating::point_menu(ui.ctx(), id(), egui::Rect::from_pos(at), |ui| {
         floating::menu_heading(ui, crate::tl_id!("ui.this_picture"), t);
+        // The universal clipboard rows, as on the page's menu: Cut, Copy and Paste work on a picture too.
+        let block = ui.data(|d| d.get_temp::<usize>(block_id()));
+        if let Some(block) = block {
+            if floating::menu_row(ui, Some(Glyph::Mark(Mark::Cut)), crate::tl_id!("ui.cut"), t).clicked() {
+                acts.push(Act::PictureClipboard { src: src.clone(), block, cut: true });
+                picked = true;
+            }
+            if floating::menu_row(ui, Some(Glyph::Mark(Mark::Copy)), crate::tl_id!("ui.copy"), t).clicked() {
+                acts.push(Act::PictureClipboard { src: src.clone(), block, cut: false });
+                picked = true;
+            }
+        }
+        if floating::menu_row(ui, Some(Glyph::Mark(Mark::Paste)), crate::tl_id!("ui.paste"), t).clicked() {
+            acts.push(Act::Paste);
+            picked = true;
+        }
+        floating::menu_separator(ui, t);
         if floating::menu_row(ui, Some(Glyph::Icon(Icon::Picture)), crate::tl_id!("ui.save_picture_as"), t).clicked() {
             acts.push(Act::SavePictureAs(src.clone()));
             picked = true;
@@ -378,5 +396,33 @@ mod tests {
             h.run();
             assert_eq!(*h.state(), vec![Act::CopyTextFromPicture { src: src.to_string(), whole_printout: whole }]);
         }
+    }
+
+    /// The picture's menu always offers Cut, Copy and Paste, as the page's does. Cut and Copy act on
+    /// the picture at the block the menu was opened on (issue: Copy, Cut and Paste were lost from it).
+    #[test]
+    fn the_picture_menu_offers_cut_copy_and_paste() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable;
+
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let body = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
+        let mut h = Harness::builder().with_size(egui::vec2(800.0, 600.0)).with_accessibility_check(false).build_ui_state(
+            |ui, acts: &mut Vec<Act>| {
+                show(ui, body, std::path::Path::new("page"), acts, &tokens);
+            },
+            Vec::new(),
+        );
+        h.ctx.data_mut(|d| {
+            d.insert_temp(id(), (egui::pos2(100.0, 100.0), "assets/photo.png".to_string()));
+            d.insert_temp(block_id(), 2usize);
+        });
+        h.run();
+        for label in ["Cut", "Copy", "Paste"] {
+            assert!(h.query_by_label(label).is_some(), "{label} is on the picture's menu");
+        }
+        h.get_by_label("Copy").click();
+        h.run();
+        assert_eq!(*h.state(), vec![Act::PictureClipboard { src: "assets/photo.png".to_string(), block: 2, cut: false }]);
     }
 }

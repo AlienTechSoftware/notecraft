@@ -219,6 +219,13 @@ pub enum Act {
         src: String,
         block: usize,
     },
+    /// Copy or Cut (`cut`) the picture at `block`: its file goes on the system clipboard. Cut then
+    /// takes the picture out of the page.
+    PictureClipboard {
+        src: String,
+        block: usize,
+        cut: bool,
+    },
     /// Draw > Rotate: turn or mirror the ink picked up (issue #544).
     TurnInk(notecraft_ink::pick::Turn),
     /// The eraser's menu: which eraser it is (issue #545).

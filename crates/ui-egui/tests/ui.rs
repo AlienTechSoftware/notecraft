@@ -17351,11 +17351,11 @@ fn a_selected_picture_and_box_open_their_menus_from_the_keyboard() {
     settle(&mut h);
     assert!(h.query_by_label("Save picture as...").is_some(), "the picture's menu opens from the keyboard");
     assert_eq!(h.query_all_by_label("This picture").count(), 1, "and names what it acts on");
-    assert_eq!(focused_label(&h).as_deref(), Some("Save picture as..."), "with the keyboard on its first row");
+    assert_eq!(focused_label(&h).as_deref(), Some("Cut"), "with the keyboard on its first row, Cut");
     // The arrows move through the menu; they do not move off the picture behind it.
     h.key_press(egui::Key::ArrowDown);
     settle(&mut h);
-    assert_eq!(focused_label(&h).as_deref(), Some("Copy Text from Picture"), "Down moves to the next row");
+    assert_eq!(focused_label(&h).as_deref(), Some("Copy"), "Down moves to the next row");
     assert_eq!(look_at(&mut h).pointer("/page/selectedImage").and_then(Value::as_u64), Some(0), "and the picture stays selected");
     assert!(h.query_by_label("Save picture as...").is_some(), "with its menu open");
     h.key_press(egui::Key::Escape);

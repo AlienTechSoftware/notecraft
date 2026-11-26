@@ -7778,12 +7778,56 @@ impl NoteCraftApp {
             ribbon::Act::TurnPicture(src, how) => self.turn_picture(&src, how),
             ribbon::Act::CopyTextFromPicture { src, whole_printout } => self.copy_text_from_picture(&src, whole_printout),
             ribbon::Act::ConvertPermanently { src, block } => self.convert_permanently(&src, block),
+            ribbon::Act::PictureClipboard { src, block, cut } => self.picture_clipboard(&src, block, cut),
             ribbon::Act::ReadPageText => match self.editor.as_ref().map(|e| e.dir.clone()) {
                 Some(dir) if self.ocr_models().is_some() => self.read_pictures(&dir),
                 Some(_) => self.complain(crate::tl_id!("ui.image_text_models_not_set")),
                 None => {}
             },
         }
+    }
+
+    /// Copy or Cut a picture: its file goes on the system clipboard. Cut then takes the picture out of
+    /// the page, as Delete does, and can be undone. The block must still hold that picture.
+    fn picture_clipboard(&mut self, src: &str, block: usize, cut: bool) {
+        let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else { return };
+        let still_there =
+            matches!(self.editor.as_ref().and_then(|e| e.blocks.get(block)), Some(notecraft_formats::Block::Image { src: s, .. }) if s.trim() == src);
+        if !still_there {
+            return;
+        }
+        let bytes = match crate::imagemenu::validate_and_read_image(&dir, src) {
+            Ok((_, _, bytes)) => bytes,
+            Err(e) => {
+                self.say(e.to_string());
+                return;
+            }
+        };
+        if let Err(e) = crate::clipboard::set_picture(&bytes) {
+            self.say(&e);
+            return;
+        }
+        if !cut {
+            self.say(crate::tl_id!("ui.copied"));
+            return;
+        }
+        let Some(ed) = self.editor.as_mut() else { return };
+        Self::remember_step(ed);
+        ed.caret = None;
+        ed.blocks.remove(block);
+        ed.count_removed_from_boxes(block);
+        let cols = ed.columns.remove_blocks(block..block + 1);
+        let justified = ed.justified.remove_blocks(block..block + 1);
+        if ed.blocks.is_empty() {
+            ed.blocks.push(notecraft_formats::Block::Paragraph(Vec::new(), Vec::new()));
+            ed.count_inserted_in_boxes(0, 1);
+        }
+        pageedit::renumber(&mut ed.blocks);
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_edit(ed);
+        self.save_block_marks((cols, justified));
+        self.say(crate::tl_id!("ui.cut"));
     }
 
     /// Convert permanently (!): the picture's OCR text becomes paragraphs in the page, in place of the

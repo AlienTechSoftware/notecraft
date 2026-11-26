@@ -198,6 +198,11 @@ pub fn current_text(picture: &Path) -> Result<Option<String>, OcrError> {
 pub fn read_saved(picture: &Path) -> Option<Saved> {
     let text = std::fs::read_to_string(ocr_json_path(picture)).ok()?;
     let value: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
+    parse_saved(&value)
+}
+
+/// The saved text and lines of an already-parsed OCR file of this format.
+fn parse_saved(value: &serde_json::Value) -> Option<Saved> {
     if value.get("schema")?.as_str()? != "notecraft.ocr" || value.get("version")?.as_u64()? != FORMAT_VERSION {
         return None;
     }
@@ -221,12 +226,13 @@ pub fn read_saved(picture: &Path) -> Option<Saved> {
 
 /// The saved OCR file, when it was made from the picture's bytes with this hash.
 fn saved_for(picture: &Path, hash: &str) -> Option<Saved> {
+    // One read of the file: the hash and the text come from the same snapshot.
     let text = std::fs::read_to_string(ocr_json_path(picture)).ok()?;
     let value: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
     if value.get("picture")?.get("sha256")?.as_str()? != hash {
         return None;
     }
-    read_saved(picture)
+    parse_saved(&value)
 }
 
 /// The SHA-256 of the picture's bytes, in hex: the hash the saved file is stamped with.
