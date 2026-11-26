@@ -625,6 +625,13 @@ pub fn show(
             let Some(rect) = object_hits.iter().find(|(at, _, kind)| *at == block && kind == "image").map(|(_, rect, _)| *rect) else {
                 continue;
             };
+            // The detected-text overlay is painted for every picture that has it shown, selected or not.
+            if crate::image_text::showing(ui.ctx(), page_dir, block) {
+                let boxes = crate::image_text::read_boxes(&page_dir.join(src));
+                if let Ok((w, h)) = image::image_dimensions(page_dir.join(src)) {
+                    crate::image_text::paint(ui.painter(), rect, [w, h], &boxes, t.accent);
+                }
+            }
             crate::image_text::menu(ui, rect, page_dir, block, &page_dir.join(src), src, &mut out.acts, t);
         }
         // A picture among other blocks in one box (a page that was never arranged is one box
@@ -754,18 +761,6 @@ pub fn show(
             let object_rect = hits.iter().find(|(at, _, _)| at == block).map(|(_, rect, _)| *rect).unwrap_or(image_rect);
             log::debug!("embedded object affordance: block={block} kind={kind} rect={object_rect:?}");
             ui.painter().rect_stroke(object_rect, 1.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
-            // A picture's (>) menu: detected text as an overlay. View state only; see image_text.rs.
-            if kind.as_str() == "image"
-                && let Some(Block::Image { src, .. }) = blocks.get(*block)
-            {
-                let picture = page_dir.join(src);
-                if crate::image_text::showing(ui.ctx(), page_dir, *block) {
-                    let boxes = crate::image_text::read_boxes(&picture);
-                    if let Ok((w, h)) = image::image_dimensions(&picture) {
-                        crate::image_text::paint(ui.painter(), object_rect, [w, h], &boxes, t.accent);
-                    }
-                }
-            }
             let image_rect = object_rect;
             let size = resize_handle_size;
 
