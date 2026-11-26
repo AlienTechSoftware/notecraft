@@ -608,6 +608,11 @@ pub fn show(
         let image_hit = image_object.then(|| {
             ui.interact(image_rect, ui.id().with(("image-object", range.start)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move)
         });
+        // A picture's (>) is drawn whether or not the picture is selected. A click on the (>) is a click off
+        // the picture, which would deselect it and close the menu before it opens.
+        if standalone_image && let Some(Block::Image { src, .. }) = blocks.get(range.start) {
+            crate::image_text::menu(ui, image_rect, page_dir, range.start, &page_dir.join(src), t);
+        }
         // A picture among other blocks in one box (a page that was never arranged is one box
         // holding everything). It is moved by its body like any picture, which takes it out of
         // the box into one of its own where it stands; see `lift_picture` below.
@@ -746,7 +751,6 @@ pub fn show(
                         crate::image_text::paint(ui.painter(), object_rect, [w, h], &boxes, t.accent);
                     }
                 }
-                crate::image_text::menu(ui, object_rect, page_dir, *block, &picture, t);
             }
             let image_rect = object_rect;
             let size = resize_handle_size;
