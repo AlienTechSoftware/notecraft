@@ -78,6 +78,13 @@ pub fn menu(ui: &mut egui::Ui, picture_rect: Rect, page: &Path, block: usize, pi
                 }
                 ui.close();
             }
+            // The conversions are listed now and switched on as their parts are built; each says why it is off.
+            floating::menu_row_if(ui, false, None, crate::tl_id!("ui.image_text_convert_text"), t)
+                .on_disabled_hover_text(crate::tl_id!("ui.image_text_why_page_format"));
+            floating::menu_row_if(ui, false, None, crate::tl_id!("ui.image_text_convert_equation"), t)
+                .on_disabled_hover_text(crate::tl_id!("ui.image_text_why_equation_model"));
+            floating::menu_row_if(ui, false, None, crate::tl_id!("ui.image_text_convert_permanent"), t)
+                .on_disabled_hover_text(crate::tl_id!("ui.image_text_why_page_format"));
             if boxes.is_empty() {
                 ui.small(crate::tl_id!("ui.image_text_none_yet"));
             }
