@@ -164,6 +164,22 @@ pub fn set_html(html: &str, text: &str) -> Result<(), String> {
     with_writer(|board| board.set().html(html.to_string(), Some(text.to_string())))
 }
 
+/// Puts a picture on the system clipboard, from its PNG bytes, so another program can paste it.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn set_picture(png: &[u8]) -> Result<(), String> {
+    let image = image::load_from_memory(png).map_err(|e| e.to_string())?.to_rgba8();
+    let (width, height) = image.dimensions();
+    with_writer(|board| {
+        board.set_image(arboard::ImageData { width: width as usize, height: height as usize, bytes: std::borrow::Cow::Owned(image.into_raw()) })
+    })
+}
+
+/// In the browser build the system clipboard cannot take a picture, so Copy and Cut say so.
+#[cfg(target_arch = "wasm32")]
+pub fn set_picture(_png: &[u8]) -> Result<(), String> {
+    Err(UNAVAILABLE.to_string())
+}
+
 /// The rich HTML flavor for a copied page link.
 pub fn html_link(title: &str, uri: &str) -> String {
     format!("<p><a href=\"{}\">{}</a></p>", notecraft_formats::html::escape(uri), notecraft_formats::html::escape(title))

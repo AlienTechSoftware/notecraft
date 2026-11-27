@@ -4636,6 +4636,8 @@ impl NoteCraftApp {
             let page = dir.to_string_lossy().into_owned();
             if let Err(e) = self.session.run("ocr.refresh", &params(&[("path", &page)])) {
                 log::warn!("picture text was not read for {page}: {e:?}");
+                // The user asked for this, so the failure is shown, not only logged.
+                self.complain(crate::tl_id!("ui.image_text_read_failed"));
             }
         }
     }
@@ -7775,9 +7777,92 @@ impl NoteCraftApp {
             ribbon::Act::SavePictureAs(src) => self.save_picture_as(&src),
             ribbon::Act::TurnPicture(src, how) => self.turn_picture(&src, how),
             ribbon::Act::CopyTextFromPicture { src, whole_printout } => self.copy_text_from_picture(&src, whole_printout),
+            ribbon::Act::ConvertPermanently { src, block } => self.convert_permanently(&src, block),
+            ribbon::Act::PictureClipboard { src, block, cut } => self.picture_clipboard(&src, block, cut),
+            ribbon::Act::ReadPageText => match self.editor.as_ref().map(|e| e.dir.clone()) {
+                Some(dir) if self.ocr_models().is_some() => self.read_pictures(&dir),
+                Some(_) => self.complain(crate::tl_id!("ui.image_text_models_not_set")),
+                None => {}
+            },
         }
     }
 
+    /// Copy or Cut a picture: its file goes on the system clipboard. Cut then takes the picture out of
+    /// the page, as Delete does, and can be undone. The block must still hold that picture.
+    fn picture_clipboard(&mut self, src: &str, block: usize, cut: bool) {
+        let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) else { return };
+        let still_there =
+            matches!(self.editor.as_ref().and_then(|e| e.blocks.get(block)), Some(notecraft_formats::Block::Image { src: s, .. }) if s.trim() == src);
+        if !still_there {
+            return;
+        }
+        let bytes = match crate::imagemenu::validate_and_read_image(&dir, src) {
+            Ok((_, _, bytes)) => bytes,
+            Err(e) => {
+                self.say(e.to_string());
+                return;
+            }
+        };
+        if let Err(e) = crate::clipboard::set_picture(&bytes) {
+            self.say(&e);
+            return;
+        }
+        if !cut {
+            self.say(crate::tl_id!("ui.copied"));
+            return;
+        }
+        let Some(ed) = self.editor.as_mut() else { return };
+        Self::remember_step(ed);
+        ed.caret = None;
+        ed.blocks.remove(block);
+        ed.count_removed_from_boxes(block);
+        let cols = ed.columns.remove_blocks(block..block + 1);
+        let justified = ed.justified.remove_blocks(block..block + 1);
+        if ed.blocks.is_empty() {
+            ed.blocks.push(notecraft_formats::Block::Paragraph(Vec::new(), Vec::new()));
+            ed.count_inserted_in_boxes(0, 1);
+        }
+        pageedit::renumber(&mut ed.blocks);
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_edit(ed);
+        self.save_block_marks((cols, justified));
+        self.say(crate::tl_id!("ui.cut"));
+    }
+
+    /// Convert permanently (!): the picture's OCR text becomes paragraphs in the page, in place of the
+    /// picture. The page changes for good: nothing is put on the undo history. The text comes from the
+    /// picture's saved OCR file, so Detect text (or the page's OCR) must have read it first.
+    fn convert_permanently(&mut self, src: &str, index: usize) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        // The block the menu was opened on, so a second copy of the same picture is left alone.
+        if !matches!(ed.blocks.get(index), Some(notecraft_formats::Block::Image { src: s, .. }) if s.trim() == src) {
+            return;
+        }
+        let Some(lines) = crate::image_text::saved_text_lines(&ed.dir.join(src)) else {
+            self.complain(crate::tl_id!("ui.image_text_none_yet"));
+            return;
+        };
+        let paragraphs: Vec<notecraft_formats::Block> = lines
+            .into_iter()
+            .map(|line| notecraft_formats::Block::Paragraph(vec![notecraft_formats::markdown::Span { text: line, ..Default::default() }], Vec::new()))
+            .collect();
+        let added = paragraphs.len();
+        // The caret may point at a block that has moved or gone, so it is put down, as delete_table does.
+        ed.caret = None;
+        ed.blocks.splice(index..=index, paragraphs);
+        // The box that held the picture now holds the paragraphs in its place.
+        let mut start = 0;
+        for container in ed.boxes.iter_mut() {
+            if index < start + container.blocks {
+                container.blocks = container.blocks + added - 1;
+                break;
+            }
+            start += container.blocks;
+        }
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+    }
     /// Adds, removes, moves or changes a tool on the rack, and remembers the result. The
     /// rules about what may not happen - the last tool cannot be taken off, a tool cannot
     /// be moved off either end - live in `notecraft_ink::rack`, so they hold wherever the

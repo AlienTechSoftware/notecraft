@@ -46,6 +46,9 @@ impl Clipboard {
     pub fn get_image(&mut self) -> Result<ImageData<'static>, Error> {
         Err(Error::ClipboardNotSupported)
     }
+    pub fn set_image(&mut self, _image: ImageData<'_>) -> Result<(), Error> {
+        Err(Error::ClipboardNotSupported)
+    }
     pub fn get_text(&mut self) -> Result<String, Error> {
         Err(Error::ClipboardNotSupported)
     }

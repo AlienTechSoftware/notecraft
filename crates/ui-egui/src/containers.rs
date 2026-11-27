@@ -608,6 +608,32 @@ pub fn show(
         let image_hit = image_object.then(|| {
             ui.interact(image_rect, ui.id().with(("image-object", range.start)), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Move)
         });
+        // A picture's (>) is drawn whether or not the picture is selected. A click on the (>) is a click off
+        // the picture, which would deselect it and close the menu before it opens.
+        // Embedded pictures too: each image in the box, at the rectangle the layout reports for it.
+        let object_hits = ui.data(|d| d.get_temp::<Vec<(usize, Rect, String)>>(crate::preview::object_hits_id())).unwrap_or_default();
+        for block in range.clone() {
+            let Some(Block::Image { src, .. }) = blocks.get(block) else { continue };
+            // Only raster pictures get the (>). An attachment card is not a picture and keeps its own clicks.
+            let raster = std::path::Path::new(src)
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| ["png", "jpg", "jpeg", "gif", "webp", "bmp"].iter().any(|ext| e.eq_ignore_ascii_case(ext)));
+            if !raster {
+                continue;
+            }
+            let Some(rect) = object_hits.iter().find(|(at, _, kind)| *at == block && kind == "image").map(|(_, rect, _)| *rect) else {
+                continue;
+            };
+            // The detected-text overlay is painted for every picture that has it shown, selected or not.
+            if crate::image_text::showing(ui.ctx(), page_dir, block) {
+                let boxes = crate::image_text::read_boxes(&page_dir.join(src));
+                if let Ok((w, h)) = image::image_dimensions(page_dir.join(src)) {
+                    crate::image_text::paint(ui.painter(), rect, [w, h], &boxes, t.accent);
+                }
+            }
+            crate::image_text::menu(ui, rect, page_dir, block, &page_dir.join(src), src, &mut out.acts, t);
+        }
         // A picture among other blocks in one box (a page that was never arranged is one box
         // holding everything). It is moved by its body like any picture, which takes it out of
         // the box into one of its own where it stands; see `lift_picture` below.
@@ -735,19 +761,6 @@ pub fn show(
             let object_rect = hits.iter().find(|(at, _, _)| at == block).map(|(_, rect, _)| *rect).unwrap_or(image_rect);
             log::debug!("embedded object affordance: block={block} kind={kind} rect={object_rect:?}");
             ui.painter().rect_stroke(object_rect, 1.0 * zoom, egui::Stroke::new(1.5 * zoom, t.accent), egui::StrokeKind::Inside);
-            // A picture's (>) menu: detected text as an overlay. View state only; see image_text.rs.
-            if kind.as_str() == "image"
-                && let Some(Block::Image { src, .. }) = blocks.get(*block)
-            {
-                let picture = page_dir.join(src);
-                if crate::image_text::showing(ui.ctx(), page_dir, *block) {
-                    let boxes = crate::image_text::read_boxes(&crate::image_text::lines_path(&picture));
-                    if let Ok((w, h)) = image::image_dimensions(&picture) {
-                        crate::image_text::paint(ui.painter(), object_rect, [w, h], &boxes, t.accent);
-                    }
-                }
-                crate::image_text::menu(ui, object_rect, page_dir, *block, &picture);
-            }
             let image_rect = object_rect;
             let size = resize_handle_size;
 

@@ -156,104 +156,149 @@ pub enum Refresh {
     Rewritten,
 }
 
-/// Re-reads a picture only when its file hash changed since the last read (criteria A4 and A5).
-///
-/// The text goes to `<picture>.txt` beside the picture, one line per row. The hash of the bytes
-/// it was read from goes to `<picture>.ocr-hash`. Both are written through a temporary file, so a
-/// crash leaves the old pair, never a half-written one.
-/// Version of the companion files. Bump it when their format or the reader changes, so every
-/// companion made by the old format is read again once.
-const COMPANION_FORMAT: &str = "companion-v2 ocrs-0.14";
+/// Version of the saved OCR file. A file of another version is read again once.
+const FORMAT_VERSION: u64 = 1;
 
+/// The OCR file of a picture, read back: its text and its lines, with their polygons.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Saved {
+    pub text: String,
+    pub lines: Vec<Line>,
+}
+
+/// Re-reads a picture only when its bytes changed since the last read (criteria A4 and A5).
+///
+/// The result goes to `<picture>.ocr.json` beside the picture: the text, each line's polygon, and the
+/// picture's SHA-256 and size. It is written through a temporary file, so a crash leaves the old file.
 pub fn refresh_companion(reader: &dyn PictureReader, picture: &Path) -> Result<Refresh, OcrError> {
     let bytes = std::fs::read(picture).map_err(|e| OcrError::Io(format!("{}: {e}", picture.display())))?;
-    let hash = picture_hash(&bytes);
-    let text_path = companion_path(picture, "txt");
-    let lines_path = companion_path(picture, "lines");
-    if companions_match(picture, &hash) {
+    let hash = sha256_hex(&bytes);
+    if saved_for(picture, &hash).is_some() {
         return Ok(Refresh::Unchanged);
     }
     let lines = reader.read_picture(picture)?;
-    let text: String = lines.iter().map(|l| format!("{}\n", sanitize(&l.text))).collect();
-    write_replacing(&text_path, text.as_bytes())?;
-    write_replacing(&lines_path, &lines_file(&lines))?;
-    write_replacing(&companion_path(picture, "ocr-hash"), hash.as_bytes())?;
+    // The reader has already decoded the picture; a size the header does not give is recorded as zero.
+    let (width, height) = image::image_dimensions(picture).unwrap_or((0, 0));
+    let json = ocr_json(picture, &hash, width, height, &lines);
+    write_replacing(&ocr_json_path(picture), json.as_bytes())?;
     Ok(Refresh::Rewritten)
 }
 
-/// The text read from `picture` the last time, when it was read from the picture as it is now:
-/// its companions are all there and their hash is the hash of the picture's bytes. `Ok(None)`
-/// when the picture was never read or changed since (issue #274: a picture read when its page
-/// was opened gives its text without the models). An error only when the picture itself cannot
+/// The text read from `picture` the last time, when it was read from the picture as it is now.
+/// `Ok(None)` when the picture was never read or changed since (issue #274: a picture read when its
+/// page was opened gives its text without the models). An error only when the picture itself cannot
 /// be read.
 pub fn current_text(picture: &Path) -> Result<Option<String>, OcrError> {
     let bytes = std::fs::read(picture).map_err(|e| OcrError::Io(format!("{}: {e}", picture.display())))?;
-    if !companions_match(picture, &picture_hash(&bytes)) {
-        return Ok(None);
+    Ok(saved_for(picture, &sha256_hex(&bytes)).map(|saved| saved.text))
+}
+
+/// The OCR file of a picture as it was saved, whatever the picture is now. Search and the picture's
+/// overlay read it this way. `None` when there is no file, or it is not a file of this format.
+pub fn read_saved(picture: &Path) -> Option<Saved> {
+    let text = std::fs::read_to_string(ocr_json_path(picture)).ok()?;
+    let value: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
+    parse_saved(&value)
+}
+
+/// The saved text and lines of an already-parsed OCR file of this format.
+fn parse_saved(value: &serde_json::Value) -> Option<Saved> {
+    if value.get("schema")?.as_str()? != "notecraft.ocr" || value.get("version")?.as_u64()? != FORMAT_VERSION {
+        return None;
     }
-    // A text file that is there but cannot be read is an error, not "no text".
-    let text_path = companion_path(picture, "txt");
-    std::fs::read_to_string(&text_path).map(Some).map_err(|e| OcrError::Io(format!("{}: {e}", text_path.display())))
+    let mut lines = Vec::new();
+    for item in value.get("lines")?.as_array()? {
+        let polygon = item.get("polygon")?.as_array()?;
+        if polygon.len() != 4 {
+            return None;
+        }
+        let mut quad = [Point { x: 0.0, y: 0.0 }; 4];
+        for (slot, corner) in quad.iter_mut().zip(polygon) {
+            let xy = corner.as_array()?;
+            slot.x = xy.first()?.as_f64()? as f32;
+            slot.y = xy.get(1)?.as_f64()? as f32;
+        }
+        let confidence = item.get("confidence").and_then(|c| c.as_f64()).map(|c| c as f32);
+        lines.push(Line::new(item.get("text")?.as_str()?, quad, confidence).ok()?);
+    }
+    Some(Saved { text: value.get("text")?.as_str()?.to_string(), lines })
 }
 
-/// The hash the companions are stamped with: the picture's bytes and the companion format.
-fn picture_hash(bytes: &[u8]) -> String {
-    format!("{:016x}", fnv1a(&[bytes, COMPANION_FORMAT.as_bytes()].concat()))
+/// The saved OCR file, when it was made from the picture's bytes with this hash.
+fn saved_for(picture: &Path, hash: &str) -> Option<Saved> {
+    // One read of the file: the hash and the text come from the same snapshot.
+    let text = std::fs::read_to_string(ocr_json_path(picture)).ok()?;
+    let value: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
+    if value.get("picture")?.get("sha256")?.as_str()? != hash {
+        return None;
+    }
+    parse_saved(&value)
 }
 
-/// Whether all three companions of `picture` are there and were made from bytes with `hash`.
-/// A missing boxes file is made again, not trusted.
-fn companions_match(picture: &Path, hash: &str) -> bool {
-    companion_path(picture, "txt").exists()
-        && companion_path(picture, "lines").exists()
-        && std::fs::read_to_string(companion_path(picture, "ocr-hash")).is_ok_and(|stored| stored.trim() == hash)
+/// The SHA-256 of the picture's bytes, in hex: the hash the saved file is stamped with.
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
 }
 
-/// Text on one line: tabs and line breaks become spaces, so a record never spans two lines.
+/// Text on one line: tabs and line breaks become spaces.
 fn sanitize(text: &str) -> String {
     text.chars().map(|c| if c == '\t' || c == '\n' || c == '\r' { ' ' } else { c }).collect()
+}
+
+/// The OCR file as JSON: schema notecraft.ocr, version 1 (see nc-info-ocr/references/ocr-json-schema.md).
+fn ocr_json(picture: &Path, hash: &str, width: u32, height: u32, lines: &[Line]) -> String {
+    let name = picture.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let text: Vec<String> = lines.iter().map(|l| sanitize(&l.text)).collect();
+    let bounds = if lines.is_empty() {
+        serde_json::Value::Null
+    } else {
+        let points = lines.iter().flat_map(|l| l.quad.iter());
+        let x0 = points.clone().map(|p| p.x).fold(f32::MAX, f32::min);
+        let y0 = points.clone().map(|p| p.y).fold(f32::MAX, f32::min);
+        let x1 = points.clone().map(|p| p.x).fold(f32::MIN, f32::max);
+        let y1 = points.map(|p| p.y).fold(f32::MIN, f32::max);
+        serde_json::json!([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])
+    };
+    let value = serde_json::json!({
+        "schema": "notecraft.ocr",
+        "version": FORMAT_VERSION,
+        "picture": { "name": name, "sha256": hash, "width": width, "height": height },
+        "produced": { "at": at, "by": "ocrs 0.14 through notecraft-ocr" },
+        "text": text.join("\n"),
+        "lines": lines.iter().zip(&text).map(|(l, t)| serde_json::json!({
+            "text": t,
+            "polygon": l.quad.iter().map(|p| [p.x, p.y]).collect::<Vec<_>>(),
+            "confidence": l.confidence,
+        })).collect::<Vec<_>>(),
+        "bounds": bounds,
+        "alt": null,
+    });
+    format!("{}\n", serde_json::to_string_pretty(&value).unwrap_or_default())
+}
+
+/// The OCR file beside a picture: `<picture>.ocr.json`.
+pub fn ocr_json_path(picture: &Path) -> PathBuf {
+    let mut name = picture.file_name().unwrap_or_default().to_os_string();
+    name.push(".ocr.json");
+    picture.with_file_name(name)
 }
 
 /// Counts names for temporary files, so two writers never share one.
 static TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// The boxes file: one line per text line, `x0,y0,x1,y1,x2,y2,x3,y3<TAB>text`, in picture pixels.
-/// Tabs and line breaks inside a text are replaced by spaces, so each line is one record.
-fn lines_file(lines: &[Line]) -> Vec<u8> {
-    let mut out = String::new();
-    for line in lines {
-        let coords: Vec<String> = line.quad.iter().flat_map(|p| [p.x.to_string(), p.y.to_string()]).collect();
-        let text: String = line.text.chars().map(|c| if c == '\t' || c == '\n' || c == '\r' { ' ' } else { c }).collect();
-        out.push_str(&coords.join(","));
-        out.push('\t');
-        out.push_str(&text);
-        out.push('\n');
-    }
-    out.into_bytes()
-}
-
-fn companion_path(picture: &Path, extension: &str) -> PathBuf {
-    let mut name = picture.file_name().unwrap_or_default().to_os_string();
-    name.push(".");
-    name.push(extension);
-    picture.with_file_name(name)
-}
-
 fn write_replacing(path: &Path, bytes: &[u8]) -> Result<(), OcrError> {
     // A name unique to this process and call, so concurrent writers cannot install each other's bytes.
     let n = TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let temp = companion_path(path, &format!("tmp-{}-{n}", std::process::id()));
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(".tmp-{}-{n}", std::process::id()));
+    let temp = path.with_file_name(name);
     std::fs::write(&temp, bytes).map_err(|e| OcrError::Io(format!("{}: {e}", temp.display())))?;
     std::fs::rename(&temp, path).map_err(|e| {
         let _ = std::fs::remove_file(&temp);
         OcrError::Io(format!("{}: {e}", path.display()))
     })
-}
-
-/// FNV-1a, 64 bits: a hash that is the same on every run and every platform, which the standard
-/// library's hasher is not.
-fn fnv1a(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf2_9ce4_8422_2325u64, |hash, b| (hash ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3))
 }
 
 /// One piece of text as the engine reports it, before rows are joined.
@@ -342,13 +387,13 @@ mod tests {
     }
 
     #[test]
-    fn a_corrupt_hash_file_is_read_again() {
+    fn a_corrupt_saved_file_is_read_again() {
         let dir = scratch("corrupt-hash");
         let picture = dir.join("p.png");
         std::fs::write(&picture, b"bytes").expect("picture");
         let reader = CountingReader { calls: Cell::new(0) };
         refresh_companion(&reader, &picture).expect("first");
-        std::fs::write(dir.join("p.png.ocr-hash"), "not a hash").expect("corrupt the hash");
+        std::fs::write(dir.join("p.png.ocr.json"), "not json").expect("corrupt the saved file");
         assert_eq!(refresh_companion(&reader, &picture).expect("second"), Refresh::Rewritten);
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -365,20 +410,20 @@ mod tests {
         let picture = dir.join("bad.png");
         std::fs::write(&picture, b"not really a picture").expect("picture");
         assert!(matches!(refresh_companion(&Undecodable, &picture), Err(OcrError::Decode(_))));
-        assert!(!dir.join("bad.png.txt").exists() && !dir.join("bad.png.lines").exists(), "nothing half-written");
+        assert!(!dir.join("bad.png.ocr.json").exists(), "nothing half-written");
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn a_missing_boxes_file_is_made_again_rather_than_trusted() {
+    fn a_missing_saved_file_is_made_again_rather_than_trusted() {
         let dir = scratch("missing-lines");
         let picture = dir.join("p.png");
         std::fs::write(&picture, b"bytes").expect("picture");
         let reader = CountingReader { calls: Cell::new(0) };
         assert_eq!(refresh_companion(&reader, &picture).expect("first"), Refresh::Rewritten);
-        std::fs::remove_file(dir.join("p.png.lines")).expect("the boxes file exists");
-        assert_eq!(refresh_companion(&reader, &picture).expect("second"), Refresh::Rewritten, "no boxes file means read again");
-        assert!(dir.join("p.png.lines").is_file());
+        std::fs::remove_file(dir.join("p.png.ocr.json")).expect("the saved file exists");
+        assert_eq!(refresh_companion(&reader, &picture).expect("second"), Refresh::Rewritten, "no saved file means read again");
+        assert!(dir.join("p.png.ocr.json").is_file());
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -401,12 +446,12 @@ mod tests {
         refresh_companion(&CountingReader { calls: Cell::new(0) }, &picture).expect("first read");
         std::fs::write(&picture, b"second").expect("the picture changes");
         assert!(refresh_companion(&FailingReader, &picture).is_err());
-        assert_eq!(std::fs::read_to_string(dir.join("p.png.txt")).expect("text"), "TOTAL 13.75\n", "the old text is kept");
+        assert_eq!(read_saved(&picture).expect("saved").text, "TOTAL 13.75", "the old text is kept");
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn a_line_with_a_tab_or_a_break_stays_one_record_in_the_text_file() {
+    fn a_line_with_a_tab_or_a_break_stays_one_line_in_the_saved_text() {
         let dir = scratch("tabs");
         let picture = dir.join("p.png");
         std::fs::write(&picture, b"bytes").expect("picture");
@@ -417,7 +462,7 @@ mod tests {
             }
         }
         refresh_companion(&Odd, &picture).expect("reads");
-        assert_eq!(std::fs::read_to_string(dir.join("p.png.txt")).expect("text"), "a b c\n");
+        assert_eq!(read_saved(&picture).expect("saved").text, "a b c");
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -485,12 +530,12 @@ mod tests {
         std::fs::write(&picture, b"second bytes").expect("change");
         assert_eq!(refresh_companion(&reader, &picture).expect("third"), Refresh::Rewritten);
         assert_eq!(reader.calls.get(), 2);
-        assert_eq!(std::fs::read_to_string(dir.join("picture.png.txt")).expect("companion"), "TOTAL 13.75\n");
+        assert_eq!(read_saved(&picture).expect("companion").text, "TOTAL 13.75");
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn the_boxes_file_has_one_record_per_line_and_no_stray_breaks() {
+    fn the_saved_file_has_one_line_per_text_line_with_its_polygon_and_no_stray_breaks() {
         let quad = [Point { x: 0.0, y: 0.0 }, Point { x: 10.0, y: 0.0 }, Point { x: 10.0, y: 4.0 }, Point { x: 0.0, y: 4.0 }];
         let lines = vec![
             Line::new(
@@ -499,13 +544,15 @@ c", quad, None,
             )
             .expect("line"),
         ];
-        assert_eq!(
-            String::from_utf8(lines_file(&lines)).expect("utf-8"),
-            "0,0,10,0,10,4,0,4	a b c
-"
-        );
+        let json: serde_json::Value = serde_json::from_str(&ocr_json(Path::new("/x/p.png"), "hash", 10, 4, &lines)).expect("json");
+        assert_eq!(json["schema"], "notecraft.ocr");
+        assert_eq!(json["version"], 1);
+        assert_eq!(json["picture"]["sha256"], "hash");
+        assert_eq!(json["lines"][0]["text"], "a b c", "a tab or a break is one space");
+        assert_eq!(json["lines"][0]["polygon"][2], serde_json::json!([10.0, 4.0]));
+        assert_eq!(json["text"], "a b c");
+        assert!(json["alt"].is_null(), "no description yet");
     }
-
     #[test]
     fn the_current_text_is_given_only_while_the_picture_is_the_one_read() {
         let dir = scratch("current-text");
@@ -514,7 +561,7 @@ c", quad, None,
         assert_eq!(current_text(&picture).expect("readable"), None, "never read");
         let reader = CountingReader { calls: Cell::new(0) };
         refresh_companion(&reader, &picture).expect("read");
-        assert_eq!(current_text(&picture).expect("readable").as_deref(), Some("TOTAL 13.75\n"));
+        assert_eq!(current_text(&picture).expect("readable").as_deref(), Some("TOTAL 13.75"));
         std::fs::write(&picture, b"another picture").expect("the picture changes");
         assert_eq!(current_text(&picture).expect("readable"), None, "the text is of the old picture");
         std::fs::remove_file(&picture).expect("remove the picture");
@@ -522,12 +569,12 @@ c", quad, None,
     }
 
     #[test]
-    fn an_unreadable_text_file_is_an_error_not_an_empty_text() {
+    fn an_unreadable_saved_file_is_read_again_not_trusted() {
         let dir = scratch("current-text-unreadable");
         let picture = dir.join("receipt.png");
         std::fs::write(&picture, b"the picture").expect("picture");
         refresh_companion(&CountingReader { calls: Cell::new(0) }, &picture).expect("read");
-        std::fs::write(dir.join("receipt.png.txt"), [0xff, 0xfe, 0x00]).expect("not UTF-8");
-        assert!(matches!(current_text(&picture), Err(OcrError::Io(_))));
+        std::fs::write(dir.join("receipt.png.ocr.json"), [0xff, 0xfe, 0x00]).expect("not UTF-8");
+        assert_eq!(current_text(&picture).expect("readable"), None, "a saved file that cannot be read is not trusted");
     }
 }

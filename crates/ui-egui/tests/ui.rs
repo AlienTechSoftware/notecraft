@@ -3262,23 +3262,38 @@ fn the_laser_pointer_leaves_a_fading_trail_and_nothing_on_the_page() {
     let base = red(&support::gui::render(&mut h).expect("render"));
     let origin = page_origin(&mut h);
     let from = origin + egui::vec2(150.0, 260.0);
+    // The laser fades on the frame clock, so the test sets that clock: each step is 0.1 s, however
+    // long the machine takes to draw it. A slow runner then cannot age the trail out early.
+    let mut clock = h.ctx.input(|i| i.time);
+    let mut tick = |h: &mut Harness<'_, NoteCraftApp>| {
+        clock += 0.05;
+        h.input_mut().time = Some(clock);
+    };
+    tick(&mut h);
     ask(&mut h, "ui.press", json!({"x": from.x, "y": from.y})).expect("press");
+    tick(&mut h);
     pump(&mut h);
     for k in 1..=6 {
         let at = from + egui::vec2(40.0 * k as f32, 12.0 * k as f32);
+        tick(&mut h);
         ask(&mut h, "ui.move", json!({"x": at.x, "y": at.y})).expect("move");
+        tick(&mut h);
         pump(&mut h);
     }
     review(&mut h, "laser_pointer");
     let drawn = red(&support::gui::render(&mut h).expect("render")).saturating_sub(base);
-    // The test steps time a frame or more per move, so only the newest part of the trail is
-    // still lit by now: enough red to be the dot and a stretch of trail.
+    // Every point is at most 0.65 s old here (13 ticks of 0.05 s), inside the 0.8 s fade, so the whole trail is drawn.
     assert!(drawn > 100, "the trail is drawn in red while pointing ({drawn} pixels)");
     let end = from + egui::vec2(240.0, 72.0);
+    tick(&mut h);
     ask(&mut h, "ui.release", json!({"x": end.x, "y": end.y})).expect("release");
     // Away from the page, so the dot is not drawn either, and long enough for the trail to fade.
+    tick(&mut h);
     ask(&mut h, "ui.move", json!({"x": 5.0, "y": 5.0})).expect("away");
-    h.run_steps(90);
+    for _ in 0..20 {
+        tick(&mut h);
+        h.step();
+    }
     let after = red(&support::gui::render(&mut h).expect("render")).saturating_sub(base);
     assert!(after < drawn / 10, "the trail faded: {drawn} -> {after} red pixels");
     let now = state(&mut h);

@@ -14,3 +14,5 @@ workspace = true
 image = { workspace = true }
 ocrs = { workspace = true }
 rten = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"

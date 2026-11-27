@@ -30,6 +30,40 @@ const LINE_PALETTE: [Color32; 8] = [
 ];
 
 /// The colour of a recognised line: the one chosen for it, or its place in the palette.
+/// The square size of the OCR file's [✕] and [✔] buttons: the same square in the lab and the app.
+const MARK_SIDE: f32 = 20.0;
+
+/// One of the two square buttons on an OCR file: [✕] discards its edits, [✔] saves them. Both are
+/// drawn with lines, so they look the same whatever fonts the computer has.
+fn mark_button(ui: &mut egui::Ui, cross: bool, label: &str) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(MARK_SIDE, MARK_SIDE), Sense::click());
+    let visuals = ui.style().interact(&response);
+    ui.painter().rect(rect, egui::CornerRadius::same(3), visuals.weak_bg_fill, visuals.bg_stroke, StrokeKind::Inside);
+    let stroke = Stroke::new(1.6, visuals.text_color());
+    if cross {
+        let r = rect.shrink(6.0);
+        ui.painter().line_segment([r.left_top(), r.right_bottom()], stroke);
+        ui.painter().line_segment([r.right_top(), r.left_bottom()], stroke);
+    } else {
+        let r = rect.shrink(5.0);
+        let (a, b, c) = (egui::pos2(r.left(), r.center().y), egui::pos2(r.left() + r.width() * 0.4, r.bottom()), egui::pos2(r.right(), r.top()));
+        ui.painter().line_segment([a, b], stroke);
+        ui.painter().line_segment([b, c], stroke);
+    }
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+    response
+}
+
+/// The [✕] that discards an edited OCR file's changes.
+fn cross_button(ui: &mut egui::Ui) -> egui::Response {
+    mark_button(ui, true, "Discard the unsaved edits of this OCR file")
+}
+
+/// The [✔] that saves an edited OCR file.
+fn check_button(ui: &mut egui::Ui) -> egui::Response {
+    mark_button(ui, false, "Save this OCR file")
+}
+
 fn line_colour(loaded: &Loaded, index: usize) -> Color32 {
     loaded.line_colours.get(&index).copied().unwrap_or(LINE_PALETTE[index % LINE_PALETTE.len()])
 }
@@ -183,6 +217,8 @@ pub struct Lab {
     rules: ribbon::RuleLines,
     /// A text file shown in the main area instead of the picture: its path and its text.
     viewing_json: Option<(PathBuf, String)>,
+    /// The text of the open file as it is on disk. The check mark shows when the edited text differs.
+    viewing_changed: bool,
     /// What the ribbon's pointer is set to: Type to select, or Draw to write with the pen in hand.
     pointer: ribbon::Pointer,
     /// The ribbon's chosen tab, and whether the ribbon is folded to its tab names.
@@ -228,6 +264,7 @@ impl Lab {
             open_path: Vec::new(),
             pointer: ribbon::Pointer::default(),
             viewing_json: None,
+            viewing_changed: false,
             rules: ribbon::RuleLines::default(),
             stylus: Default::default(),
             sensitivity: 50,
@@ -320,9 +357,17 @@ impl Lab {
     //     self.open_path = path;
     // }
 
+    /// Closes the open file. Unsaved edits are written first, so they are never lost.
+    fn leave_viewing(&mut self) {
+        if self.viewing_dirty() {
+            self.save_viewing();
+        }
+        self.viewing_json = None;
+    }
+
     fn select(&mut self, ctx: &egui::Context, index: usize) {
         // Picking a sample shows the picture again, so the OCR file is hidden.
-        self.viewing_json = None;
+        self.leave_viewing();
         let path = self.pictures[index].clone();
         // The new picture's texture has no adjustments yet, so the sliders must be applied to it again.
         self.applied_adjust = None;
@@ -1287,6 +1332,10 @@ impl Lab {
         let mut delete_req: Option<usize> = None;
         let mut save_now = false;
         let mut view_json: Option<PathBuf> = None;
+        // The check mark on the open OCR file's row was clicked: its edits are saved.
+        let mut save_json = false;
+        // The [✕] on the open OCR file's row was clicked: its unsaved edits are thrown away.
+        let mut discard_json = false;
         // Language, then how the sample was made, then what it contains. A sample with several content
         // tags appears under each of them.
         type Contents = std::collections::BTreeMap<String, Vec<usize>>;
@@ -1386,14 +1435,28 @@ impl Lab {
                                                 if text_file.is_file() {
                                                     let child = text_file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                                                     ui.indent(("ocr-text", i), |ui| {
-                                                        let showing = self.viewing_json.as_ref().is_some_and(|(p, _)| *p == text_file);
-                                                        if ui
-                                                            .selectable_label(showing, format!("📄 {child}"))
-                                                            .on_hover_text("Show or hide this file in the main area")
-                                                            .clicked()
-                                                        {
-                                                            view_json = Some(text_file.clone());
-                                                        }
+                                                        ui.horizontal(|ui| {
+                                                            let showing = self.viewing_json.as_ref().is_some_and(|(p, _)| *p == text_file);
+                                                            if ui
+                                                                .selectable_label(showing, format!("📄 {child}"))
+                                                                .on_hover_text("Show or hide this file in the main area")
+                                                                .clicked()
+                                                            {
+                                                                view_json = Some(text_file.clone());
+                                                            }
+                                                            // At the row's right edge, once its text is edited and not saved: [✔] furthest
+                                                            // right and [✕] left of it, as in the source view.
+                                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                                if showing && self.viewing_dirty() {
+                                                                    if check_button(ui).clicked() {
+                                                                        save_json = true;
+                                                                    }
+                                                                    if cross_button(ui).clicked() {
+                                                                        discard_json = true;
+                                                                    }
+                                                                }
+                                                            });
+                                                        });
                                                     });
                                                 }
                                             }
@@ -1431,10 +1494,16 @@ impl Lab {
         if save_now {
             self.save_if_dirty();
         }
+        if save_json {
+            self.save_viewing();
+        }
+        if discard_json {
+            self.discard_viewing();
+        }
         // Clicking the file's row shows it, and clicking it again hides it.
         if let Some(path) = view_json {
             if self.viewing_json.as_ref().is_some_and(|(p, _)| *p == path) {
-                self.viewing_json = None;
+                self.leave_viewing();
             } else {
                 self.show_file(&path);
             }
@@ -1621,24 +1690,99 @@ impl Lab {
         }
     }
 
-    /// Loads a text file into the main area, read-only. Picking a sample or closing the view shows the picture again.
+    /// Loads a text file into the main area. It can be typed in; the check mark saves it. Picking a sample or closing the view shows the picture again.
     fn show_file(&mut self, path: &Path) {
+        self.leave_viewing();
         match std::fs::read_to_string(path) {
-            Ok(text) => self.viewing_json = Some((path.to_path_buf(), text.trim_start_matches('\u{feff}').to_string())),
+            Ok(text) => {
+                let text = text.trim_start_matches('\u{feff}').to_string();
+                self.viewing_changed = false;
+                self.viewing_json = Some((path.to_path_buf(), text));
+            }
             Err(e) => self.status = format!("Could not read {}: {e}", path.display()),
+        }
+    }
+
+    /// Whether the open file has been edited since it was last saved or opened.
+    fn viewing_dirty(&self) -> bool {
+        self.viewing_changed
+    }
+
+    /// Records that the open file was edited. Like the source view, any edit makes it dirty, even
+    /// when the text was typed back to what it was.
+    fn note_edit(&mut self) {
+        self.viewing_changed = true;
+    }
+
+    /// Throws the open file's unsaved edits away: its text is read again from disk.
+    fn discard_viewing(&mut self) {
+        let Some((path, _)) = self.viewing_json.clone() else { return };
+        match std::fs::read_to_string(&path) {
+            Ok(text) => {
+                self.viewing_json = Some((path.clone(), text.trim_start_matches('\u{feff}').to_string()));
+                self.viewing_changed = false;
+                self.status = format!("Discarded the edits to {}", path.display());
+            }
+            Err(e) => self.status = format!("Could not read {}: {e}", path.display()),
+        }
+    }
+
+    /// Writes the open file's edited text back to its file, and clears the dirty state.
+    fn save_viewing(&mut self) {
+        let Some((path, text)) = self.viewing_json.clone() else { return };
+        match std::fs::write(&path, text.as_bytes()) {
+            Ok(()) => {
+                self.viewing_changed = false;
+                self.status = format!("Saved {}", path.display());
+                // An edited run of the open picture shows at once, not after the next pick.
+                if let Some(index) = self.pictures.iter().position(|p| ocr_json_path(p) == path) {
+                    self.reload_run(index);
+                }
+            }
+            Err(e) => self.status = format!("Could not save {}: {e}", path.display()),
         }
     }
 
     fn picture_area(&mut self, ui: &mut egui::Ui) {
         // The OCR file, when it is open, replaces the picture until another sample is picked or the file row is clicked again.
-        if let Some((path, text)) = self.viewing_json.as_ref() {
-            ui.strong(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+        if let Some((path, text)) = self.viewing_json.as_mut() {
+            // Dirty as soon as the file was edited, as the source view does: typing a character and
+            // deleting it again still leaves the file to save.
+            let dirty = self.viewing_changed;
+            let mut edited = false;
+            let mut save = false;
+            let mut discard = false;
+            ui.horizontal(|ui| {
+                ui.strong(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+                if dirty {
+                    if cross_button(ui).clicked() {
+                        discard = true;
+                    }
+                    if check_button(ui).clicked() {
+                        save = true;
+                    }
+                }
+            });
             ui.separator();
             let font = egui::FontId::monospace(13.0);
             let plain = ui.visuals().text_color();
-            egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-                ui.label(crate::json_view::job(text, font, plain));
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                let mut layouter = |ui: &egui::Ui, s: &dyn egui::TextBuffer, _wrap: f32| {
+                    ui.fonts_mut(|f| f.layout_job(crate::json_view::job(s.as_str(), font.clone(), plain)))
+                };
+                if ui.add(egui::TextEdit::multiline(text).code_editor().desired_width(f32::INFINITY).layouter(&mut layouter)).changed() {
+                    edited = true;
+                }
             });
+            if edited {
+                self.note_edit();
+            }
+            if save {
+                self.save_viewing();
+            }
+            if discard {
+                self.discard_viewing();
+            }
             return;
         }
         let Some(loaded) = self.loaded.as_ref() else {
@@ -2057,6 +2201,48 @@ mod tests {
         let screen = Lab::to_screen(origin, 2.0, [30.0, 10.0]);
         assert_eq!(screen, egui::pos2(160.0, 60.0));
         assert_eq!(Lab::to_pixels(origin, 2.0, screen), [30.0, 10.0]);
+    }
+
+    #[test]
+    fn an_edited_ocr_file_is_dirty_until_it_is_saved_to_disk() {
+        let dir = std::env::temp_dir().join(format!("ocr-lab-dirty-{}", crate::unique_suffix()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let file = dir.join("p.png.ocr.json");
+        std::fs::write(&file, "{\"text\": \"Sourdough\"}").expect("file");
+        let mut lab = Lab::new(dir.clone(), None, None, false, telemetry::Log::open(&dir.join("log.txt")));
+        lab.show_file(&file);
+        assert!(!lab.viewing_dirty(), "a file just opened is not dirty");
+        // An edit marks the file dirty even when the text is typed back to what it was, as in the source view.
+        lab.note_edit();
+        if let Some((_, text)) = lab.viewing_json.as_mut() {
+            text.push(' ');
+            text.pop();
+        }
+        assert!(lab.viewing_dirty(), "an edit that was typed back still makes the file dirty");
+        lab.save_viewing();
+        assert!(!lab.viewing_dirty(), "saving clears the dirty state");
+        assert_eq!(std::fs::read_to_string(&file).expect("saved"), "{\"text\": \"Sourdough\"}", "the file is written");
+        std::fs::remove_dir_all(&dir).expect("clean up");
+    }
+
+    #[test]
+    fn discarding_an_edited_ocr_file_brings_back_what_is_on_disk() {
+        let dir = std::env::temp_dir().join(format!("ocr-lab-discard-{}", crate::unique_suffix()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let file = dir.join("p.png.ocr.json");
+        std::fs::write(&file, "{\"text\": \"Sourdough\"}").expect("file");
+        let mut lab = Lab::new(dir.clone(), None, None, false, telemetry::Log::open(&dir.join("log.txt")));
+        lab.show_file(&file);
+        lab.note_edit();
+        if let Some((_, text)) = lab.viewing_json.as_mut() {
+            text.clear();
+        }
+        assert!(lab.viewing_dirty(), "the edit is unsaved");
+        lab.discard_viewing();
+        assert!(!lab.viewing_dirty(), "discarding clears the dirty state");
+        assert_eq!(lab.viewing_json.as_ref().map(|(_, t)| t.as_str()), Some("{\"text\": \"Sourdough\"}"), "the file's text is back");
+        assert_eq!(std::fs::read_to_string(&file).expect("file"), "{\"text\": \"Sourdough\"}", "nothing was written");
+        std::fs::remove_dir_all(&dir).expect("clean up");
     }
 
     #[test]

@@ -1585,7 +1585,7 @@ mod tests {
         s.attach_bytes(&page, "receipt.png", &std::fs::read(&picture).expect("the demo picture")).expect("picture");
         let first = text_of(s.run("ocr.refresh", &p(&[("path", &page)])).expect("first read"));
         assert_eq!(first, "1 read, 0 unchanged");
-        assert!(std::path::Path::new(&page).join("assets").join("receipt.png.lines").is_file(), "the boxes file is written");
+        assert!(std::path::Path::new(&page).join("assets").join("receipt.png.ocr.json").is_file(), "the OCR file is written");
         let second = text_of(s.run("ocr.refresh", &p(&[("path", &page)])).expect("second read"));
         assert_eq!(second, "0 read, 1 unchanged");
     }

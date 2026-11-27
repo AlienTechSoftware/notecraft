@@ -65,6 +65,43 @@ pub fn row_menu<R>(resp: &Response, add: impl FnOnce(&mut Ui) -> R) -> Option<eg
     shown
 }
 
+/// A round button, `size` points across, with one glyph in it: an opener such as a picture's (>). The
+/// corner radius is more than half the size, so it is a true circle at any size. `enabled` greys it.
+pub fn round_button(ui: &mut Ui, glyph: &str, size: f32, enabled: bool) -> Response {
+    round_button_shown(ui, glyph, size, enabled, true)
+}
+
+/// The same round button, drawn only when `shown`. When not shown it still takes its place and its
+/// clicks, so the layout and the hit area do not change; it just has no look (for a button that appears
+/// only near the pointer).
+pub fn round_button_shown(ui: &mut Ui, glyph: &str, size: f32, enabled: bool, shown: bool) -> Response {
+    // The same sized button as before, so the layout is unchanged; it is made transparent and the circle
+    // and glyph are painted over it. A frame's own corners are not round at small sizes.
+    let button = egui::Button::new("").fill(egui::Color32::TRANSPARENT).stroke(egui::Stroke::NONE);
+    let response = ui.add_enabled_ui(enabled, |ui| ui.add_sized([size, size], button)).inner;
+    let rect = response.rect;
+    let visuals = if enabled { *ui.style().interact(&response) } else { ui.style().visuals.widgets.noninteractive };
+    let radius = size / 2.0 - visuals.bg_stroke.width / 2.0;
+    if !shown {
+        return response;
+    }
+    ui.painter().circle(rect.center(), radius, visuals.weak_bg_fill, visuals.bg_stroke);
+    // Centred on the glyph's ink, not on its text box: emoji fonts leave space below the glyph.
+    let galley = ui.painter().layout_no_wrap(glyph.to_string(), egui::FontId::proportional(size * 0.6), visuals.text_color());
+    let top_left = rect.center() - galley.mesh_bounds.center().to_vec2();
+    ui.painter().galley(top_left, galley, visuals.text_color());
+    response
+}
+
+/// A menu opened by a left click on a button (such as the (>) on a picture). A click opens it, and a
+/// second click closes it. The rows are added by the caller, and the result is the caller's to use.
+pub fn button_menu<R>(opener: &Response, add: impl FnOnce(&mut Ui) -> R) -> Option<egui::InnerResponse<R>> {
+    let id = egui::Popup::default_response_id(opener);
+    let open_now = egui::Popup::is_id_open(&opener.ctx, id);
+    let set = opener.clicked().then_some(egui::SetOpenCommand::Bool(!open_now));
+    egui::Popup::menu(opener).open_memory(set).show(add)
+}
+
 /// Where a menu that opens at a point goes (issue #380): under and after the point, and, when that
 /// would run past the window, before it or above it instead, so its last row is never cut off by
 /// the window's edge. The first frame measures the menu; the next one places it.

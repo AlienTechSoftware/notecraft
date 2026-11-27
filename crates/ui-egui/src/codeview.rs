@@ -47,12 +47,14 @@ pub enum Kind {
     Text,
     /// A file shown by name, size and type only.
     Other,
+    /// An OCR file (`<picture>.ocr.json`): typed in by hand, and saved with its own save button.
+    Ocr,
 }
 
 impl Kind {
     /// Whether what is shown can be typed in.
     pub fn editable(self) -> bool {
-        matches!(self, Kind::PageFile | Kind::Ink | Kind::Svg | Kind::Diagram)
+        matches!(self, Kind::PageFile | Kind::Ink | Kind::Svg | Kind::Diagram | Kind::Ocr)
     }
 }
 
@@ -392,6 +394,9 @@ fn kind_of(path: &Path, name: &str, page_file: &str) -> Kind {
     if name == page_file {
         return Kind::PageFile;
     }
+    if name.ends_with(".ocr.json") {
+        return Kind::Ocr;
+    }
     let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
     match ext.as_str() {
         "svg" => {
@@ -547,9 +552,29 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     let picked = state.picked.as_deref() == Some(entry.name.as_str());
                     let row = row(ui, entry, picked, t, &mut out.file_action, dir);
                     if row.clicked() {
+                        // `loaded` is kept, so the loader sees the change and saves an OCR file's unsaved
+                        // edits before it reads the next file; clicking the same file keeps them too.
                         state.picked = Some(entry.name.clone());
-                        state.loaded = None;
                         state.as_code = false;
+                    }
+                    // An OCR file with unsaved edits shows a floppy on its row, like the lab's samples. A click saves it.
+                    if picked && entry.kind == Kind::Ocr && state.dirty {
+                        // Drawn on the row itself, at its right edge, so it sits beside the file name.
+                        let at = egui::Rect::from_min_size(
+                            egui::pos2(row.rect.right() - 26.0, row.rect.center().y - MARK_SIDE / 2.0),
+                            vec2(MARK_SIDE, MARK_SIDE),
+                        );
+                        let save = check_button(ui, at, t, crate::tl_id!("ui.save_ocr_file"));
+                        if save.clicked() {
+                            out.wrote = Some((entry.name.clone(), state.text.clone()));
+                            state.dirty = false;
+                        }
+                        // To its left, [✕] throws the unsaved edits away: the file is read again from disk.
+                        let at_cancel = at.translate(vec2(-24.0, 0.0));
+                        if cross_button(ui, at_cancel, t, crate::tl_id!("ui.discard_ocr_edits")).clicked() {
+                            state.loaded = None;
+                            state.dirty = false;
+                        }
                     }
                 }
             });
@@ -709,8 +734,15 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                         }
                     }
                 }
-                Kind::PageFile | Kind::Ink | Kind::Svg | Kind::Text | Kind::Diagram => {
+                Kind::PageFile | Kind::Ink | Kind::Svg | Kind::Text | Kind::Diagram | Kind::Ocr => {
                     if state.loaded.as_deref() != Some(entry.name.as_str()) {
+                        // Unsaved OCR edits are written before another file replaces them, so they are never lost.
+                        if state.dirty
+                            && let Some(prev) = state.loaded.clone()
+                            && prev.ends_with(".ocr.json")
+                        {
+                            out.wrote = Some((prev, state.text.clone()));
+                        }
                         let (text, cut) = read_for_view(&dir.join(entry.name.replace('/', std::path::MAIN_SEPARATOR_STR)));
                         state.text = text;
                         state.loaded = Some(entry.name.clone());
@@ -829,7 +861,10 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                                 .show(ui);
                             if edit.response.changed() {
                                 state.dirty = true;
-                                out.wrote = Some((entry.name.clone(), state.text.clone()));
+                                // An OCR file is saved only by its floppy, not as it is typed.
+                                if entry.kind != Kind::Ocr {
+                                    out.wrote = Some((entry.name.clone(), state.text.clone()));
+                                }
                             }
                             if let Some((from, to)) = target {
                                 if jump {
@@ -880,6 +915,43 @@ fn scale_stroke(stroke: &notecraft_ink::Stroke, scale: f32) -> notecraft_ink::St
 }
 
 /// One row of the list: the name, and what the file is.
+/// The square size of the OCR file's [✕] and [✔] buttons, the same for both.
+const MARK_SIDE: f32 = 20.0;
+
+/// The room kept at a row's right edge for the two marks: the size text ends before it, on every row.
+const MARK_ROOM: f32 = 60.0;
+
+/// One of the two square buttons on an OCR file's row: [✔] saves, [✕] discards. Both are drawn
+/// with lines, so they look the same whatever fonts the computer has, and are the same square.
+fn mark_button(ui: &mut Ui, at: Rect, t: &Tokens, label: &str, cross: bool) -> egui::Response {
+    let rect = Rect::from_min_size(at.min, vec2(MARK_SIDE, MARK_SIDE));
+    let response = ui.interact(rect, ui.id().with(("mark-button", label)), Sense::click()).on_hover_text(label);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    let fill = if response.hovered() { t.row_hover } else { Color32::TRANSPARENT };
+    ui.painter().rect(rect, egui::CornerRadius::same(3), fill, egui::Stroke::new(1.0, t.faint), egui::StrokeKind::Inside);
+    let r = rect.shrink(6.0);
+    let stroke = egui::Stroke::new(1.6, t.accent);
+    if cross {
+        ui.painter().line_segment([r.left_top(), r.right_bottom()], stroke);
+        ui.painter().line_segment([r.right_top(), r.left_bottom()], stroke);
+    } else {
+        let (a, b, c) = (egui::pos2(r.left(), r.center().y), egui::pos2(r.left() + r.width() * 0.4, r.bottom()), egui::pos2(r.right(), r.top()));
+        ui.painter().line_segment([a, b], stroke);
+        ui.painter().line_segment([b, c], stroke);
+    }
+    response
+}
+
+/// The [✔] that saves an OCR file's edits.
+fn check_button(ui: &mut Ui, at: Rect, t: &Tokens, label: &str) -> egui::Response {
+    mark_button(ui, at, t, label, false)
+}
+
+/// The [✕] that discards an OCR file's unsaved edits.
+fn cross_button(ui: &mut Ui, at: Rect, t: &Tokens, label: &str) -> egui::Response {
+    mark_button(ui, at, t, label, true)
+}
+
 fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option<FileAction>, page_dir: &Path) -> egui::Response {
     let height = 20.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
@@ -889,7 +961,8 @@ fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option
     let colour = if entry.used { t.text } else { t.muted };
     let at = egui::pos2(rect.min.x + 6.0, rect.center().y);
     ui.painter().text(at, egui::Align2::LEFT_CENTER, &entry.name, egui::FontId::monospace(12.0), colour);
-    let right = egui::pos2(rect.max.x - 6.0, rect.center().y);
+    // Every row leaves room for the two OCR marks at its right edge, so the sizes line up in one column.
+    let right = egui::pos2(rect.max.x - MARK_ROOM, rect.center().y);
     ui.painter().text(right, egui::Align2::RIGHT_CENTER, size_text(entry.bytes), egui::FontId::proportional(10.0), t.muted);
     let enabled = ui.is_enabled();
     let label = format!("{} ({})", entry.name, size_text(entry.bytes));
@@ -949,6 +1022,46 @@ mod tests {
         assert!(cut, "the view says the text was cut");
         assert!(text.contains(&"a".repeat(1000)), "and shows the start of it");
         assert!(!text.contains('\u{e9}'), "the character across the limit is left out whole");
+    }
+
+    /// Typing in an OCR file, picked in the source view, shows the check mark on its own row until it
+    /// is saved. Without it the edit could be lost with no sign that it is waiting to be saved.
+    #[test]
+    fn an_edited_ocr_file_shows_its_check_mark_on_its_row() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable;
+
+        let t = notecraft_store::testing::TempDir::new("codeview-ocr-dirty");
+        let dir = t.path().join("page");
+        std::fs::create_dir_all(&dir).expect("dir");
+        std::fs::write(dir.join("index.md"), "# Page").expect("page");
+        std::fs::write(dir.join("run.ocr.json"), r#"{"text":"Sourdough"}"#).expect("ocr file");
+        let entries = files(&dir, "index.md", &[]);
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let state = State { dir: Some(dir.clone()), picked: Some("run.ocr.json".to_string()), ..State::default() };
+        let text_id = egui::Id::new(("code-text-edit", "run.ocr.json"));
+        let mut h = Harness::builder().with_size(vec2(1200.0, 900.0)).with_accessibility_check(false).build_ui_state(
+            |ui, state: &mut State| {
+                show(ui, state, &entries, &dir, &tokens, 800.0);
+            },
+            state,
+        );
+        h.run_steps(2);
+        let save = "Save this OCR file";
+        assert!(h.query_by_label(save).is_none(), "an unchanged OCR file shows no check mark");
+        h.ctx.memory_mut(|m| m.request_focus(text_id));
+        h.run_steps(2);
+        h.input_mut().events.push(egui::Event::Text("x".to_string()));
+        h.run_steps(3);
+        assert!(h.state().dirty, "the typed edit is recorded as unsaved");
+        assert!(h.query_by_label(save).is_some(), "the edited OCR file shows its check mark on its row");
+        // [✕] beside the check throws the edit away, and the check goes with it.
+        let discard = "Discard the unsaved edits of this OCR file";
+        assert!(h.query_by_label(discard).is_some(), "and a cross beside it discards the edit");
+        h.get_by_label(discard).click();
+        h.run_steps(3);
+        assert!(!h.state().dirty, "discarding clears the unsaved state");
+        assert!(h.query_by_label(save).is_none(), "and the check mark goes");
     }
 
     /// Shows the code view for the page file `index.md` in `dir`, types `typed` into its editor,

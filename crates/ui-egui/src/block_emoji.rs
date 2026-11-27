@@ -240,11 +240,9 @@ pub fn header(ui: &mut egui::Ui, page_dir: &std::path::Path, i: usize, emoji: &[
         let button = if crate::print::is_printing(ui.ctx()) {
             ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover()).1
         } else {
-            ui.add_enabled_ui(editable, |ui| {
-                // i18n-exempt: "+" is the glyph of the add button, not a word.
-                ui.add_sized([size, size], egui::Button::new("+").corner_radius(egui::CornerRadius::same(255)))
-            })
-            .inner
+            // Shown only near its row or while a menu is open, so it does not cover the block below.
+            let near = ui.ctx().pointer_latest_pos().is_some_and(|p| area_rect.expand(40.0 * zoom).contains(p)) || egui::Popup::is_any_open(ui.ctx());
+            crate::floating::round_button_shown(ui, "😀", size, editable, near)
         };
         // Named for the block it belongs to, so tests and screen readers can tell the headers apart.
         button.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, editable, format!("Add emoji to block {}", i + 1)));

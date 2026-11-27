@@ -211,6 +211,21 @@ pub enum Act {
     SavePictureAs(String),
     /// Rotate or flip the picture with this source (issue #273).
     TurnPicture(String, crate::turn::Turn),
+    /// Read the text of the page's pictures, for a picture's Detect text, without copying anything: the
+    /// boxes it writes are what the overlay shows.
+    ReadPageText,
+    /// Convert permanently (!): the picture's OCR text replaces the picture in the page. It cannot be undone.
+    ConvertPermanently {
+        src: String,
+        block: usize,
+    },
+    /// Copy or Cut (`cut`) the picture at `block`: its file goes on the system clipboard. Cut then
+    /// takes the picture out of the page.
+    PictureClipboard {
+        src: String,
+        block: usize,
+        cut: bool,
+    },
     /// Draw > Rotate: turn or mirror the ink picked up (issue #544).
     TurnInk(notecraft_ink::pick::Turn),
     /// The eraser's menu: which eraser it is (issue #545).

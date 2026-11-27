@@ -1503,6 +1503,14 @@
 @id	ui.image_text_detect	Detect text
 @id	ui.image_text_hide	Hide detected text
 @id	ui.image_text_none_yet	No text has been read from this picture yet.
+@id	ui.image_text_models_not_set	Set up the text recognition models first: choose the OCR models folder in Copy Text from Picture.
+@id	ui.image_text_detect_first	Read the text first: choose Detect text on this picture.
+@id	ui.save_ocr_file	Save this OCR file
+@id	ui.image_text_convert_text	Convert to text
+@id	ui.image_text_convert_equation	Convert to equation
+@id	ui.image_text_convert_permanent	(!) Convert permanently
+@id	ui.image_text_why_page_format	Needs the page format decision: the page does not store a text conversion yet.
+@id	ui.image_text_why_equation_model	Needs a formula model: none is chosen yet.
 @id	ui.choose_the_ocr_models_folder	Choose the folder with the text recognition models
 @id	ui.picture_text_copy_failed	The text could not be put on the clipboard: {error}
 @id	ui.print	Print
@@ -1686,6 +1694,7 @@
 @id	ui.search_results	Search results
 @id	ui.close_the_pinned_results	Close the pinned results
 @id	ui.pinned_results_about	“{query}” in {scope}: {count} found
+@id	ui.image_text_read_failed	Could not read the text of the pictures. Try again.
 @id	ui.eraser_stroke	Stroke Eraser
 @id	ui.eraser_small	Small Eraser
 @id	ui.eraser_medium	Medium Eraser
@@ -1714,3 +1723,4 @@
 @id	ui.find_next_tip	The next place found (F3)
 @id	ui.find_close	Close Find
 @id	ui.find_close_tip	Close the find bar and go back to the page (Escape)
+@id	ui.discard_ocr_edits	Discard the unsaved edits of this OCR file
