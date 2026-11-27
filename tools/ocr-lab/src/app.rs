@@ -1444,15 +1444,18 @@ impl Lab {
                                                             {
                                                                 view_json = Some(text_file.clone());
                                                             }
-                                                            // Beside the file's name, once its text is edited and not saved.
-                                                            if showing && self.viewing_dirty() {
-                                                                if cross_button(ui).clicked() {
-                                                                    discard_json = true;
+                                                            // At the row's right edge, once its text is edited and not saved: [✔] furthest
+                                                            // right and [✕] left of it, as in the source view.
+                                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                                if showing && self.viewing_dirty() {
+                                                                    if check_button(ui).clicked() {
+                                                                        save_json = true;
+                                                                    }
+                                                                    if cross_button(ui).clicked() {
+                                                                        discard_json = true;
+                                                                    }
                                                                 }
-                                                                if check_button(ui).clicked() {
-                                                                    save_json = true;
-                                                                }
-                                                            }
+                                                            });
                                                         });
                                                     });
                                                 }

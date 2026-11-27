@@ -550,9 +550,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
             egui::ScrollArea::vertical().id_salt("code-files").max_height(height - 24.0).show(ui, |ui| {
                 for entry in entries {
                     let picked = state.picked.as_deref() == Some(entry.name.as_str());
-                    // While the OCR marks show at the row's right edge, the file size moves left of them.
-                    let marks = picked && entry.kind == Kind::Ocr && state.dirty;
-                    let row = row(ui, entry, picked, t, &mut out.file_action, dir, marks);
+                    let row = row(ui, entry, picked, t, &mut out.file_action, dir);
                     if row.clicked() {
                         // `loaded` is kept, so the loader sees the change and saves an OCR file's unsaved
                         // edits before it reads the next file; clicking the same file keeps them too.
@@ -920,6 +918,9 @@ fn scale_stroke(stroke: &notecraft_ink::Stroke, scale: f32) -> notecraft_ink::St
 /// The square size of the OCR file's [✕] and [✔] buttons, the same for both.
 const MARK_SIDE: f32 = 20.0;
 
+/// The room kept at a row's right edge for the two marks: the size text ends before it, on every row.
+const MARK_ROOM: f32 = 60.0;
+
 /// One of the two square buttons on an OCR file's row: [✔] saves, [✕] discards. Both are drawn
 /// with lines, so they look the same whatever fonts the computer has, and are the same square.
 fn mark_button(ui: &mut Ui, at: Rect, t: &Tokens, label: &str, cross: bool) -> egui::Response {
@@ -951,7 +952,7 @@ fn cross_button(ui: &mut Ui, at: Rect, t: &Tokens, label: &str) -> egui::Respons
     mark_button(ui, at, t, label, true)
 }
 
-fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option<FileAction>, page_dir: &Path, marks: bool) -> egui::Response {
+fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option<FileAction>, page_dir: &Path) -> egui::Response {
     let height = 20.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
     if picked || resp.hovered() {
@@ -960,8 +961,8 @@ fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option
     let colour = if entry.used { t.text } else { t.muted };
     let at = egui::pos2(rect.min.x + 6.0, rect.center().y);
     ui.painter().text(at, egui::Align2::LEFT_CENTER, &entry.name, egui::FontId::monospace(12.0), colour);
-    // Left of the OCR marks when they show (they take 54 px at the right edge).
-    let right = egui::pos2(rect.max.x - 6.0 - if marks { 54.0 } else { 0.0 }, rect.center().y);
+    // Every row leaves room for the two OCR marks at its right edge, so the sizes line up in one column.
+    let right = egui::pos2(rect.max.x - MARK_ROOM, rect.center().y);
     ui.painter().text(right, egui::Align2::RIGHT_CENTER, size_text(entry.bytes), egui::FontId::proportional(10.0), t.muted);
     let enabled = ui.is_enabled();
     let label = format!("{} ({})", entry.name, size_text(entry.bytes));
