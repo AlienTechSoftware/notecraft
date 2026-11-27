@@ -142,6 +142,9 @@ pub fn restore_version(dir: &Path, id: &str) -> Result<()> {
     // The page's own files as the version kept them, every one read and checked before any is
     // written, so a damaged copy changes nothing (issue #553).
     let manifest = read_manifest(&version_dir(dir).join(id))?;
+    if manifest.as_ref().is_some_and(|kept| kept.iter().any(|k| k.blob.is_some())) && !copies_are_safe(dir) {
+        return Err(StoreError::invalid("the folder the page version's files are kept in is a link; nothing was restored"));
+    }
     let mut put_back: Vec<(PathBuf, Vec<u8>)> = Vec::new();
     for kept in manifest.unwrap_or_default() {
         let Some(blob) = kept.blob else { continue };
@@ -262,6 +265,15 @@ fn blobs_dir(dir: &Path) -> PathBuf {
     version_dir(dir).join("blobs")
 }
 
+/// Whether the folders the copies are kept in are the page's own: none of `.notecraft`, its
+/// `versions` folder and the `blobs` folder in it is a link, which could lead outside the page.
+/// When one is, no copy is kept, read or taken away.
+fn copies_are_safe(dir: &Path) -> bool {
+    let linked = |p: &Path| fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink());
+    let hidden = dir.join(".notecraft");
+    !linked(&hidden) && !linked(&version_dir(dir)) && !linked(&blobs_dir(dir))
+}
+
 /// A name for some bytes from what they are: two 64-bit FNV-1a sums with different starting
 /// points, in hex. A copy is named by it, so the same file kept by many versions is kept once;
 /// two different files that came to the same name are told apart by their bytes when kept.
@@ -298,6 +310,10 @@ fn keep_blob(dir: &Path, bytes: &[u8]) -> Result<String> {
 /// The page's own files as they are now, with a copy of each kept, for a new version.
 fn keep_companions(dir: &Path) -> Result<Vec<Kept>> {
     let mut kept = Vec::new();
+    if !copies_are_safe(dir) {
+        log::warn!("page versions keep the words alone: the folder for copies is a link: {dir:?}");
+        return Ok(kept);
+    }
     for path in companions(dir) {
         let Some(file) = companion_path(dir, &path) else { continue };
         let Ok(meta) = fs::metadata(&file) else { continue };
@@ -342,7 +358,7 @@ fn read_manifest(version: &Path) -> Result<Option<Vec<Kept>>> {
         let mut parts = line.splitn(3, '\t');
         let parsed = (|| {
             let (blob, bytes, path) = (parts.next()?, parts.next()?.parse().ok()?, parts.next()?);
-            (!path.is_empty() && !blob.is_empty()).then(|| Kept { path: path.to_string(), bytes, blob: (blob != "-").then(|| blob.to_string()) })
+            (!path.is_empty() && !blob.is_empty()).then(|| Kept { path: decode_path(path), bytes, blob: (blob != "-").then(|| blob.to_string()) })
         })();
         match parsed {
             Some(entry) => kept.push(entry),
@@ -352,14 +368,28 @@ fn read_manifest(version: &Path) -> Result<Option<Vec<Kept>>> {
     Ok(Some(kept))
 }
 
+/// A path as the list of kept files writes it: `%`, tabs and line breaks as `%25`, `%09`, `%0A`
+/// and `%0D`, so a file name with one in it is still one line. A list written before had none of
+/// these, and reads the same.
+fn encode_path(path: &str) -> String {
+    path.replace('%', "%25").replace('\t', "%09").replace('\n', "%0A").replace('\r', "%0D")
+}
+
+fn decode_path(path: &str) -> String {
+    path.replace("%09", "\t").replace("%0A", "\n").replace("%0D", "\r").replace("%25", "%")
+}
+
 fn write_manifest(version: &Path, kept: &[Kept]) -> Result<()> {
-    let text: String = kept.iter().map(|k| format!("{}\t{}\t{}\n", k.blob.as_deref().unwrap_or("-"), k.bytes, k.path)).collect();
+    let text: String = kept.iter().map(|k| format!("{}\t{}\t{}\n", k.blob.as_deref().unwrap_or("-"), k.bytes, encode_path(&k.path))).collect();
     let file = version.join("files.txt");
     fs::write(&file, text).map_err(|e| StoreError::io("write", &file, e))
 }
 
 /// Takes away the copies no version names any more.
 fn drop_unused_blobs(dir: &Path, versions: &[PathBuf]) {
+    if !copies_are_safe(dir) {
+        return;
+    }
     let mut used = std::collections::HashSet::new();
     for version in versions.iter().filter(|v| v.is_dir()) {
         match read_manifest(version) {
@@ -437,7 +467,9 @@ fn snapshot_current(dir: &Path, file: &Path, force: bool) -> Result<()> {
         return Err(StoreError::io("write", &snapshot, e));
     }
     // The page's ink and attachments as they are, kept with its words (issue #553).
-    if let Err(e) = keep_companions(dir).and_then(|kept| write_manifest(&entry, &kept)) {
+    if copies_are_safe(dir)
+        && let Err(e) = keep_companions(dir).and_then(|kept| write_manifest(&entry, &kept))
+    {
         let _ = fs::remove_dir_all(&entry);
         return Err(e);
     }
@@ -463,7 +495,8 @@ fn snapshot_current(dir: &Path, file: &Path, force: bool) -> Result<()> {
         remove_count = remove_count.saturating_sub(1);
         next += 1;
     }
-    drop_unused_blobs(dir, &existing[next..]);
+    // Every version folder: one that could not be removed still names its copies.
+    drop_unused_blobs(dir, &existing);
     Ok(())
 }
 
@@ -1191,9 +1224,11 @@ mod tests {
         fs::create_dir_all(page.join("assets")).expect("assets");
         fs::write(page.join("assets").join("a.png"), b"one").expect("asset");
         fs::write(page.join("assets").join("b.png"), b"bee").expect("asset");
+        #[cfg(unix)]
+        fs::write(page.join("assets").join("odd\tname\n%41.txt"), b"odd").expect("an odd name");
         save_body(&page, "changed words").expect("save");
         let kept = versions(&page).expect("versions");
-        assert_eq!(kept[0].files, Some(2));
+        assert_eq!(kept[0].files, Some(if cfg!(unix) { 3 } else { 2 }), "a name with a tab or line break in it is one file");
         // b.png changed, and a.png's place is now a folder: a.png cannot go back.
         fs::write(page.join("assets").join("b.png"), b"new").expect("asset");
         fs::remove_file(page.join("assets").join("a.png")).expect("remove");
@@ -1222,6 +1257,28 @@ mod tests {
             assert!(restore_version(&page, &kept[0].id).is_err(), "refused");
             assert!(fs::read_dir(&elsewhere).expect("elsewhere").next().is_none(), "nothing written outside the page");
         }
+    }
+
+    /// Review of #553: when the folder the copies go in is a link, no copy is kept through it,
+    /// none is taken away, and the version keeps its words alone, as before.
+    #[cfg(unix)]
+    #[test]
+    fn copies_are_not_kept_through_a_linked_folder() {
+        let t = crate::testing::TempDir::new("page-version-linked-copies");
+        let settings = crate::settings::Settings::at(t.path().join("settings.toml"));
+        let notebook = crate::ops::create_notebook(t.path(), "Notebook", None, &settings).expect("notebook");
+        let page = crate::ops::create_node(&notebook, "Page", notecraft_model::NodeKind::Page, None, &settings).expect("page");
+        fs::create_dir_all(page.join("assets")).expect("assets");
+        fs::write(page.join("assets").join("a.png"), b"one").expect("asset");
+        let elsewhere = t.path().join("elsewhere");
+        fs::create_dir_all(&elsewhere).expect("elsewhere");
+        fs::create_dir_all(version_dir(&page)).expect("versions");
+        std::os::unix::fs::symlink(&elsewhere, blobs_dir(&page)).expect("link");
+        save_body(&page, "changed words").expect("the page is still saved");
+        let kept = versions(&page).expect("versions");
+        assert_eq!(kept.len(), 1, "a version of the words");
+        assert_eq!(kept[0].files, None, "and its words alone");
+        assert!(fs::read_dir(&elsewhere).expect("elsewhere").next().is_none(), "nothing written through the link");
     }
 
     /// Issue #278: a saved version can be read without restoring it.

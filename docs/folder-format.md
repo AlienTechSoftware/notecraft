@@ -329,12 +329,14 @@ and are not verified for every sync tool.
 - Page versions are kept in the page's hidden `.notecraft/versions` folder. At most 50
   snapshots and 128 MB of page files are retained. Each snapshot keeps the page's main file and,
   since issue #553, its ink files and the files in its `assets` folder: `files.txt` in the
-  snapshot lists each as a copy name, its length and its path, tab separated, and the copies are
+  snapshot lists each as a copy name, its length and its path (`%`, tab and line breaks written as
+  `%25`, `%09`, `%0A`, `%0D`), tab separated, and the copies are
   kept once each in `.notecraft/versions/blobs/`, named by their contents (`-` for a file over
   32 MB, which is named but not kept). Restoring a snapshot puts back the files it lists, after
   checking every copy, and leaves files added since alone. A copy no snapshot lists is removed
   when old snapshots are. A snapshot without `files.txt` is from before, and keeps the words
-  alone.
+  alone; so does one taken while `.notecraft`, `versions` or `blobs` is a link, through which no
+  copy is written, read or removed.
 - Recycled pages, sections and groups are moved into the notebook's hidden
   `.notecraft/recycle-bin` folder. Restore returns an item to its original path and refuses
   to overwrite a new item there. Emptying an entry permanently deletes it. Deleting an

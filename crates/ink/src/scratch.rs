@@ -104,7 +104,11 @@ fn mostly_inside(stroke: &Stroke, inside: &dyn Fn((f32, f32)) -> bool) -> bool {
         within += len * hit as f32 / n as f32;
         total += len;
     }
-    total > 0.0 && within * 2.0 > total
+    if total == 0.0 {
+        // Readings all in one place (a press whose pressure changed): a dot.
+        return stroke.dabs.first().is_some_and(|d| inside((d.x, d.y)));
+    }
+    within * 2.0 > total
 }
 
 /// The strokes a scratch rubs out: those its path crosses that lie mostly inside the ground it
@@ -182,6 +186,12 @@ mod tests {
         points.push((150.0, 6.0));
         d2.add(stroke(&points));
         assert!(scratched(&d2, &scratch).is_empty(), "most of its length is outside");
+        // A dot pressed in one place, its pressure changing: two readings, no length.
+        let mut d3 = Drawing::new(400.0, 400.0);
+        let mut dot = Stroke::new(Tool::Pen, Rgb::BLACK, 2.0);
+        dot.dabs = vec![Dab::new(30.0, 6.0, 0.2), Dab::new(30.0, 6.0, 0.9)];
+        d3.add(dot);
+        assert_eq!(scratched(&d3, &scratch), vec![0], "a dot under it goes");
         let empty = Drawing::new(400.0, 400.0);
         assert!(scratched(&empty, &scratch).is_empty(), "over nothing it stays a scribble");
     }
