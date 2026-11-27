@@ -1731,6 +1731,8 @@
 @id	ui.show_tabs_only	[[RLI]]$$$Show tabs only@@@[[PDI]]
 @id	ui.always_show_ribbon	[[RLI]]$$$Always show Ribbon@@@[[PDI]]
 @id	ui.hide_quick_access_toolbar	[[RLI]]$$$Hide Quick Access Toolbar@@@[[PDI]]
+@id	ui.merge_formatting	[[RLI]]$$$Merge formatting@@@[[PDI]]
+@id	ui.pasted_merged	[[RLI]]$$$Pasted in the page's own fonts and colours.@@@[[PDI]]
 @id	ui.version_words_only	[[RLI]]$$$words only@@@[[PDI]]
 @id	ui.version_with_files	[[RLI]]$$$ink and files: {count}@@@[[PDI]]
 @id	ui.scratch_out	[[RLI]]$$$Erase ink with a scratch-out gesture@@@[[PDI]]

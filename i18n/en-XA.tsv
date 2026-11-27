@@ -1731,6 +1731,8 @@
 @id	ui.show_tabs_only	$$$Show tabs only@@@
 @id	ui.always_show_ribbon	$$$Always show Ribbon@@@
 @id	ui.hide_quick_access_toolbar	$$$Hide Quick Access Toolbar@@@
+@id	ui.merge_formatting	$$$Merge formatting@@@
+@id	ui.pasted_merged	$$$Pasted in the page's own fonts and colours.@@@
 @id	ui.version_words_only	$$$words only@@@
 @id	ui.version_with_files	$$$ink and files: {count}@@@
 @id	ui.scratch_out	$$$Erase ink with a scratch-out gesture@@@
