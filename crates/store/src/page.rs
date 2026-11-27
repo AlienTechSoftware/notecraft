@@ -45,6 +45,8 @@ pub struct Version {
 }
 
 const MAX_VERSIONS: usize = 50;
+/// What a page's versions may take up, their page files and the copies of its ink and
+/// attachments together; the newest version is kept whatever its size.
 const MAX_VERSION_BYTES: u64 = 128 * 1024 * 1024;
 const VERSION_INTERVAL_NS: u128 = 5 * 60 * 1_000_000_000;
 
@@ -391,7 +393,20 @@ fn drop_unused_blobs(dir: &Path, versions: &[PathBuf]) {
         return;
     }
     let mut used = std::collections::HashSet::new();
-    for version in versions.iter().filter(|v| v.is_dir()) {
+    // A version still being kept (its folder there, its record not yet) may already have copies
+    // its list does not name yet: none is taken away until it is done.
+    let all: Vec<PathBuf> = match fs::read_dir(version_dir(dir)) {
+        Ok(entries) => entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir() && p.file_name().and_then(|n| n.to_str()).is_some_and(valid_version_id))
+            .collect(),
+        Err(_) => return,
+    };
+    if all.iter().any(|v| !v.join("version.toml").is_file()) {
+        return;
+    }
+    for version in versions.iter().chain(all.iter()).filter(|v| v.is_dir()) {
         match read_manifest(version) {
             Ok(kept) => used.extend(kept.unwrap_or_default().into_iter().filter_map(|k| k.blob)),
             // A list that cannot be read may name any copy: none is taken away.
@@ -479,25 +494,36 @@ fn snapshot_current(dir: &Path, file: &Path, force: bool) -> Result<()> {
         return Err(StoreError::io("write", &entry.join("version.toml"), e));
     }
     existing.push(entry);
-    let mut total = 0u64;
-    let mut sizes = Vec::with_capacity(existing.len());
-    for version in &existing {
-        let snapshot = version.join(file.file_name().unwrap_or_default());
-        let size = fs::metadata(&snapshot).map(|meta| meta.len()).unwrap_or(0);
-        total = total.saturating_add(size);
-        sizes.push(size);
-    }
-    let mut remove_count = existing.len().saturating_sub(MAX_VERSIONS);
-    let mut next = 0;
-    while next < existing.len() && (remove_count > 0 || total > MAX_VERSION_BYTES) {
-        total = total.saturating_sub(sizes[next]);
-        let _ = fs::remove_dir_all(&existing[next]);
-        remove_count = remove_count.saturating_sub(1);
-        next += 1;
+    // What the versions from `from` on take up: their page files, and the copies they name, each
+    // copy once however many name it (issue #553). The newest is always kept.
+    let page_sizes: Vec<u64> =
+        existing.iter().map(|v| fs::metadata(v.join(file.file_name().unwrap_or_default())).map(|m| m.len()).unwrap_or(0)).collect();
+    let names: Vec<Vec<String>> =
+        existing.iter().map(|v| read_manifest(v).ok().flatten().unwrap_or_default().into_iter().filter_map(|k| k.blob).collect()).collect();
+    let blob_size = |name: &String| fs::metadata(blobs_dir(dir).join(name)).map(|m| m.len()).unwrap_or(0);
+    let drop = versions_to_drop(&page_sizes, &names, blob_size, MAX_VERSIONS, MAX_VERSION_BYTES);
+    for version in &existing[..drop] {
+        let _ = fs::remove_dir_all(version);
     }
     // Every version folder: one that could not be removed still names its copies.
     drop_unused_blobs(dir, &existing);
     Ok(())
+}
+
+/// How many of the oldest versions go, so that at most `max_versions` are left and they take up
+/// no more than `max_bytes`: their page files, and the copies they name, each copy counted once
+/// however many name it. The newest is always kept.
+fn versions_to_drop(page_sizes: &[u64], names: &[Vec<String>], blob_size: impl Fn(&String) -> u64, max_versions: usize, max_bytes: u64) -> usize {
+    let taken = |from: usize| -> u64 {
+        let mut seen = std::collections::HashSet::new();
+        let copies: u64 = names[from..].iter().flatten().filter(|n| seen.insert(*n)).map(&blob_size).sum();
+        page_sizes[from..].iter().sum::<u64>().saturating_add(copies)
+    };
+    let mut next = 0;
+    while next + 1 < page_sizes.len() && (page_sizes.len() - next > max_versions || taken(next) > max_bytes) {
+        next += 1;
+    }
+    next
 }
 
 /// The editable part of a page's file: the inside of the HTML body, or the Markdown after the
@@ -536,6 +562,10 @@ pub fn direction(dir: &Path) -> Result<Option<Dir>> {
 /// Writes the page's direction into its own file, so it travels with the folder.
 /// `None` takes it out again and lets every line decide for itself.
 pub fn set_direction(dir: &Path, want: Option<Dir>) -> Result<()> {
+    // One writer to the page at a time, as the other setters: a save keeping a version in the
+    // meantime is not undone by this one's tidying of copies (issue #553).
+    let writer = crate::coordination::page_writer(dir)?;
+    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
     let out = match (format, want) {
@@ -820,6 +850,10 @@ pub fn table_columns(dir: &Path) -> Result<tablecols::Widths> {
 
 /// Writes them into the page's own file, beside the arrangement of its boxes.
 pub fn set_table_columns(dir: &Path, widths: &tablecols::Widths) -> Result<()> {
+    // One writer to the page at a time, as the other setters: a save keeping a version in the
+    // meantime is not undone by this one's tidying of copies (issue #553).
+    let writer = crate::coordination::page_writer(dir)?;
+    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
     let line = tablecols::write(widths);
@@ -908,6 +942,10 @@ pub fn justified(dir: &Path) -> Result<justify::Justified> {
 
 /// Writes them into the page's own file, beside the table column widths.
 pub fn set_justified(dir: &Path, marked: &justify::Justified) -> Result<()> {
+    // One writer to the page at a time, as the other setters: a save keeping a version in the
+    // meantime is not undone by this one's tidying of copies (issue #553).
+    let writer = crate::coordination::page_writer(dir)?;
+    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
     let line = justify::write(marked);
@@ -1279,6 +1317,26 @@ mod tests {
         assert_eq!(kept.len(), 1, "a version of the words");
         assert_eq!(kept[0].files, None, "and its words alone");
         assert!(fs::read_dir(&elsewhere).expect("elsewhere").next().is_none(), "nothing written through the link");
+    }
+
+    /// Review of #553: the size cap counts the copies the versions keep, each once, and the newest
+    /// version is kept even when it alone is over the cap.
+    #[test]
+    fn the_version_cap_counts_the_copies_once() {
+        let size = |n: &String| match n.as_str() {
+            "big" => 60,
+            "big2" => 70,
+            _ => 1,
+        };
+        let names = |list: &[&[&str]]| list.iter().map(|v| v.iter().map(|s| s.to_string()).collect::<Vec<_>>()).collect::<Vec<_>>();
+        // Three versions sharing one big copy: counted once, so all fit in 100.
+        assert_eq!(versions_to_drop(&[5, 5, 5], &names(&[&["big"], &["big"], &["big"]]), size, 50, 100), 0);
+        // A different big copy each: the oldest goes until what is left fits.
+        assert_eq!(versions_to_drop(&[5, 5, 5], &names(&[&["big"], &["big2"], &["small"]]), size, 50, 100), 1);
+        // Over the cap on its own: the newest stays.
+        assert_eq!(versions_to_drop(&[5, 5], &names(&[&[], &["big", "big2"]]), size, 50, 100), 1);
+        // The count limit still holds.
+        assert_eq!(versions_to_drop(&[1, 1, 1, 1], &names(&[&[], &[], &[], &[]]), size, 2, 100), 2);
     }
 
     /// Issue #278: a saved version can be read without restoring it.

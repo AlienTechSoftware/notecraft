@@ -327,7 +327,8 @@ and are not verified for every sync tool.
   crash cannot leave half a page.
 - Pages over 50 MB are refused.
 - Page versions are kept in the page's hidden `.notecraft/versions` folder. At most 50
-  snapshots and 128 MB of page files are retained. Each snapshot keeps the page's main file and,
+  snapshots and 128 MB are retained, page files and the copies below counted together (each
+  copy once); the newest snapshot is kept whatever its size. Each snapshot keeps the page's main file and,
   since issue #553, its ink files and the files in its `assets` folder: `files.txt` in the
   snapshot lists each as a copy name, its length and its path (`%`, tab and line breaks written as
   `%25`, `%09`, `%0A`, `%0D`), tab separated, and the copies are
