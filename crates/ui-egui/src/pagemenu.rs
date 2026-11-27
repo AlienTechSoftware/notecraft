@@ -69,9 +69,18 @@ pub fn show(ui: &mut Ui, body: egui::Rect, acts: &mut Vec<Act>, t: &Tokens, lock
     let mut picked = false;
     let Some(menu) = floating::point_menu(ui.ctx(), id(), at, |ui| {
         floating::menu_heading(ui, crate::tl_id!("ui.this_page"), t);
+        // Opened over the date and time below the title: changing or hiding them comes first, as
+        // OneNote's calendar and clock beside them do (issue #541).
+        if !locked && let Some((block, _)) = crate::pageedit::stamp_place(ui.ctx()).filter(|(_, stamp)| stamp.intersects(at.expand(1.0))) {
+            if floating::menu_row(ui, Some(Glyph::Icon(Icon::Calendar)), crate::tl_id!("ui.change_page_date"), t).clicked() {
+                acts.push(Act::EditPageStamp(block));
+                picked = true;
+            }
+            floating::menu_separator(ui, t);
+        }
         // A locked page's menu offers only Unlock for now (issue #441).
         if !locked {
-            picked = items_with(ui, acts, true, t, true);
+            picked |= items_with(ui, acts, true, t, true);
         }
         // The page's lock, as the navigator's menus offer it (issue #441).
         let (label, icon) =

@@ -33,6 +33,8 @@ pub struct Pen {
     pub auto_shapes: bool,
     /// Which eraser the eraser is (issue #545).
     pub eraser: Eraser,
+    /// A scratch-out gesture rubs out the ink under it (issue #569).
+    pub scratch_out: bool,
 }
 
 impl Default for Pen {
@@ -45,6 +47,7 @@ impl Default for Pen {
             gain: 1.0,
             auto_shapes: false,
             eraser: Eraser::Stroke,
+            scratch_out: false,
         }
     }
 }
@@ -880,14 +883,29 @@ pub fn show(
                 // Automatic Shapes (#294): not for a stroke laid along the ruler, which is
                 // straight already, and only when the stroke is plainly a shape.
                 let along_ruler = ui.ctx().data(|d| d.get_temp::<notecraft_ink::ruler::Edge>(ruler_edge_id())).is_some();
-                let shape = if pen.auto_shapes && !along_ruler { notecraft_ink::recognise::recognise(&hand) } else { None };
-                changed = match shape {
-                    Some(shape) => {
-                        let clean = notecraft_ink::recognise::redraw(&hand, shape);
-                        pad.add_recognised(hand, clean, shape.id())
-                    }
-                    None => pad.drawing.add(hand),
+                // The scratch-out gesture (#569), when it is on: a zigzag over ink rubs that ink out
+                // and leaves no stroke of its own, as one step for undo. Over no ink, or not
+                // plainly a scratch, it is a stroke like any other.
+                let scratched = if pen.scratch_out && !along_ruler && notecraft_ink::scratch::is_scratch(&hand) {
+                    notecraft_ink::scratch::scratched(&pad.drawing, &hand)
+                } else {
+                    Vec::new()
                 };
+                let shape = if pen.auto_shapes && !along_ruler && scratched.is_empty() { notecraft_ink::recognise::recognise(&hand) } else { None };
+                if !scratched.is_empty() {
+                    pick::remove(&mut pad.drawing, &scratched);
+                    // Places held before are places in the strokes as they were.
+                    pad.held.clear();
+                    changed = true;
+                } else {
+                    changed = match shape {
+                        Some(shape) => {
+                            let clean = notecraft_ink::recognise::redraw(&hand, shape);
+                            pad.add_recognised(hand, clean, shape.id())
+                        }
+                        None => pad.drawing.add(hand),
+                    };
+                }
             }
         }
         Pointer::Shape(shape) => {

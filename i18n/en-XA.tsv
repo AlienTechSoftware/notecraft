@@ -1725,3 +1725,54 @@
 @id	ui.find_close_tip	$$$Close the find bar and go back to the page (Escape)@@@
 @id	ui.discard_ocr_edits	$$$Discard the unsaved edits of this OCR file@@@
 @id	ui.image_text_why_web	$$$Reading text from pictures is not in the browser version yet.@@@
+@id	ui.ribbon_display_options	$$$Ribbon display options@@@
+@id	ui.classic_ribbon	$$$Classic Ribbon@@@
+@id	ui.simplified_ribbon	$$$Simplified Ribbon@@@
+@id	ui.full_screen_mode	$$$Full-screen mode@@@
+@id	ui.show_tabs_only	$$$Show tabs only@@@
+@id	ui.always_show_ribbon	$$$Always show Ribbon@@@
+@id	ui.hide_quick_access_toolbar	$$$Hide Quick Access Toolbar@@@
+@id	ui.version_words_only	$$$words only@@@
+@id	ui.version_with_files	$$$ink and files: {count}@@@
+@id	ui.scratch_out	$$$Erase ink with a scratch-out gesture@@@
+@id	ui.scratch_out_tip	$$$Scribble quickly back and forth over ink you drew to rub it out. A scribble over no ink, or one that is not plainly a scratch-out, stays as ink.@@@
+@id	ui.scratch_out_on	$$$A scratch-out over ink now rubs it out.@@@
+@id	ui.scratch_out_off	$$$A scratch-out is now ink like any other.@@@
+@id	ui.change_page_date	$$$Change date and time…@@@
+@id	ui.page_date_title	$$$Date and Time@@@
+@id	ui.page_date_show_date	$$$Show the date@@@
+@id	ui.page_date_show_time	$$$Show the time@@@
+@id	ui.page_date_day	$$$Day@@@
+@id	ui.page_date_month	$$$Month@@@
+@id	ui.page_date_year	$$$Year@@@
+@id	ui.page_date_hour	$$$Hour@@@
+@id	ui.page_date_minute	$$$Minute@@@
+@id	ui.page_date_none	$$$Neither: the line below the title is taken off.@@@
+@id	ui.page_date_removed	$$$The date and time below the title are taken off.@@@
+@id	ui.page_date_changed	$$$The date and time below the title are changed.@@@
+@id	ui.the_page_changed_try_again	$$$The page changed; try again.@@@
+@id	ui.review	$$$Review@@@
+@id	ui.accessibility	$$$Accessibility@@@
+@id	ui.check_accessibility	$$$Check Accessibility@@@
+@id	ui.check_accessibility_tip	$$$List what on this page a screen reader or the keyboard would stumble on, and go to each@@@
+@id	ui.a11y_picture_without_description	$$$A picture has no description@@@
+@id	ui.a11y_picture_without_description_how	$$$Right-click the picture and choose Alt Text to describe it.@@@
+@id	ui.a11y_unclear_link	$$$A link does not say where it goes@@@
+@id	ui.a11y_unclear_link_how	$$$Write words that name the place, such as the page or site, instead.@@@
+@id	ui.a11y_empty_heading	$$$A heading has no words@@@
+@id	ui.a11y_empty_heading_how	$$$Write the heading, or make the line ordinary text.@@@
+@id	ui.a11y_skipped_heading_level	$$$A heading skips a level@@@
+@id	ui.a11y_skipped_heading_level_how	$$$Use the next heading level down, so the page's outline has no gaps.@@@
+@id	ui.a11y_table_without_header	$$$A table has an empty header row@@@
+@id	ui.a11y_table_without_header_how	$$$Name each column in the table's first row.@@@
+@id	ui.a11y_none	$$$Nothing found on this page.@@@
+@id	ui.a11y_count	$$$Found on this page: {count}@@@
+@id	ui.a11y_go_to	$$$Go to@@@
+@id	ui.printout_page_title	$$${name}, page {page} of {count}@@@
+@id	ui.printout_from	$$$From {name}, page {page} of {count}@@@
+@id	ui.printout_pages_failed	$$$a page could not be made@@@
+@id	ui.printout_pages_failed_error	$$$The printout of {name} was not put on new pages, and nothing was changed: {error}@@@
+@id	ui.printout_pages_made	$$$Each page of {name} is now a page of its own. Pages made: {count}@@@
+@id	ui.insert_printout_on_new_pages	$$$Insert printout on new pages@@@
+@id	ui.insert_printout_on_new_pages_tip	$$$Copies the file in, and puts each printed page on a new page of its own after this one, in order.@@@
+@id	ui.more_tabs	$$$More tabs@@@
