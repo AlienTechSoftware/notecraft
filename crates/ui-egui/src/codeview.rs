@@ -560,7 +560,10 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     // An OCR file with unsaved edits shows a floppy on its row, like the lab's samples. A click saves it.
                     if picked && entry.kind == Kind::Ocr && state.dirty {
                         // Drawn on the row itself, at its right edge, so it sits beside the file name.
-                        let at = egui::Rect::from_min_size(egui::pos2(row.rect.right() - 24.0, row.rect.top() + 1.0), vec2(22.0, 18.0));
+                        let at = egui::Rect::from_min_size(
+                            egui::pos2(row.rect.right() - 24.0, row.rect.center().y - MARK_SIDE / 2.0),
+                            vec2(MARK_SIDE, MARK_SIDE),
+                        );
                         let save = check_button(ui, at, t, crate::tl_id!("ui.save_ocr_file"));
                         if save.clicked() {
                             out.wrote = Some((entry.name.clone(), state.text.clone()));
@@ -912,28 +915,38 @@ fn scale_stroke(stroke: &notecraft_ink::Stroke, scale: f32) -> notecraft_ink::St
 }
 
 /// One row of the list: the name, and what the file is.
-/// The check mark that saves an OCR file's edits, drawn with lines rather than as a glyph, so it
-/// shows whatever fonts the computer has. Its accessible name is `label`, the hover text says what it does.
-fn check_button(ui: &mut Ui, at: Rect, t: &Tokens, label: &str) -> egui::Response {
-    let response = ui.put(at, egui::Button::new("").small()).on_hover_text(label);
+/// The square size of the OCR file's [✕] and [✔] buttons, the same for both.
+const MARK_SIDE: f32 = 20.0;
+
+/// One of the two square buttons on an OCR file's row: [✔] saves, [✕] discards. Both are drawn
+/// with lines, so they look the same whatever fonts the computer has, and are the same square.
+fn mark_button(ui: &mut Ui, at: Rect, t: &Tokens, label: &str, cross: bool) -> egui::Response {
+    let rect = Rect::from_min_size(at.min, vec2(MARK_SIDE, MARK_SIDE));
+    let response = ui.interact(rect, ui.id().with(("mark-button", label)), Sense::click()).on_hover_text(label);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
-    let r = response.rect.shrink(5.0);
+    let fill = if response.hovered() { t.row_hover } else { Color32::TRANSPARENT };
+    ui.painter().rect(rect, egui::CornerRadius::same(3), fill, egui::Stroke::new(1.0, t.faint), egui::StrokeKind::Inside);
+    let r = rect.shrink(6.0);
     let stroke = egui::Stroke::new(1.6, t.accent);
-    let (a, b, c) = (egui::pos2(r.left(), r.center().y), egui::pos2(r.left() + r.width() * 0.4, r.bottom()), egui::pos2(r.right(), r.top()));
-    ui.painter().line_segment([a, b], stroke);
-    ui.painter().line_segment([b, c], stroke);
+    if cross {
+        ui.painter().line_segment([r.left_top(), r.right_bottom()], stroke);
+        ui.painter().line_segment([r.right_top(), r.left_bottom()], stroke);
+    } else {
+        let (a, b, c) = (egui::pos2(r.left(), r.center().y), egui::pos2(r.left() + r.width() * 0.4, r.bottom()), egui::pos2(r.right(), r.top()));
+        ui.painter().line_segment([a, b], stroke);
+        ui.painter().line_segment([b, c], stroke);
+    }
     response
 }
 
-/// The [✕] that discards an OCR file's unsaved edits, drawn with lines like the check mark.
+/// The [✔] that saves an OCR file's edits.
+fn check_button(ui: &mut Ui, at: Rect, t: &Tokens, label: &str) -> egui::Response {
+    mark_button(ui, at, t, label, false)
+}
+
+/// The [✕] that discards an OCR file's unsaved edits.
 fn cross_button(ui: &mut Ui, at: Rect, t: &Tokens, label: &str) -> egui::Response {
-    let response = ui.put(at, egui::Button::new("").small()).on_hover_text(label);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
-    let r = response.rect.shrink(6.0);
-    let stroke = egui::Stroke::new(1.6, t.accent);
-    ui.painter().line_segment([r.left_top(), r.right_bottom()], stroke);
-    ui.painter().line_segment([r.right_top(), r.left_bottom()], stroke);
-    response
+    mark_button(ui, at, t, label, true)
 }
 
 fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option<FileAction>, page_dir: &Path) -> egui::Response {

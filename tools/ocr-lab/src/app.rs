@@ -30,32 +30,38 @@ const LINE_PALETTE: [Color32; 8] = [
 ];
 
 /// The colour of a recognised line: the one chosen for it, or its place in the palette.
-/// The [✕] that discards an edited OCR file's changes, drawn with lines like the check mark.
-fn cross_button(ui: &mut egui::Ui) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(22.0, 18.0), Sense::click());
+/// The square size of the OCR file's [✕] and [✔] buttons: the same square in the lab and the app.
+const MARK_SIDE: f32 = 20.0;
+
+/// One of the two square buttons on an OCR file: [✕] discards its edits, [✔] saves them. Both are
+/// drawn with lines, so they look the same whatever fonts the computer has.
+fn mark_button(ui: &mut egui::Ui, cross: bool, label: &str) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(MARK_SIDE, MARK_SIDE), Sense::click());
     let visuals = ui.style().interact(&response);
-    ui.painter().rect(rect, visuals.corner_radius, visuals.weak_bg_fill, visuals.bg_stroke, StrokeKind::Inside);
-    let r = rect.shrink(6.0);
+    ui.painter().rect(rect, egui::CornerRadius::same(3), visuals.weak_bg_fill, visuals.bg_stroke, StrokeKind::Inside);
     let stroke = Stroke::new(1.6, visuals.text_color());
-    ui.painter().line_segment([r.left_top(), r.right_bottom()], stroke);
-    ui.painter().line_segment([r.right_top(), r.left_bottom()], stroke);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Discard the unsaved edits of this OCR file"));
+    if cross {
+        let r = rect.shrink(6.0);
+        ui.painter().line_segment([r.left_top(), r.right_bottom()], stroke);
+        ui.painter().line_segment([r.right_top(), r.left_bottom()], stroke);
+    } else {
+        let r = rect.shrink(5.0);
+        let (a, b, c) = (egui::pos2(r.left(), r.center().y), egui::pos2(r.left() + r.width() * 0.4, r.bottom()), egui::pos2(r.right(), r.top()));
+        ui.painter().line_segment([a, b], stroke);
+        ui.painter().line_segment([b, c], stroke);
+    }
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
     response
 }
 
-/// The check mark that saves an edited OCR file, drawn with lines so it shows whatever fonts the
-/// computer has (a check glyph is not in every font).
+/// The [✕] that discards an edited OCR file's changes.
+fn cross_button(ui: &mut egui::Ui) -> egui::Response {
+    mark_button(ui, true, "Discard the unsaved edits of this OCR file")
+}
+
+/// The [✔] that saves an edited OCR file.
 fn check_button(ui: &mut egui::Ui) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(22.0, 18.0), Sense::click());
-    let visuals = ui.style().interact(&response);
-    ui.painter().rect(rect, visuals.corner_radius, visuals.weak_bg_fill, visuals.bg_stroke, StrokeKind::Inside);
-    let r = rect.shrink(5.0);
-    let stroke = Stroke::new(1.6, visuals.text_color());
-    let (a, b, c) = (egui::pos2(r.left(), r.center().y), egui::pos2(r.left() + r.width() * 0.4, r.bottom()), egui::pos2(r.right(), r.top()));
-    ui.painter().line_segment([a, b], stroke);
-    ui.painter().line_segment([b, c], stroke);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Save this OCR file"));
-    response
+    mark_button(ui, false, "Save this OCR file")
 }
 
 fn line_colour(loaded: &Loaded, index: usize) -> Color32 {
@@ -1440,14 +1446,11 @@ impl Lab {
                                                             }
                                                             // Beside the file's name, once its text is edited and not saved.
                                                             if showing && self.viewing_dirty() {
-                                                                if check_button(ui).on_hover_text("Save this OCR file").clicked() {
-                                                                    save_json = true;
-                                                                }
-                                                                if cross_button(ui)
-                                                                    .on_hover_text("Discard the unsaved edits of this OCR file")
-                                                                    .clicked()
-                                                                {
+                                                                if cross_button(ui).clicked() {
                                                                     discard_json = true;
+                                                                }
+                                                                if check_button(ui).clicked() {
+                                                                    save_json = true;
                                                                 }
                                                             }
                                                         });
@@ -1749,11 +1752,11 @@ impl Lab {
             ui.horizontal(|ui| {
                 ui.strong(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
                 if dirty {
-                    if check_button(ui).on_hover_text("Save this OCR file").clicked() {
-                        save = true;
-                    }
-                    if cross_button(ui).on_hover_text("Discard the unsaved edits of this OCR file").clicked() {
+                    if cross_button(ui).clicked() {
                         discard = true;
+                    }
+                    if check_button(ui).clicked() {
+                        save = true;
                     }
                 }
             });
