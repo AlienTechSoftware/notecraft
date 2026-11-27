@@ -199,7 +199,7 @@ pub struct Lab {
     /// A text file shown in the main area instead of the picture: its path and its text.
     viewing_json: Option<(PathBuf, String)>,
     /// The text of the open file as it is on disk. The check mark shows when the edited text differs.
-    viewing_saved: String,
+    viewing_changed: bool,
     /// What the ribbon's pointer is set to: Type to select, or Draw to write with the pen in hand.
     pointer: ribbon::Pointer,
     /// The ribbon's chosen tab, and whether the ribbon is folded to its tab names.
@@ -245,7 +245,7 @@ impl Lab {
             open_path: Vec::new(),
             pointer: ribbon::Pointer::default(),
             viewing_json: None,
-            viewing_saved: String::new(),
+            viewing_changed: false,
             rules: ribbon::RuleLines::default(),
             stylus: Default::default(),
             sensitivity: 50,
@@ -1667,24 +1667,30 @@ impl Lab {
         match std::fs::read_to_string(path) {
             Ok(text) => {
                 let text = text.trim_start_matches('\u{feff}').to_string();
-                self.viewing_saved = text.clone();
+                self.viewing_changed = false;
                 self.viewing_json = Some((path.to_path_buf(), text));
             }
             Err(e) => self.status = format!("Could not read {}: {e}", path.display()),
         }
     }
 
-    /// Whether the open file's text has been edited and not yet saved.
+    /// Whether the open file has been edited since it was last saved or opened.
     fn viewing_dirty(&self) -> bool {
-        self.viewing_json.as_ref().is_some_and(|(_, text)| *text != self.viewing_saved)
+        self.viewing_changed
     }
 
-    /// Writes the open file's edited text back to its file, and makes it the saved text.
+    /// Records that the open file was edited. Like the source view, any edit makes it dirty, even
+    /// when the text was typed back to what it was.
+    fn note_edit(&mut self) {
+        self.viewing_changed = true;
+    }
+
+    /// Writes the open file's edited text back to its file, and clears the dirty state.
     fn save_viewing(&mut self) {
         let Some((path, text)) = self.viewing_json.clone() else { return };
         match std::fs::write(&path, text.as_bytes()) {
             Ok(()) => {
-                self.viewing_saved = text;
+                self.viewing_changed = false;
                 self.status = format!("Saved {}", path.display());
                 // An edited run of the open picture shows at once, not after the next pick.
                 if let Some(index) = self.pictures.iter().position(|p| ocr_json_path(p) == path) {
@@ -1698,7 +1704,10 @@ impl Lab {
     fn picture_area(&mut self, ui: &mut egui::Ui) {
         // The OCR file, when it is open, replaces the picture until another sample is picked or the file row is clicked again.
         if let Some((path, text)) = self.viewing_json.as_mut() {
-            let dirty = *text != self.viewing_saved;
+            // Dirty as soon as the file was edited, as the source view does: typing a character and
+            // deleting it again still leaves the file to save.
+            let dirty = self.viewing_changed;
+            let mut edited = false;
             let mut save = false;
             ui.horizontal(|ui| {
                 ui.strong(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
@@ -1713,8 +1722,13 @@ impl Lab {
                 let mut layouter = |ui: &egui::Ui, s: &dyn egui::TextBuffer, _wrap: f32| {
                     ui.fonts_mut(|f| f.layout_job(crate::json_view::job(s.as_str(), font.clone(), plain)))
                 };
-                ui.add(egui::TextEdit::multiline(text).code_editor().desired_width(f32::INFINITY).layouter(&mut layouter));
+                if ui.add(egui::TextEdit::multiline(text).code_editor().desired_width(f32::INFINITY).layouter(&mut layouter)).changed() {
+                    edited = true;
+                }
             });
+            if edited {
+                self.note_edit();
+            }
             if save {
                 self.save_viewing();
             }
@@ -2147,13 +2161,16 @@ mod tests {
         let mut lab = Lab::new(dir.clone(), None, None, false, telemetry::Log::open(&dir.join("log.txt")));
         lab.show_file(&file);
         assert!(!lab.viewing_dirty(), "a file just opened is not dirty");
+        // An edit marks the file dirty even when the text is typed back to what it was, as in the source view.
+        lab.note_edit();
         if let Some((_, text)) = lab.viewing_json.as_mut() {
             text.push(' ');
+            text.pop();
         }
-        assert!(lab.viewing_dirty(), "an edit makes the file dirty, so the check mark shows");
+        assert!(lab.viewing_dirty(), "an edit that was typed back still makes the file dirty");
         lab.save_viewing();
         assert!(!lab.viewing_dirty(), "saving clears the dirty state");
-        assert_eq!(std::fs::read_to_string(&file).expect("saved"), "{\"text\": \"Sourdough\"} ", "the edit is on disk");
+        assert_eq!(std::fs::read_to_string(&file).expect("saved"), "{\"text\": \"Sourdough\"}", "the file is written");
         std::fs::remove_dir_all(&dir).expect("clean up");
     }
 
