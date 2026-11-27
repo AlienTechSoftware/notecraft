@@ -255,6 +255,16 @@ fn version_row(ui: &mut Ui, t: &Tokens, title: &str, sub: &str, selected: bool) 
     row.on_hover_text(sub)
 }
 
+/// The letter a key names, if it is one of the letter keys (not Home, Escape and the like).
+fn single_letter(key: &egui::Key) -> Option<char> {
+    let name = key.symbol_or_name();
+    let mut chars = name.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) if c.is_ascii_alphabetic() => Some(c),
+        _ => None,
+    }
+}
+
 /// The footer row under the ribbon's groups, where the display options button sits.
 const DISPLAY_FOOTER_H: f32 = 16.0;
 
@@ -7237,6 +7247,17 @@ impl NoteCraftApp {
 
     /// The ribbon under the title row: tabs and their groups.
     fn ribbon_bar(&mut self, ui: &mut Ui) {
+        // Issue #515: Alt and the letter a tab is marked with opens that tab.
+        let alt_tab = ui.ctx().input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::Key { key, pressed: true, modifiers, .. } if modifiers.alt => ribbon::tab_for_key(single_letter(key)?),
+                _ => None,
+            })
+        });
+        if let Some(name) = alt_tab {
+            self.ribbon_tab = name.to_owned();
+            self.ribbon_peek = false;
+        }
         let (tab, source, tokens) = (self.ribbon_tab.clone(), self.show_source, self.tokens);
         let font_selection = self.font_selection(ui.ctx());
         let family = match &font_selection.family {
@@ -18555,10 +18576,6 @@ mod keep_boxes_tests {
         assert!(matches!(h.state().dialog, Some(Dialog::Link { .. })), "the Link action opens the Link dialog");
     }
 
-    /// Issue #505 follow-up: the ribbon's display menu, at its bottom right, folds and unfolds the
-    /// ribbon. Full-screen mode, the Simplified ribbon and hiding the Quick Access Toolbar are
-    /// listed, and say they are not built yet.
-    #[test]
     /// Issue #577: a secondary note window follows the window's frame preference, so it does not
     /// add a second title bar above the one NoteCraft draws.
     #[test]
@@ -18571,6 +18588,20 @@ mod keep_boxes_tests {
             assert_eq!(child.own_frame(), own, "secondary window follows own={own}");
         }
     }
+
+    /// Issue #515: Alt, then the letter a tab is marked with, opens that ribbon tab.
+    #[test]
+    fn alt_and_a_letter_opens_the_ribbon_tab_it_marks() {
+        let (_t, _page, mut h) = two_boxes(false, "keytips-tab");
+        assert_eq!(h.state().ribbon_tab, "Home");
+        h.key_press_modifiers(egui::Modifiers::ALT, egui::Key::Y);
+        h.run_steps(2);
+        assert_eq!(h.state().ribbon_tab, "History", "Alt+Y opens the History tab");
+    }
+    /// Issue #505 follow-up: the ribbon's display menu, at its bottom right, folds and unfolds the
+    /// ribbon. Full-screen mode, the Simplified ribbon and hiding the Quick Access Toolbar are
+    /// listed, and say they are not built yet.
+    #[test]
     fn the_ribbon_display_menu_folds_and_unfolds_the_ribbon() {
         use egui_kittest::kittest::Queryable as _;
         let (_t, _page, mut h) = two_boxes(false, "ribbon-display-menu");
