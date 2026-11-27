@@ -2433,6 +2433,11 @@ impl NoteCraftApp {
         let _ = self.session.settings.set(LAST_SCROLL_KEY, &format!("{:.0}", self.page_offset_y.max(0.0)));
     }
 
+    /// Whether this window draws its own title bar (true) or keeps the system's (false).
+    pub fn own_frame(&self) -> bool {
+        self.frameless
+    }
+
     /// Remembers which page is open, for the next time the window starts.
     fn remember_last_page(&mut self, dir: &Path, another_page: bool) {
         // A note window of its own is not where the window was left.
@@ -18554,6 +18559,18 @@ mod keep_boxes_tests {
     /// ribbon. Full-screen mode, the Simplified ribbon and hiding the Quick Access Toolbar are
     /// listed, and say they are not built yet.
     #[test]
+    /// Issue #577: a secondary note window follows the window's frame preference, so it does not
+    /// add a second title bar above the one NoteCraft draws.
+    #[test]
+    fn a_secondary_window_follows_the_window_frame_preference() {
+        let (_t, page, mut h) = two_boxes(false, "secondary-frame");
+        for own in [true, false] {
+            h.state_mut().set_frameless(own);
+            let request = crate::windows::Request { path: page.clone(), quick: false, docked: false };
+            let child = h.state().child_window(&request).expect("the secondary window opens");
+            assert_eq!(child.own_frame(), own, "secondary window follows own={own}");
+        }
+    }
     fn the_ribbon_display_menu_folds_and_unfolds_the_ribbon() {
         use egui_kittest::kittest::Queryable as _;
         let (_t, _page, mut h) = two_boxes(false, "ribbon-display-menu");
