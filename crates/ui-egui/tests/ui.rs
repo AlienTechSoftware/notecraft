@@ -1168,27 +1168,35 @@ fn arabic_draws_and_the_direction_controls_work() {
     h.run_steps(2);
     assert!(!h.state().body().unwrap_or_default().contains('\u{200F}'), "auto takes the mark off");
 
-    // The paragraph's direction is also in the Direction group, with the pilcrow-and-arrow
+    // The paragraph's direction is also in the Page Setup menu, with the pilcrow-and-arrow
     // mark Word uses for it, so a writer looking for the direction controls finds them all
     // in one place instead of under an alignment button.
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Page Setup").click();
+    settle(&mut h);
     h.get_by_label("Paragraph right to left").click();
     h.run_steps(2);
     assert_eq!(
         h.state().body().unwrap_or_default().lines().filter(|l| l.starts_with('\u{200F}')).count(),
         1,
-        "the group's button marks the paragraph the menu's entry does"
+        "the menu's button marks the paragraph the menu's entry does"
     );
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Page Setup").click();
+    settle(&mut h);
     h.get_by_label("Paragraph direction from the words").click();
     h.run_steps(2);
     assert!(!h.state().body().unwrap_or_default().contains('\u{200F}'), "and takes it off again");
 
     // The page's own direction is written into the page's file, and the window redraws by
     // it: before this was fixed the file changed and nothing on the screen moved.
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Page Setup").click();
+    settle(&mut h);
     h.get_by_label("Page right to left").click();
     h.run_steps(2);
     let file = s.md_page.join("index.md");
     let text = std::fs::read_to_string(&file).unwrap_or_default();
     assert!(text.contains("dir: rtl"), "the page records it:\n{text}");
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Page Setup").click();
+    settle(&mut h);
     h.get_by_label("Page direction from the words").click();
     h.run_steps(2);
     let text = std::fs::read_to_string(&file).unwrap_or_default();
@@ -1205,6 +1213,8 @@ fn arabic_draws_and_the_direction_controls_work() {
     assert!(body.contains('\u{2067}') && body.contains('\u{2069}'), "an isolate went in (status: {}):\n{body:?}", h.state().status());
 
     // The page control writes into the page's own file, where it travels with the folder.
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Page Setup").click();
+    settle(&mut h);
     h.get_by_label("Page right to left").click();
     h.run_steps(2);
     let file = std::fs::read_to_string(s.md_page.join("index.md")).unwrap_or_default();
@@ -1922,9 +1932,10 @@ fn the_ribbon_inserts_in_both_formats() {
     for label in ["Home", "Insert", "View", "Bold", "Heading 1", "Bullets", "To Do Tag"] {
         let _ = h.get_by_label(label);
     }
-    // Undo names both the group and the button in it, so both are expected.
-    assert!(h.query_all_by_label("Undo").count() >= 2, "the Undo group and its button");
-    assert!(h.query_all_by_label("Redo").count() >= 1, "and Redo beside it");
+    // Undo and Redo still have their Quick Access buttons after removing the Home group.
+    for label in ["Undo", "Redo"] {
+        assert_eq!(h.query_all_by_label(label).count(), 1, "{label} stays in Quick Access");
+    }
     review(&mut h, "tab_home");
     h.get_by_label("Insert").click();
     h.run();
@@ -9168,9 +9179,8 @@ fn the_quick_access_menu_hides_moves_and_remembers() {
     assert!(h.query_all_by_label("Back").count() >= 1, "and is still drawn");
     assert!(settings(&t).contains("qat_below = \"true\""), "the choice is in the settings:\n{}", settings(&t));
 
-    // Take Redo off the strip. The Home tab has a Redo button of its own, which stays.
-    let redo_buttons = h.query_all_by_label("Redo").count();
-    assert!(redo_buttons >= 2, "a Redo on the strip and one on the Home tab: {redo_buttons}");
+    // Take Redo off Quick Access, where its only ribbon button lives.
+    assert_eq!(h.query_all_by_label("Redo").count(), 1, "Redo starts on Quick Access");
     h.get_by_label("Customize Quick Access Toolbar").click();
     for _ in 0..4 {
         pump(&mut h);
@@ -9179,7 +9189,7 @@ fn the_quick_access_menu_hides_moves_and_remembers() {
     settle(&mut h);
     let v = look_at(&mut h);
     assert_eq!(v.pointer("/quickAccess/shown/3").and_then(Value::as_bool), Some(false), "Redo is off the strip: {v}");
-    assert_eq!(h.query_all_by_label("Redo").count(), redo_buttons - 1, "the strip's Redo is gone and the Home tab's is not");
+    assert_eq!(h.query_all_by_label("Redo").count(), 0, "the strip's Redo is gone");
 
     // Hide it, and bring it back from the arrow that stays.
     h.get_by_label("Customize Quick Access Toolbar").click();
@@ -12263,6 +12273,8 @@ fn a_selected_box_takes_direction_tags_and_lists_as_a_whole() {
     assert_eq!(look(&mut h).pointer("/page/selectedContainer").and_then(Value::as_u64), Some(0), "the box is selected");
 
     // Right to left on every paragraph of words in it.
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Page Setup").click();
+    settle(&mut h);
     let r = h.get_by_label("Paragraph right to left").rect();
     click(&mut h, r.center().x, r.center().y);
     settle(&mut h);
@@ -17561,6 +17573,8 @@ fn the_styles_gallery_opens_from_the_keyboard_on_the_current_style() {
     h.key_press(egui::Key::Escape);
     settle(&mut h);
     assert_eq!(focused_label(&h).as_deref(), Some("More styles"), "Escape gives the keyboard back to More styles");
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Page Setup").click();
+    settle(&mut h);
     assert!(h.query_by_label("Page").is_some() && h.query_by_label("Paragraph").is_some(), "the direction rows say what they change");
 }
 
@@ -19675,6 +19689,173 @@ fn a_paste_in_the_find_bar_goes_into_its_field_and_not_the_page() {
         assert_eq!(look_at(&mut h)["pageFind"]["words"].as_str(), Some("More"), "{path}: into the field, once");
         assert_eq!(look_at(&mut h)["pageFind"]["count"].as_u64(), Some(1));
     }
+}
+
+/// Issue #505: Classic Home follows the reading order of its command groups and rows.
+#[test]
+fn classic_home_ribbon_groups_and_primary_commands_follow_reading_order() {
+    let (_t, mut app, sample) = sample_app("classic-home-reading-order");
+    app.open_path(&sample.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1800.0, 900.0));
+    settle(&mut h);
+
+    let groups = ["Clipboard", "Basic Text", "Styles", "Tags", "Email", "Meetings"];
+    let bounds: Vec<_> = groups.iter().map(|label| h.get_by_role_and_label(egui::accesskit::Role::Label, label).rect()).collect();
+    assert!(bounds.windows(2).all(|pair| pair[0].right() < pair[1].left()), "{bounds:?}");
+    assert_eq!(
+        h.query_all_by_role_and_label(egui::accesskit::Role::Label, "Page Setup").count(),
+        0,
+        "Page Setup does not separate Basic Text and Styles"
+    );
+
+    let position = |name| h.get_by_label(name).rect().center();
+    let family = position("Font name");
+    let bullets = position("Bullets");
+    let clear = position("Clear formatting");
+    assert!(family.x < bullets.x && bullets.x < clear.x, "font, lists and clear formatting follow each other");
+    assert!((bullets.y - clear.y).abs() < 2.0, "lists and clear formatting share the top row");
+    let bold = position("Bold");
+    let underline = position("Underline");
+    assert!(bold.y > bullets.y && (bold.y - underline.y).abs() < 2.0 && underline.x > bold.x);
+    assert!(h.query_by_label("Question (Ctrl+3)").is_some(), "the Tags gallery includes Question");
+    review(&mut h, "classic-home-layout");
+}
+
+/// Issue #505: the bottom rule belongs to the window and stays put as Classic Home scrolls.
+#[test]
+fn the_ribbon_boundary_spans_the_window_at_different_scales() {
+    let _pixels = support::gui::pixel_test();
+    for (theme, name) in [(LIGHT, "light"), (DARK, "dark")] {
+        for (width, scale) in [(1650.0, 1.0), (900.0, 1.5)] {
+            let (_t, mut app, sample) = sample_app("ui-ribbon-boundary");
+            app.set_theme(theme);
+            app.open_path(&sample.md_page.to_string_lossy());
+            let mut h = Harness::builder()
+                .with_size(egui::vec2(width, 760.0))
+                .with_pixels_per_point(scale)
+                .with_accessibility_check(false)
+                .renderer(support::gui::renderer())
+                .build_ui_state(|ui, app: &mut NoteCraftApp| app.show(ui), app);
+            settle(&mut h);
+            let options = h.get_by_label("Ribbon display options").rect();
+            let bottom = h.state().page_rect().expect("page below the ribbon").top();
+            let tokens = theme.tokens();
+            let ink = notecraft_ui_egui::theme::mix(tokens.panel, tokens.text, 0.45).to_array();
+            let boundary = |h: &mut Harness<'_, NoteCraftApp>| {
+                let picture = support::gui::render(h).expect("render the ribbon");
+                let near_bottom = options.center().y * scale;
+                ((near_bottom as u32)..((bottom * scale) as u32).min(picture.height())).find(|&y| {
+                    // The custom window frame is outside the ribbon's client area.
+                    let inset = (12.0 * scale) as u32;
+                    (inset..picture.width() - inset)
+                        .all(|x| picture.get_pixel(x, y).0.iter().zip(ink).all(|(&actual, expected)| actual.abs_diff(expected) <= 2))
+                })
+            };
+            let suffix = format!("{name}-{}", (scale * 100.0) as u32);
+            review(&mut h, &format!("classic-home-{suffix}"));
+            let before = boundary(&mut h).unwrap_or_else(|| panic!("a full-width ribbon line above the page in {suffix}"));
+
+            let right = "Show more of the ribbon to the right";
+            if h.query_by_label(right).is_some() {
+                let meetings = h.get_by_role_and_label(egui::accesskit::Role::Label, "Meetings").rect().left();
+                h.get_by_label(right).focus();
+                h.run_steps(2);
+                h.key_press(egui::Key::Enter);
+                settle(&mut h);
+                assert!(h.get_by_role_and_label(egui::accesskit::Role::Label, "Meetings").rect().left() < meetings);
+                assert_eq!(boundary(&mut h), Some(before), "scrolling does not move the rule");
+            }
+
+            h.get_by_label("Ribbon display options").click();
+            settle(&mut h);
+            h.get_by_label("Simplified Ribbon").click();
+            settle(&mut h);
+            review(&mut h, &format!("simplified-home-{suffix}"));
+        }
+    }
+}
+
+/// Issue #597: the display menu selects a shorter ribbon and restores the choice on restart.
+#[test]
+fn simplified_ribbon_switches_layout_and_persists_on_restart() {
+    use egui_kittest::kittest::NodeT as _;
+    let (t, mut app, sample) = sample_app("simplified-ribbon-persistence");
+    app.open_path(&sample.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1450.0, 900.0));
+    settle(&mut h);
+    let classic_top = h.state().page_rect().expect("Classic page").top();
+
+    h.get_by_label("Ribbon display options").click();
+    settle(&mut h);
+    assert!(!h.get_by_label("Simplified Ribbon").accesskit_node().is_disabled(), "the layout option is enabled");
+    h.get_by_label("Simplified Ribbon").focus();
+    h.key_press(egui::Key::Enter);
+    settle(&mut h);
+    let compact_top = h.state().page_rect().expect("Simplified page").top();
+    assert!(compact_top < classic_top - 30.0, "the single row makes room for the page");
+    let paste = h.get_by_label("Paste").rect().center();
+    for command in ["Basic Text", "Styles", "Send Page", "Meeting Details"] {
+        let p = h.get_by_role_and_label(egui::accesskit::Role::Button, command).rect().center();
+        assert!((p.y - paste.y).abs() < 2.0, "{command} stays in the command strip");
+    }
+    assert!(h.query_by_label("Draw").is_some(), "the standard tabs stay available");
+    review(&mut h, "simplified-home-layout");
+    drop(h);
+
+    let restarted = Session::new(&t.path().join("notebooks"), Settings::at(t.path().join("settings.toml"))).expect("restart");
+    let mut app = NoteCraftApp::new(restarted);
+    app.open_path(&sample.md_page.to_string_lossy());
+    let mut h = sized_harness(app, DARK, egui::vec2(1450.0, 900.0));
+    settle(&mut h);
+    assert!(h.state().page_rect().expect("restarted page").top() < classic_top - 30.0, "Simplified survives restart");
+    h.get_by_label("Ribbon display options").click();
+    settle(&mut h);
+    h.get_by_label("Classic Ribbon").click();
+    settle(&mut h);
+    assert!(h.state().page_rect().expect("Classic again").top() >= classic_top - 2.0);
+}
+
+/// Issue #597: the compact controls and the active tab's overflow operate the same commands.
+#[test]
+fn simplified_ribbon_commands_work_from_the_keyboard_and_overflow() {
+    let (_t, mut app, sample) = sample_app("simplified-ribbon-commands");
+    app.open_path(&sample.md_page.to_string_lossy());
+    let mut h = sized_harness(app, LIGHT, egui::vec2(900.0, 700.0));
+    settle(&mut h);
+    h.get_by_label("Ribbon display options").click();
+    settle(&mut h);
+    h.get_by_label("Simplified Ribbon").click();
+    settle(&mut h);
+
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("place the caret in a visible paragraph");
+    settle(&mut h);
+    h.get_by_label("Basic Text").focus();
+    h.run_steps(2);
+    h.key_press(egui::Key::Enter);
+    settle(&mut h);
+    h.get_by_label("Bold").focus();
+    h.run_steps(2);
+    assert_eq!(focused_label(&h).as_deref(), Some("Bold"));
+    h.key_press(egui::Key::Enter);
+    settle(&mut h);
+    assert!(h.query_by_label("Bold").is_none(), "using the command closes Basic Text");
+    ask(&mut h, "ui.text", json!({"text": "compactbold"})).expect("type");
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default();
+    assert!(body.contains("**compactbold**"), "Bold formats the typed words: {body}");
+
+    h.get_by_label("Insert").click();
+    settle(&mut h);
+    assert!(h.query_by_label("Table").is_none());
+    h.get_by_label("More commands").focus();
+    h.run_steps(2);
+    h.key_press(egui::Key::Enter);
+    settle(&mut h);
+    h.get_by_label("Table").click();
+    settle(&mut h);
+    h.get_by_label("Insert Table…").click();
+    settle(&mut h);
+    assert!(h.query_by_label("Number of columns").is_some(), "Insert's table command opens its dialog");
 }
 
 /// The ribbon's tab row with its display options button, and the menu it opens. Set
