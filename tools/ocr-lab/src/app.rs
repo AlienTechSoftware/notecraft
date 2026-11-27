@@ -1313,6 +1313,8 @@ impl Lab {
         let mut delete_req: Option<usize> = None;
         let mut save_now = false;
         let mut view_json: Option<PathBuf> = None;
+        // The check mark on the open OCR file's row was clicked: its edits are saved.
+        let mut save_json = false;
         // Language, then how the sample was made, then what it contains. A sample with several content
         // tags appears under each of them.
         type Contents = std::collections::BTreeMap<String, Vec<usize>>;
@@ -1412,14 +1414,23 @@ impl Lab {
                                                 if text_file.is_file() {
                                                     let child = text_file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                                                     ui.indent(("ocr-text", i), |ui| {
-                                                        let showing = self.viewing_json.as_ref().is_some_and(|(p, _)| *p == text_file);
-                                                        if ui
-                                                            .selectable_label(showing, format!("📄 {child}"))
-                                                            .on_hover_text("Show or hide this file in the main area")
-                                                            .clicked()
-                                                        {
-                                                            view_json = Some(text_file.clone());
-                                                        }
+                                                        ui.horizontal(|ui| {
+                                                            let showing = self.viewing_json.as_ref().is_some_and(|(p, _)| *p == text_file);
+                                                            if ui
+                                                                .selectable_label(showing, format!("📄 {child}"))
+                                                                .on_hover_text("Show or hide this file in the main area")
+                                                                .clicked()
+                                                            {
+                                                                view_json = Some(text_file.clone());
+                                                            }
+                                                            // Beside the file's name, once its text is edited and not saved.
+                                                            if showing
+                                                                && self.viewing_dirty()
+                                                                && check_button(ui).on_hover_text("Save this OCR file").clicked()
+                                                            {
+                                                                save_json = true;
+                                                            }
+                                                        });
                                                     });
                                                 }
                                             }
@@ -1456,6 +1467,9 @@ impl Lab {
         }
         if save_now {
             self.save_if_dirty();
+        }
+        if save_json {
+            self.save_viewing();
         }
         // Clicking the file's row shows it, and clicking it again hides it.
         if let Some(path) = view_json {
