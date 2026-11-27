@@ -19691,3 +19691,201 @@ fn the_ribbon_display_menu_is_drawn_and_opens() {
     review(&mut h, "ribbon-display-menu-open");
     assert!(h.query_all_by_label("Show tabs only").next().is_some(), "the menu lists Show tabs only");
 }
+
+/// Issue #569: with the scratch-out gesture turned on in Options, a quick zigzag over ink rubs
+/// that ink out and leaves no stroke, one step for undo; over no ink it stays a scribble; turned
+/// off, a zigzag is ink like any other.
+#[test]
+fn a_scratch_out_rubs_out_the_ink_under_it_when_turned_on() {
+    let (t, mut app, s) = sample_app("ui-scratch-out");
+    app.open_path(&s.md_page.to_string_lossy());
+    let mut h = harness(app, LIGHT);
+    settle(&mut h);
+    h.state_mut().open_backstage_page("Options");
+    pump(&mut h);
+    h.get_by_label("Erase ink with a scratch-out gesture").click();
+    settle(&mut h);
+    h.state_mut().close_backstage();
+    settle(&mut h);
+    assert_eq!(look_at(&mut h)["ink"]["scratchOut"].as_bool(), Some(true));
+    let settings = std::fs::read_to_string(t.path().join("settings.toml")).unwrap_or_default();
+    assert!(settings.contains("scratch_out = \"true\""), "{settings}");
+    h.get_by_label("Draw").click();
+    h.run();
+    h.get_by_label("Pen black").click();
+    h.run();
+    let body = h.state().page_rect().expect("the page");
+    let (x, y) = (body.min.x + 40.0, body.min.y + 160.0);
+    draw_across(&mut h, x, y);
+    let strokes = |h: &mut Harness<'_, NoteCraftApp>| look_at(h)["ink"]["strokes"].as_u64();
+    assert_eq!(strokes(&mut h), Some(1));
+    let scratch = |h: &mut Harness<'_, NoteCraftApp>, x: f32, y: f32| {
+        ask(h, "ui.press", json!({"x": x + 20.0, "y": y - 7.0})).expect("down");
+        pump(h);
+        for pass in 0..8 {
+            let (from, to) = if pass % 2 == 0 { (x + 20.0, x + 140.0) } else { (x + 140.0, x + 20.0) };
+            for k in 1..=6 {
+                let at = from + (to - from) * k as f32 / 6.0;
+                ask(h, "ui.move", json!({"x": at, "y": y - 7.0 + pass as f32 * 2.0 + k as f32 * 0.3})).expect("move");
+                pump(h);
+            }
+        }
+        ask(h, "ui.release", json!({"x": x + 20.0, "y": y + 9.0})).expect("up");
+        pump(h);
+        settle(h);
+    };
+    scratch(&mut h, x, y);
+    assert_eq!(strokes(&mut h), Some(0), "rubbed out, and no stroke of its own: {}", look_at(&mut h)["ink"]);
+    h.get_by_label("Undo stroke").click();
+    settle(&mut h);
+    assert_eq!(strokes(&mut h), Some(1), "one step back");
+    // Over no ink, it is a scribble.
+    scratch(&mut h, x, y + 120.0);
+    assert_eq!(strokes(&mut h), Some(2), "a scribble over nothing stays");
+    // Turned off, a zigzag over ink is ink.
+    h.state_mut().open_backstage_page("Options");
+    pump(&mut h);
+    h.get_by_label("Erase ink with a scratch-out gesture").click();
+    settle(&mut h);
+    h.state_mut().close_backstage();
+    settle(&mut h);
+    h.get_by_label("Draw").click();
+    h.run();
+    h.get_by_label("Pen black").click();
+    h.run();
+    scratch(&mut h, x, y);
+    assert_eq!(strokes(&mut h), Some(3));
+}
+
+/// Issue #541: the page's menu, opened over the date and time below the title, changes them: the
+/// time or the date can be hidden, either shown again, or the line taken off; it is saved in
+/// both page formats, and Undo puts it back.
+#[test]
+fn the_date_and_time_below_the_title_can_be_changed_or_hidden() {
+    let (_t, app, s) = sample_app("ui-page-stamp");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1500.0, 900.0));
+    for page in [&s.md_page, &s.html_page] {
+        let body = if page == &s.md_page {
+            "Thursday, 26 November 2026, 11:40\n\nWords here.\n"
+        } else {
+            "<p>Thursday, 26 November 2026, 11:40</p><p>Words here.</p>"
+        };
+        notecraft_store::page::save_body(page, body).expect("fixture");
+        h.state_mut().open_path(&page.to_string_lossy());
+        settle(&mut h);
+        let open_menu = |h: &mut Harness<'_, NoteCraftApp>, words: &str| {
+            h.get_by_label_contains(words).click_secondary();
+            settle(h);
+            h.get_by_label("Change date and time…").click();
+            settle(h);
+        };
+        open_menu(&mut h, "26 November 2026");
+        h.get_by_label("Show the time").click();
+        settle(&mut h);
+        h.get_by_label("OK").click();
+        settle(&mut h);
+        let saved = || notecraft_store::page::load_page(page).expect("page").body;
+        h.state_mut().save_page_now();
+        assert!(saved().contains("Thursday, 26 November 2026") && !saved().contains("11:40"), "the time hidden: {}", saved());
+        // The time shown again and the date hidden: the line is a time alone, still the stamp.
+        open_menu(&mut h, "26 November 2026");
+        h.get_by_label("Show the time").click();
+        h.get_by_label("Show the date").click();
+        settle(&mut h);
+        h.get_by_label("OK").click();
+        settle(&mut h);
+        h.state_mut().save_page_now();
+        let first = saved().lines().next().unwrap_or_default().to_string();
+        let words = first.trim_start_matches("<p>").split('<').next().unwrap_or_default().to_string();
+        let stamp = notecraft_model::time::parse_stamp(&words).unwrap_or_else(|| panic!("a time alone: {first}"));
+        assert!(stamp.date.is_none() && stamp.time.is_some(), "{first}");
+        // Neither: the line is taken off; Undo puts it back.
+        open_menu(&mut h, &words);
+        h.get_by_label("Show the time").click();
+        settle(&mut h);
+        h.get_by_label("OK").click();
+        settle(&mut h);
+        h.state_mut().save_page_now();
+        assert!(!saved().contains(&words) && saved().contains("Words here."), "the line is taken off: {}", saved());
+        ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+        settle(&mut h);
+        h.state_mut().save_page_now();
+        assert!(saved().contains(&words), "Undo puts it back: {}", saved());
+    }
+    // A first line that only starts like a date is not offered: it would be read as neither.
+    notecraft_store::page::save_body(&s.md_page, "Thursday, planning notes\n\nWords here.\n").expect("fixture");
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label_contains("planning notes").click_secondary();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Change date and time…").count(), 0, "not offered");
+}
+
+/// Issue #520: Review > Check Accessibility lists what a screen reader would stumble on, each
+/// going to its place on the page, and checks again as the page changes.
+#[test]
+fn check_accessibility_lists_findings_and_goes_to_each() {
+    let (_t, app, s) = sample_app("ui-accessibility");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(1500.0, 900.0));
+    notecraft_store::page::save_body(
+        &s.md_page,
+        "# Plan\n\n![](assets/chart.png)\n\nSee [click here](https://a.test) for it.\n\n### Too deep\n\nThe end.\n",
+    )
+    .expect("fixture");
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label("Review").click();
+    settle(&mut h);
+    h.get_by_label("Check Accessibility").click();
+    settle(&mut h);
+    let a11y = |h: &mut Harness<'_, NoteCraftApp>| look_at(h)["accessibility"].clone();
+    let v = a11y(&mut h);
+    assert_eq!(v["open"], json!(true));
+    let kinds: Vec<String> = v["findings"].as_array().expect("findings").iter().map(|f| f["kind"].as_str().unwrap_or_default().to_string()).collect();
+    assert_eq!(kinds, ["picture-without-description", "unclear-link", "skipped-heading-level"], "{v}");
+    assert_eq!(h.query_all_by_label("A link does not say where it goes").count(), 1, "listed beside the page");
+    let goes: Vec<_> = h.get_all_by_label("Go to").collect();
+    assert_eq!(goes.len(), 3);
+    goes[1].click();
+    settle(&mut h);
+    let link_block = v["findings"][1]["block"].clone();
+    assert_eq!(look_at(&mut h).pointer("/page/caret/block").cloned(), Some(link_block), "the caret at the link's line");
+    h.get_all_by_label("Go to").next().expect("the picture's").click();
+    settle(&mut h);
+    assert_eq!(look_at(&mut h).pointer("/page/selectedObject/kind").and_then(Value::as_str), Some("image"), "the picture is selected");
+    // Put right, it is found no more.
+    h.state_mut()
+        .set_body("# Plan\n\n![a chart of the costs](assets/chart.png)\n\nSee [the budget](https://a.test) for it.\n\n## Deep enough\n\nThe end.\n");
+    settle(&mut h);
+    assert_eq!(a11y(&mut h)["findings"].as_array().map(Vec::len), Some(0));
+    assert!(h.query_all_by_label("Nothing found on this page.").count() >= 1);
+    h.get_by_label("Check Accessibility").click();
+    settle(&mut h);
+    assert_eq!(a11y(&mut h)["open"], json!(false));
+}
+
+/// With the Review tab (issue #520) the tab names no longer all fit a narrow window: the room
+/// round each name closes first, and those that still do not fit are under More tabs, so every
+/// tab can be reached, the chosen one always on the strip.
+#[test]
+fn every_tab_can_be_reached_in_a_narrow_window() {
+    let (_t, app, s) = sample_app("ui-narrow-tabs");
+    let mut h = sized_harness(app, LIGHT, egui::vec2(380.0, 700.0));
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let strip: Vec<String> = ["File", "Home", "Insert", "Draw", "History", "Review", "View"]
+        .iter()
+        .filter(|n| h.query_all_by_label(n).next().is_some())
+        .map(|n| n.to_string())
+        .collect();
+    if strip.len() == 7 {
+        return; // all fit at this width: nothing to show
+    }
+    h.get_by_label("More tabs").click();
+    settle(&mut h);
+    let last = ["View", "Review", "History"].into_iter().find(|n| !strip.contains(&n.to_string())).expect("a tab under More tabs");
+    h.get_all_by_label(last).last().expect("in the menu").click();
+    settle(&mut h);
+    assert_eq!(look_at(&mut h)["ribbon"]["tab"].as_str(), Some(last), "chosen from More tabs");
+    assert!(h.query_all_by_label(last).next().is_some(), "and now on the strip");
+}

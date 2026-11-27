@@ -53,6 +53,13 @@ fn selected_object_id() -> Id {
     Id::new("embedded-object-selected")
 }
 
+/// Selects an embedded object on the page, as a click on it would, from outside the page (for a
+/// finding of Review > Check Accessibility, issue #520).
+pub fn select_object(ctx: &egui::Context, page: &std::path::Path, block: usize, kind: &str) {
+    let key = page.to_string_lossy().into_owned();
+    ctx.data_mut(|d| d.insert_temp(selected_object_id(), (block, kind.to_string(), key)));
+}
+
 pub fn selected_image(ctx: &egui::Context, page: &std::path::Path) -> Option<usize> {
     selected_object(ctx, page).and_then(|(i, kind)| (kind == "image").then_some(i))
 }

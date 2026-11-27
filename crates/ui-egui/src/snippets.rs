@@ -96,6 +96,25 @@ pub fn printout_page(format: PageFormat, link: &str, page: usize) -> String {
     }
 }
 
+/// The line a printout's page starts with, when each printed page has a page of its own (issue
+/// #572): which document it is from, and which of its pages. Written by the page format's own
+/// writer, so a name with marks in it (`$`, `~`, `*`) is the name and nothing else.
+pub fn printout_from(format: PageFormat, name: &str, page: usize, count: usize) -> String {
+    let words = crate::i18n::format_message_id("ui.printout_from", &[("name", name), ("page", &page.to_string()), ("count", &count.to_string())]);
+    paragraph(format, notecraft_formats::markdown::Span { text: words, ..Default::default() })
+}
+
+/// A line that is a link, in a paragraph of its own, written by the page format's own writer so
+/// the page reads it back as the same link.
+pub fn link_line(format: PageFormat, uri: &str, label: &str) -> String {
+    paragraph(format, notecraft_formats::markdown::Span { text: label.to_string(), link: Some(uri.to_string()), ..Default::default() })
+}
+
+fn paragraph(format: PageFormat, span: notecraft_formats::markdown::Span) -> String {
+    let block = notecraft_formats::Block::Paragraph(vec![span], Vec::new());
+    format!("\n{}\n", notecraft_formats::boxes::write(format, &[block], None).trim())
+}
+
 fn attachment_icon(link: &str) -> String {
     let name = link.strip_prefix("assets/").unwrap_or(link);
     format!("assets/{name}{}", attachment_icon_extension())
@@ -218,6 +237,34 @@ mod tests {
             printout_page(PageFormat::Html, "assets/a.printout-001.png", 1),
             "\n<p><img src=\"assets/a.printout-001.png\" alt=\"Printout page 1\"></p>\n"
         );
+    }
+
+    /// Review of #572: the lines on printout pages read back as written, in both formats: a link
+    /// to a page stays that link, and a name with marks in it stays the name.
+    #[test]
+    fn printout_lines_read_back_as_written() {
+        use notecraft_formats::Block;
+        let uri = "notecraft:/book/section/sheet-pdf-page-1-of-3?id=abc";
+        for format in [PageFormat::Html, PageFormat::Cmgfm] {
+            let blocks = notecraft_formats::boxes::read(
+                format,
+                &format!("{}{}", printout_from(format, "Costs $5$ ~~draft~~ *x*.pdf", 1, 3), link_line(format, uri, "Costs (draft), page 1 of 3")),
+            )
+            .0;
+            let spans: Vec<_> = blocks
+                .iter()
+                .filter_map(|b| match b {
+                    Block::Paragraph(spans, _) => Some(spans.clone()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(spans.len(), 2, "{format:?}: {blocks:?}");
+            let words: String = spans[0].iter().map(|s| s.text.as_str()).collect();
+            assert_eq!(words, "From Costs $5$ ~~draft~~ *x*.pdf, page 1 of 3", "{format:?}");
+            assert!(spans[0].iter().all(|s| !s.math && !s.strike && !s.italic), "{format:?}: {:?}", spans[0]);
+            assert_eq!(spans[1][0].link.as_deref(), Some(uri), "{format:?}: {:?}", spans[1]);
+            assert_eq!(spans[1].iter().map(|s| s.text.as_str()).collect::<String>(), "Costs (draft), page 1 of 3");
+        }
     }
 
     #[test]

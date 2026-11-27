@@ -113,6 +113,8 @@ const DISCORD_URL: &str = "https://discord.gg/artcraft";
 const RACK_KEY: &str = "pen_rack";
 /// Which eraser the Draw tab's eraser is (issue #545).
 const ERASER_KEY: &str = "eraser";
+/// Whether a scratch-out gesture rubs out ink (issue #569).
+const SCRATCH_OUT_KEY: &str = "scratch_out";
 /// The size the whole window is drawn at, in percent: see `backstage::UI_SCALES`.
 const UI_SCALE_KEY: &str = "ui_scale";
 /// The paper File > Print used last, for the next print of a page with no paper of its own.
@@ -1458,6 +1460,9 @@ enum FileChoice {
     Link,
     /// Copy it in and insert one rendered image for each printed page.
     Printout,
+    /// Copy it in, and put each printed page on a new page of its own after this one, in order
+    /// (issue #572). OneNote: "Break long printouts into multiple pages".
+    PrintoutPages,
 }
 
 enum Dialog {
@@ -1481,6 +1486,16 @@ enum Dialog {
     Rename {
         path: PathBuf,
         title: String,
+    },
+    /// The date and time below a page's title, to change or hide (issue #541): the stamp's
+    /// block on the page it was opened for, and what the dialog holds.
+    PageStamp {
+        page: PathBuf,
+        block: usize,
+        date: (i64, u32, u32),
+        time: (u32, u32),
+        show_date: bool,
+        show_time: bool,
     },
     /// Merge into Another Section (issue #517): the section whose pages go, and where.
     MergeSection {
@@ -1756,7 +1771,9 @@ pub struct NoteCraftApp {
     /// keeps is not touched (issue #292).
     hide_authors: bool,
     /// Printouts being made off the window's thread, with the format of the page each is for.
-    printouts: Vec<(crate::printout::Job, PageFormat)>,
+    /// Printouts being made: the job, the page's format, and whether its printed pages go on new
+    /// pages of their own (issue #572).
+    printouts: Vec<(crate::printout::Job, PageFormat, bool)>,
     open: HashSet<PathBuf>,
     selected: Option<PathBuf>,
     /// The page last open in each section, so going back to a section opens where it was left
@@ -1840,6 +1857,8 @@ pub struct NoteCraftApp {
     page_find: Option<PageFind>,
     /// The words last looked for on a page, which F3 looks for again (issue #526).
     last_find: String,
+    /// Review > Check Accessibility's findings are shown beside the page (issue #520).
+    accessibility_open: bool,
     /// The Tags Summary, while it is open.
     tags_pane: Option<TagsPane>,
     /// Home > More tags > Customize Tags, while it is open (issue #259).
@@ -1937,6 +1956,9 @@ pub struct NoteCraftApp {
     auto_shapes: bool,
     /// Which eraser the eraser is (issue #545). Kept in the settings.
     eraser: crate::inkpad::Eraser,
+    /// A scratch-out gesture rubs out the ink under it (issue #569). Off unless turned on in
+    /// Options; kept in the settings.
+    scratch_out: bool,
     /// Draw > Auto-switch (issue #9): the pen picks up a pen, and typing or the trackpad puts it
     /// down. On unless turned off.
     auto_switch: bool,
@@ -2080,6 +2102,7 @@ impl NoteCraftApp {
         let session_snap = session.settings.get("snap_to_grid").map(|v| v.trim() == "true").unwrap_or(false);
         let session_auto_shapes = session.settings.get("auto_shapes").is_some_and(|v| v.trim() == "true");
         let session_eraser = session.settings.get(ERASER_KEY).and_then(|v| crate::inkpad::Eraser::parse(&v)).unwrap_or_default();
+        let session_scratch_out = session.settings.get(SCRATCH_OUT_KEY).is_some_and(|v| v.trim() == "true");
         let session_auto_switch = session.settings.get("switch_by_device").is_none_or(|v| v.trim() != "false");
         let session_update_check_off = session.settings.get("update_check_off_at_start").is_some_and(|v| v.trim() == "true");
         let session_tabs_layout = session.settings.get("tabs_layout").is_some_and(|v| v.trim() == "true");
@@ -2173,6 +2196,7 @@ impl NoteCraftApp {
             find_on_open: None,
             page_find: None,
             last_find: String::new(),
+            accessibility_open: false,
             tags_pane: None,
             custom_tags: None,
             picture_text: None,
@@ -2221,6 +2245,7 @@ impl NoteCraftApp {
             ruler: false,
             auto_shapes: session_auto_shapes,
             eraser: session_eraser,
+            scratch_out: session_scratch_out,
             auto_switch: session_auto_switch,
             update_check_off: session_update_check_off,
             pen_picked_by_pen: false,
@@ -5290,7 +5315,8 @@ impl NoteCraftApp {
                 self.insert_snippet_blocks(&text);
                 self.say(crate::i18n::format_message_id("ui.linked_name_where_it_is_the_file_was_not_copied", &[("name", &name)]));
             }
-            FileChoice::Printout => self.insert_printout(dir, file, format),
+            FileChoice::Printout => self.insert_printout(dir, file, format, false),
+            FileChoice::PrintoutPages => self.insert_printout(dir, file, format, true),
         }
         if let Some(ed) = self.editor.as_mut() {
             ed.attachments = notecraft_store::assets::list(&ed.dir);
@@ -5300,10 +5326,10 @@ impl NoteCraftApp {
     /// Starts making a printout of `file` for the page in `dir`, off the window's thread: the
     /// page goes on being written in while it is made ([`crate::printout::Job`]), and it goes in
     /// once it is ready ([`Self::poll_printouts`]).
-    fn insert_printout(&mut self, dir: &Path, file: &Path, format: PageFormat) {
+    fn insert_printout(&mut self, dir: &Path, file: &Path, format: PageFormat, pages: bool) {
         let job = crate::printout::Job::start(dir, file);
         self.say(crate::i18n::format_message_id("ui.making_a_printout_of_name", &[("name", &job.name)]));
-        self.printouts.push((job, format));
+        self.printouts.push((job, format, pages));
     }
 
     /// Takes in the printouts that are ready, and says how far along the others are.
@@ -5323,8 +5349,12 @@ impl NoteCraftApp {
                     i += 1;
                 }
                 Some(made) => {
-                    let (job, format) = self.printouts.remove(i);
-                    self.finish_printout(&job, format, made);
+                    let (job, format, pages) = self.printouts.remove(i);
+                    if pages {
+                        self.finish_printout_pages(&job, format, made);
+                    } else {
+                        self.finish_printout(&job, format, made);
+                    }
                 }
             }
         }
@@ -5360,6 +5390,122 @@ impl NoteCraftApp {
             "ui.inserted_name_and_count_printout_pages",
             &[("name", &job.name), ("count", &made.images.len().to_string())],
         ));
+    }
+
+    /// A printout made to go on pages of its own (issue #572): each printed page goes on a new
+    /// page after the page it was asked on, in order, titled with the document's name and its
+    /// page number, and starting with a line naming the document it came from. The page it was
+    /// asked on gets the document itself, attached, and a link to each new page. The new pages
+    /// are all made before anything is put on the first one: if one cannot be, those made go to
+    /// the recycle bin, the rendered pictures are taken away, and nothing else is changed.
+    fn finish_printout_pages(&mut self, job: &crate::printout::Job, format: PageFormat, made: Result<crate::printout::Made, String>) {
+        let made = match made {
+            Ok(made) => made,
+            Err(error) => {
+                self.complain(&error);
+                return;
+            }
+        };
+        let Some(parent) = job.dir.parent().map(Path::to_path_buf) else { return };
+        // The page after the one it was asked on, which the new pages go before.
+        let siblings = notecraft_store::tree::child_dirs(&parent);
+        let next = siblings.iter().position(|p| p == &job.dir).and_then(|at| siblings.get(at + 1)).cloned();
+        let count = made.images.len();
+        let fmt = match format {
+            PageFormat::Html => "html",
+            PageFormat::Cmgfm => "cmgfm",
+        };
+        let mut pages: Vec<PathBuf> = Vec::new();
+        let mut failed = None;
+        for (n, image) in made.images.iter().enumerate() {
+            let title = crate::i18n::format_message_id(
+                "ui.printout_page_title",
+                &[("name", &job.name), ("page", &(n + 1).to_string()), ("count", &count.to_string())],
+            );
+            let page = match self
+                .session
+                .run("node.create", &params(&[("parent", &path_str(&parent)), ("kind", "page"), ("title", &title), ("format", fmt)]))
+            {
+                Ok(Output::Path(page)) => page,
+                Ok(_) => {
+                    failed = Some(crate::tl_id!("ui.printout_pages_failed").to_string());
+                    break;
+                }
+                Err(e) => {
+                    failed = Some(e.to_string());
+                    break;
+                }
+            };
+            pages.push(page.clone());
+            if let Some(next) = &next
+                && let Err(e) =
+                    self.session.run("node.place", &params(&[("path", &path_str(&page)), ("to", &path_str(&parent)), ("before", &path_str(next))]))
+            {
+                failed = Some(e.to_string());
+                break;
+            }
+            let link = match self.session.run("page.attach", &params(&[("path", &path_str(&page)), ("source", &path_str(&job.dir.join(image)))])) {
+                Ok(Output::Text(link)) => link,
+                Ok(_) => {
+                    failed = Some(crate::tl_id!("ui.printout_pages_failed").to_string());
+                    break;
+                }
+                Err(e) => {
+                    failed = Some(e.to_string());
+                    break;
+                }
+            };
+            let from = snippets::printout_from(format, &job.name, n + 1, count);
+            let body = format!("{from}{}", snippets::printout_page(format, &link, n + 1));
+            if let Err(e) = self.session.run("page.save", &params(&[("path", &path_str(&page)), ("body", &body)])) {
+                failed = Some(e.to_string());
+                break;
+            }
+        }
+        // The rendered pictures were copied to the new pages: they leave the page asked on.
+        for image in &made.images {
+            let name = image.strip_prefix("assets/").unwrap_or(image);
+            let _ = self.session.run("page.detach", &params(&[("path", &path_str(&job.dir)), ("name", name)]));
+        }
+        // Undoes the import: the new pages to the recycle bin and the document out of the page.
+        let undo = |app: &mut Self, error: &str| {
+            for page in pages.iter().rev() {
+                let _ = app.session.run("node.delete", &params(&[("path", &path_str(page))]));
+            }
+            if let Some(name) = made.link.strip_prefix("assets/") {
+                let _ = app.session.run("page.detach", &params(&[("path", &path_str(&job.dir)), ("name", name)]));
+            }
+            app.session.refresh();
+            app.complain(&crate::i18n::format_message_id("ui.printout_pages_failed_error", &[("name", &job.name), ("error", error)]));
+        };
+        if let Some(error) = failed {
+            undo(self, &error);
+            return;
+        }
+        let mut roots = vec![self.session.root().to_path_buf()];
+        roots.extend(self.session.opened_elsewhere().iter().cloned());
+        let mut text = snippets::attachment(format, &made.link, &job.name);
+        for (n, page) in pages.iter().enumerate() {
+            let uri = notecraft_store::links::page_uri(&roots, page).unwrap_or_default();
+            let label = crate::i18n::format_message_id(
+                "ui.printout_page_title",
+                &[("name", &job.name), ("page", &(n + 1).to_string()), ("count", &count.to_string())],
+            );
+            text.push_str(&snippets::link_line(format, &uri, &label));
+        }
+        if self.editor.as_ref().is_some_and(|ed| ed.dir == job.dir) {
+            self.insert_printout_blocks(&text);
+            if let Some(ed) = self.editor.as_mut() {
+                ed.attachments = notecraft_store::assets::list(&ed.dir);
+            }
+        } else if !self.add_to_page_file(&job.dir, &text) {
+            // The page asked on could not be written: no import half made, the new pages go.
+            let error = self.status.clone();
+            undo(self, &error);
+            return;
+        }
+        self.session.refresh();
+        self.say(crate::i18n::format_message_id("ui.printout_pages_made", &[("name", &job.name), ("count", &count.to_string())]));
     }
 
     /// Adds `text` to the page in `dir`, which is not the one open, in a box of its own below its
@@ -6507,6 +6653,7 @@ impl NoteCraftApp {
                 &languages,
                 self.ui_scale,
                 self.auto_switch,
+                self.scratch_out,
                 &quick_notes,
                 self.update_check_off,
                 self.session.settings.welcome_notebook_update_prompt(),
@@ -6570,6 +6717,13 @@ impl NoteCraftApp {
                 }
                 backstage::Act::SetUiScale(percent) => self.set_ui_scale(percent),
                 backstage::Act::SetQuickNotesSection(section) => self.set_quick_notes_section(section.as_deref()),
+                backstage::Act::SetScratchOut(on) => match self.session.settings.set(SCRATCH_OUT_KEY, if on { "true" } else { "false" }) {
+                    Ok(()) => {
+                        self.scratch_out = on;
+                        self.say(if on { crate::tl_id!("ui.scratch_out_on") } else { crate::tl_id!("ui.scratch_out_off") });
+                    }
+                    Err(e) => self.complain(&e.to_string()),
+                },
                 backstage::Act::SetAutoSwitch(on) => match self.session.settings.set("switch_by_device", if on { "true" } else { "false" }) {
                     Ok(()) => {
                         self.auto_switch = on;
@@ -7126,6 +7280,7 @@ impl NoteCraftApp {
             can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
             can_ink_redo: self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
             ink_held: self.pad.as_ref().is_some_and(|pad| pad.holding() > 0),
+            accessibility_open: self.accessibility_open,
             eraser: self.eraser,
             sensitivity: self.sensitivity,
             pressure_available: self.stylus.sample().pen,
@@ -7686,6 +7841,18 @@ impl NoteCraftApp {
                 self.say(crate::i18n::format_message_id("ui.eraser_chosen", &[("eraser", crate::tl!(eraser.label()))]));
             }
             ribbon::Act::TurnInk(how) => self.turn_ink(how),
+            ribbon::Act::EditPageStamp(block) => self.open_page_stamp(block),
+            ribbon::Act::CheckAccessibility => {
+                self.accessibility_open = !self.accessibility_open;
+                if self.accessibility_open {
+                    let count = self.editor.as_ref().map_or(0, |ed| crate::accessibility::check(&ed.blocks).len());
+                    self.say(if count == 0 {
+                        crate::tl_id!("ui.a11y_none").to_string()
+                    } else {
+                        crate::i18n::format_message_id("ui.a11y_count", &[("count", &count.to_string())])
+                    });
+                }
+            }
             ribbon::Act::ToggleAutoShapes => {
                 self.auto_shapes = !self.auto_shapes;
                 let _ = self.session.settings.set("auto_shapes", if self.auto_shapes { "true" } else { "false" });
@@ -8408,6 +8575,7 @@ impl NoteCraftApp {
             gain: self.gain(),
             auto_shapes: self.auto_shapes,
             eraser: self.eraser,
+            scratch_out: self.scratch_out,
         }
     }
 
@@ -8450,6 +8618,61 @@ impl NoteCraftApp {
     }
 
     /// Takes the last stroke back out of the drawing on this page.
+    /// Opens the dialog for the date and time below the page's title (issue #541), from the
+    /// page's menu opened over them. What is not shown starts as now, to be shown again.
+    pub fn open_page_stamp(&mut self, block: usize) {
+        let Some(ed) = self.editor.as_ref().filter(|ed| pageedit::is_page_stamp(&ed.blocks, block)) else { return };
+        let words = match &ed.blocks[block] {
+            notecraft_formats::Block::Paragraph(spans, _) => spans.iter().map(|s| s.text.as_str()).collect::<String>(),
+            _ => return,
+        };
+        let now = notecraft_model::time::long_from_iso(&notecraft_model::time::iso_now()).and_then(|t| notecraft_model::time::parse_stamp(&t));
+        // Only a line that reads as a date and time: anything else is left alone.
+        let Some(shown) = notecraft_model::time::parse_stamp(&words).map(Some) else { return };
+        let pick = |stamp: Option<notecraft_model::time::Stamp>| stamp.unwrap_or(notecraft_model::time::Stamp { date: None, time: None });
+        let (shown, now) = (pick(shown), pick(now));
+        self.dialog = Some(Dialog::PageStamp {
+            page: ed.dir.clone(),
+            block,
+            date: shown.date.or(now.date).unwrap_or((2026, 1, 1)),
+            time: shown.time.or(now.time).unwrap_or((0, 0)),
+            show_date: shown.date.is_some(),
+            show_time: shown.time.is_some(),
+        });
+    }
+
+    /// Writes the page's stamp as the dialog left it (issue #541): the date, the time, or both,
+    /// in the words the page shows; with neither, the line is taken off the page. One step for
+    /// undo, saved like any other change, in either page format.
+    fn set_page_stamp(&mut self, page: &Path, block: usize, stamp: notecraft_model::time::Stamp) {
+        let Some(ed) = self.editor.as_mut().filter(|ed| ed.dir == page && pageedit::is_page_stamp(&ed.blocks, block)) else {
+            self.complain(crate::tl_id!("ui.the_page_changed_try_again"));
+            return;
+        };
+        let text = notecraft_model::time::format_stamp(stamp);
+        let marks = if text.is_empty() {
+            ed.blocks.remove(block);
+            ed.caret = None;
+            ed.blocks_removed(block..block + 1)
+        } else {
+            let emoji = ed.blocks[block].emoji().to_vec();
+            ed.blocks[block] = notecraft_formats::Block::Paragraph(vec![notecraft_formats::markdown::Span { text, ..Default::default() }], emoji);
+            if ed.caret.as_ref().is_some_and(|c| c.block == block) {
+                ed.caret = None;
+            }
+            (false, false)
+        };
+        ed.rebuild_body();
+        Self::mark_dirty_from_blocks(ed);
+        Self::remember_step(ed);
+        self.save_block_marks(marks);
+        self.say(if stamp.date.is_none() && stamp.time.is_none() {
+            crate::tl_id!("ui.page_date_removed")
+        } else {
+            crate::tl_id!("ui.page_date_changed")
+        });
+    }
+
     /// Draw > Rotate (issue #544): turns or mirrors the ink picked up, as one group about its
     /// middle, and writes the drawing. It stays picked up, to be turned again or moved.
     fn turn_ink(&mut self, how: notecraft_ink::pick::Turn) {
@@ -11216,6 +11439,89 @@ impl NoteCraftApp {
     }
 
     /// The pinned search results (issue #527), on the right of the page as the Tags Summary is.
+    /// Review > Check Accessibility's findings, beside the page (issue #520): what is wrong, the
+    /// words it is about, and how to put it right, each going to its place on the page. Checked
+    /// again every time it is drawn, so a fix is seen as it is made.
+    fn accessibility_panel(&mut self, ui: &mut Ui) {
+        if !self.accessibility_open {
+            return;
+        }
+        let Some(found) = self.editor.as_ref().map(|ed| crate::accessibility::check(&ed.blocks)) else { return };
+        let tokens = self.tokens;
+        let (mut close, mut go) = (false, None);
+        let panel = if self.compact {
+            egui::Panel::right("accessibility-compact").resizable(false).exact_size(ui.available_width())
+        } else {
+            egui::Panel::right("accessibility").resizable(true).default_size(300.0).size_range(220.0..=600.0)
+        };
+        panel.show(ui, |ui| {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.strong(crate::tl_id!("ui.accessibility"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(crate::tl_id!("ui.close")).clicked() {
+                        close = true;
+                    }
+                });
+            });
+            let about = if found.is_empty() {
+                crate::tl_id!("ui.a11y_none").to_string()
+            } else {
+                crate::i18n::format_message_id("ui.a11y_count", &[("count", &found.len().to_string())])
+            };
+            ui.label(egui::RichText::new(about).small().color(tokens.muted));
+            ui.separator();
+            egui::ScrollArea::vertical().id_salt("accessibility-list").auto_shrink([false, false]).show(ui, |ui| {
+                for (n, finding) in found.iter().enumerate() {
+                    ui.push_id(n, |ui| {
+                        ui.label(egui::RichText::new(crate::tl!(finding.kind.title())).strong().color(tokens.text));
+                        if !finding.about.is_empty() {
+                            ui.label(egui::RichText::new(&finding.about).color(tokens.muted));
+                        }
+                        ui.label(egui::RichText::new(crate::tl!(finding.kind.how())).small().color(tokens.muted));
+                        let label = format!("{} \u{2014} {}", crate::tl_id!("ui.a11y_go_to"), crate::tl!(finding.kind.title()));
+                        if ui.add(egui::Button::new(crate::tl_id!("ui.a11y_go_to")).small()).on_hover_text(label.clone()).clicked() {
+                            go = Some(finding.clone());
+                        }
+                        ui.add_space(4.0);
+                        ui.separator();
+                    });
+                }
+            });
+        });
+        if close {
+            self.accessibility_open = false;
+        }
+        if let Some(finding) = go {
+            self.go_to_finding(ui.ctx(), &finding);
+        }
+    }
+
+    /// Takes the page to a finding (issue #520): a picture block is selected, so its Alt Text is
+    /// a right click away; anything else gets the caret at its start, brought into view.
+    fn go_to_finding(&mut self, ctx: &Context, finding: &crate::accessibility::Finding) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let Some(block) = ed.blocks.get(finding.block) else { return };
+        if matches!(block, notecraft_formats::Block::Image { .. }) {
+            ed.caret = None;
+            crate::containers::select_object(ctx, &ed.dir, finding.block, "image");
+        } else if pageedit::is_writable(block) {
+            ed.caret = Some(pageedit::Caret {
+                block: finding.block,
+                text: pageedit::caret_text(block),
+                focus: true,
+                selection: (0, 0),
+                place: Some(0),
+                cell: None,
+                span: None,
+                inline: None,
+            });
+        }
+        let id = pageedit::find_marks_id(ctx);
+        ctx.data_mut(|d| d.get_temp_mut_or_default::<pageedit::FindMarks>(id).reveal = Some(finding.block));
+        pageedit::reveal_caret(ctx);
+    }
+
     fn pinned_search_panel(&mut self, ui: &mut Ui) {
         let Some(pinned) = self.pinned_search.as_ref() else { return };
         let tokens = self.tokens;
@@ -14219,6 +14525,13 @@ impl NoteCraftApp {
                             .color(self.tokens.muted),
                         );
                         ui.add_space(6.0);
+                        // Issue #572: each printed page on a new page of its own, after this one.
+                        if modal_button_enabled(ui, &self.tokens, crate::tl_id!("ui.insert_printout_on_new_pages"), false, can_printout).clicked() {
+                            log::debug!("file attach choice clicked: choice=printout-pages name={name:?}");
+                            chosen = Some(FileChoice::PrintoutPages);
+                        }
+                        ui.label(egui::RichText::new(crate::tl_id!("ui.insert_printout_on_new_pages_tip")).small().color(self.tokens.muted));
+                        ui.add_space(6.0);
                         if modal_button(ui, &self.tokens, crate::tl_id!("ui.link_to_the_file_where_it_is"), false).clicked() {
                             log::debug!("file attach choice clicked: choice=link name={name:?}");
                             chosen = Some(FileChoice::Link);
@@ -14366,6 +14679,63 @@ impl NoteCraftApp {
                         }
                         self.say(crate::tl_id!("ui.created"));
                     }
+                    keep = false;
+                }
+            }
+            Dialog::PageStamp { page, block, date, time, show_date, show_time } => {
+                let mut apply = None;
+                egui::Window::new(crate::tl_id!("ui.page_date_title"))
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(340.0);
+                        ui.checkbox(show_date, crate::tl_id!("ui.page_date_show_date"));
+                        ui.add_enabled_ui(*show_date, |ui| {
+                            ui.horizontal(|ui| {
+                                let (y, m, d) = date;
+                                ui.label(crate::tl_id!("ui.page_date_day"));
+                                let most = notecraft_model::time::days_in_month(*y, *m);
+                                ui.add(egui::DragValue::new(d).range(1..=most));
+                                ui.label(crate::tl_id!("ui.page_date_month"));
+                                ui.add(egui::DragValue::new(m).range(1..=12));
+                                ui.label(crate::tl_id!("ui.page_date_year"));
+                                ui.add(egui::DragValue::new(y).range(1..=9999));
+                                *d = (*d).min(notecraft_model::time::days_in_month(*y, *m));
+                            });
+                        });
+                        ui.add_space(4.0);
+                        ui.checkbox(show_time, crate::tl_id!("ui.page_date_show_time"));
+                        ui.add_enabled_ui(*show_time, |ui| {
+                            ui.horizontal(|ui| {
+                                let (h, m) = time;
+                                ui.label(crate::tl_id!("ui.page_date_hour"));
+                                ui.add(egui::DragValue::new(h).range(0..=23));
+                                ui.label(crate::tl_id!("ui.page_date_minute"));
+                                ui.add(egui::DragValue::new(m).range(0..=59));
+                            });
+                        });
+                        let stamp = notecraft_model::time::Stamp { date: show_date.then_some(*date), time: show_time.then_some(*time) };
+                        let shown = notecraft_model::time::format_stamp(stamp);
+                        ui.add_space(6.0);
+                        ui.label(
+                            egui::RichText::new(if shown.is_empty() { crate::tl_id!("ui.page_date_none").to_string() } else { shown })
+                                .color(self.tokens.muted),
+                        );
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.cancel"), false).clicked() || ui.input(|i| i.key_pressed(Key::Escape))
+                            {
+                                keep = false;
+                            }
+                            if modal_button(ui, &self.tokens, crate::tl_id!("ui.ok"), true).clicked() {
+                                apply = Some(stamp);
+                            }
+                        });
+                    });
+                if let Some(stamp) = apply {
+                    let (page, block) = (page.clone(), *block);
+                    self.set_page_stamp(&page, block, stamp);
                     keep = false;
                 }
             }
@@ -15321,7 +15691,18 @@ impl NoteCraftApp {
                                     for (n, version) in versions.iter().enumerate() {
                                         let size =
                                             crate::i18n::format_message_id("ui.size_kb", &[("size", &version.bytes.div_ceil(1024).to_string())]);
-                                        let sub = format!("{} \u{b7} {size}", crate::versions::when(&version.created));
+                                        // What it keeps beside the words (issue #553): its ink and attachments,
+                                        // or, for one kept before those were, the words alone.
+                                        let keeps = match version.files {
+                                            None => crate::tl_id!("ui.version_words_only").to_string(),
+                                            Some(0) => String::new(),
+                                            Some(n) => crate::i18n::format_message_id("ui.version_with_files", &[("count", &n.to_string())]),
+                                        };
+                                        let sub = if keeps.is_empty() {
+                                            format!("{} \u{b7} {size}", crate::versions::when(&version.created))
+                                        } else {
+                                            format!("{} \u{b7} {size} \u{b7} {keeps}", crate::versions::when(&version.created))
+                                        };
                                         let row = version_row(ui, &t, crate::tl_id!("ui.saved_version"), &sub, selected == Some(n));
                                         if reveal && selected == Some(n) {
                                             row.scroll_to_me(None);
@@ -16143,6 +16524,11 @@ impl NoteCraftApp {
             // The pages picked to move or copy together (issue #533).
             "pickedPages": self.picked_in_order().iter().map(|p| self.shown(p)).collect::<Vec<_>>(),
             "pinnedSearch": self.pinned_search.as_ref().map(|p| json!({"query": p.query, "scope": p.scope, "hits": p.hits.len(), "chosen": p.chosen})),
+            "accessibility": json!({
+                "open": self.accessibility_open,
+                "findings": self.editor.as_ref().map(|ed| crate::accessibility::check(&ed.blocks)).unwrap_or_default()
+                    .iter().map(|f| json!({"kind": f.kind.id(), "block": f.block, "about": f.about})).collect::<Vec<_>>(),
+            }),
             "pageFind": self.page_find.as_ref().map(|f| json!({
                 "words": f.words,
                 "count": f.found.len(),
@@ -16186,6 +16572,8 @@ impl NoteCraftApp {
                 "holding": self.pad.as_ref().map_or(0, crate::inkpad::Pad::holding),
                 // Which eraser the eraser is (issue #545).
                 "eraser": self.eraser.id(),
+                // Whether a scratch-out rubs ink out (issue #569).
+                "scratchOut": self.scratch_out,
                 "bounds": self.pad.as_ref().and_then(crate::inkpad::Pad::bounds),
                 "gain": self.gain(),
                 "strokes": self.pad.as_ref().map(crate::inkpad::Pad::strokes),
@@ -16642,6 +17030,7 @@ impl NoteCraftApp {
         self.tags_panel(ui);
         self.templates_panel(ui);
         self.pinned_search_panel(ui);
+        self.accessibility_panel(ui);
         self.page_find_bar(ui);
         // In a phone-width window a pane that fills it leaves no room for the page.
         if !self.compact_list_fills() && !(self.compact && (self.tags_pane.is_some() || self.templates_pane.is_some())) {
@@ -17637,6 +18026,85 @@ mod alert_tests {
             ed.blocks.iter().any(|b| matches!(b, notecraft_formats::Block::Image { src, .. } if src.contains(".printout-001.png"))),
             "its page is a picture in the page"
         );
+    }
+
+    /// A PDF of `pages` pages, each a coloured square, with its cross-reference table right.
+    fn pdf_of(pages: usize) -> Vec<u8> {
+        let mut objects: Vec<String> = vec![
+            "<</Type/Catalog/Pages 2 0 R>>".to_string(),
+            format!("<</Type/Pages/Kids[{}]/Count {pages}>>", (0..pages).map(|n| format!("{} 0 R", 3 + n * 2)).collect::<Vec<_>>().join(" ")),
+        ];
+        for n in 0..pages {
+            let content = format!("0.{n} 0.2 0.6 rg 20 20 100 100 re f");
+            objects.push(format!("<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents {} 0 R/Resources<<>>>>", 4 + n * 2));
+            objects.push(format!("<</Length {}>>\nstream\n{content}\nendstream", content.len()));
+        }
+        let mut out = String::from("%PDF-1.4\n");
+        let mut offsets = Vec::new();
+        for (i, object) in objects.iter().enumerate() {
+            offsets.push(out.len());
+            out.push_str(&format!("{} 0 obj\n{object}\nendobj\n", i + 1));
+        }
+        let xref = out.len();
+        out.push_str(&format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1));
+        for offset in offsets {
+            out.push_str(&format!("{offset:010} 00000 n \n"));
+        }
+        out.push_str(&format!("trailer\n<</Root 1 0 R/Size {}>>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1));
+        out.into_bytes()
+    }
+
+    /// Issue #572: a long printout can go on new pages, one for each printed page, right after
+    /// the page it was asked on and in order, each saying which document and page it is from;
+    /// the page asked on keeps the document and a link to each, and none of the pictures.
+    #[test]
+    fn a_printout_can_go_on_pages_of_its_own() {
+        for html in [true, false] {
+            let (_t, page, pdf, mut h) = printout_harness(html, "printout-pages");
+            std::fs::write(&pdf, pdf_of(3)).expect("a three-page pdf");
+            let parent = page.parent().expect("section").to_path_buf();
+            let before = notecraft_store::tree::child_dirs(&parent);
+            let at = before.iter().position(|p| *p == page).expect("the page among its pages");
+            h.state_mut().add_file(&page, &pdf, FileChoice::PrintoutPages);
+            wait_for_printouts(&mut h);
+            for _ in 0..3 {
+                h.step();
+            }
+            let after = notecraft_store::tree::child_dirs(&parent);
+            assert_eq!(after.len(), before.len() + 3, "three new pages: {after:?} ({})", h.state().status);
+            let made: Vec<String> = after[at + 1..at + 4].iter().filter_map(|p| notecraft_store::tree::read_node(p)).map(|n| n.title).collect();
+            assert_eq!(made, ["sheet.pdf, page 1 of 3", "sheet.pdf, page 2 of 3", "sheet.pdf, page 3 of 3"], "right after the page, in order");
+            for (n, new) in after[at + 1..at + 4].iter().enumerate() {
+                let body = notecraft_store::page::load_page(new).expect("new page").body;
+                assert!(body.contains(&format!("From sheet.pdf, page {} of 3", n + 1)), "{body}");
+                let blocks = notecraft_formats::boxes::read(if html { PageFormat::Html } else { PageFormat::Cmgfm }, &body).0;
+                let src = blocks.iter().find_map(|b| match b {
+                    notecraft_formats::Block::Image { src, .. } => Some(src.clone()),
+                    _ => None,
+                });
+                let src = src.unwrap_or_else(|| panic!("a picture on page {}: {body}", n + 1));
+                assert!(new.join(&src).is_file(), "its picture is in its own folder: {src}");
+            }
+            let ed = h.state().editor.as_ref().expect("the page asked on is open");
+            assert!(ed.body.contains("sheet.pdf"), "the document is attached");
+            assert_eq!(ed.body.matches("notecraft:").count(), 3, "a link to each new page:\n{}", ed.body);
+            let roots = vec![h.state().session.root().to_path_buf()];
+            let links: Vec<String> = ed
+                .blocks
+                .iter()
+                .filter_map(|b| match b {
+                    notecraft_formats::Block::Paragraph(spans, _) => {
+                        spans.iter().find_map(|s| s.link.clone()).filter(|l| l.starts_with("notecraft:"))
+                    }
+                    _ => None,
+                })
+                .collect();
+            let want: Vec<String> = after[at + 1..at + 4].iter().filter_map(|p| notecraft_store::links::page_uri(&roots, p)).collect();
+            assert_eq!(links, want, "each link reads back as the page it names");
+            assert!(!ed.body.contains(".printout-"), "no pictures on the page asked on:\n{}", ed.body);
+            let left: Vec<String> = notecraft_store::assets::list(&page).into_iter().map(|(n, _)| n).filter(|n| n.contains(".printout-")).collect();
+            assert!(left.is_empty(), "the pictures left its folder: {left:?}");
+        }
     }
 
     /// A printout asked for on one page goes into that page, even when another page was opened
