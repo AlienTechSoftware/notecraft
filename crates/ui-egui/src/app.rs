@@ -7716,6 +7716,7 @@ impl NoteCraftApp {
             ribbon::Act::Clipboard(which) => self.clipboard(which),
             ribbon::Act::Paste => self.paste_here(),
             ribbon::Act::PastePlain => self.paste_plain(),
+            ribbon::Act::PasteMerge => self.paste_merged(),
             ribbon::Act::SetReadOnly(locked) => {
                 if let Some(dir) = self.editor.as_ref().map(|e| e.dir.clone()) {
                     self.set_read_only(&dir, locked);
@@ -7977,6 +7978,28 @@ impl NoteCraftApp {
         }
     }
 
+    /// Paste > Merge Formatting (issue #564): a formatted clipboard item comes in with its
+    /// structure and emphasis but in the page's own fonts, sizes and colours. A clipboard with no
+    /// formatted flavour pastes as usual, which already takes the page's typography. One Undo
+    /// takes it back, as any paste.
+    fn paste_merged(&mut self) {
+        if self.editor.is_none() {
+            self.say(crate::tl_id!("ui.open_a_page_first"));
+            return;
+        }
+        match self.clipboard.html() {
+            Some(html) => {
+                let new = pageedit::merge_formatting(pageedit::pasted_blocks(pageedit::pasted(&html)));
+                if self.paste_blocks(new) {
+                    self.say(crate::tl_id!("ui.pasted_merged"));
+                } else {
+                    self.paste_here();
+                }
+            }
+            None => self.paste_here(),
+        }
+    }
+
     /// Paste > Keep text only, and Ctrl+Shift+V (issue #535): the clipboard's text alone, as if it
     /// were typed at the caret. It takes the place of the words picked, its lines stay lines
     /// (each a paragraph), and what the source had for fonts, colours and links stays behind,
@@ -8076,6 +8099,8 @@ impl NoteCraftApp {
         if new.is_empty() {
             return false;
         }
+        // A paste is a step of its own, so one Undo takes it back (issue #564).
+        Self::remember_edit(ed);
         let at = ed.caret.as_ref().map_or(ed.blocks.len().saturating_sub(1), |c| c.block);
         if ed.blocks.is_empty() {
             ed.blocks.push(notecraft_formats::markdown::Block::Paragraph(Vec::new(), Vec::new()));
