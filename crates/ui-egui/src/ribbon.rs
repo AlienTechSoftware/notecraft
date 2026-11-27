@@ -972,12 +972,15 @@ pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, collapsed
                 used += w + pad;
                 shown += 1;
             }
-            // The tab in hand is always on the strip, folded or not: the one before it makes way.
+            // The tab in hand is always on the strip, folded or not: tabs before it make way, as
+            // many as its own width needs, so the strip still leaves the end of the row free.
             if let Some(at) = names.iter().position(|n| *n == current)
                 && at >= shown
-                && shown > 0
             {
-                shown -= 1;
+                let needed = |shown: usize| widths[..shown].iter().map(|w| w + pad).sum::<f32>() + widths[at] + pad + more_w;
+                while shown > 0 && needed(shown) > room {
+                    shown -= 1;
+                }
             }
         }
         let hidden: Vec<&str> = names[shown..].iter().copied().filter(|n| *n != current).collect();

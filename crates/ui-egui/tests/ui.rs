@@ -19812,6 +19812,13 @@ fn the_date_and_time_below_the_title_can_be_changed_or_hidden() {
         h.state_mut().save_page_now();
         assert!(saved().contains(&words), "Undo puts it back: {}", saved());
     }
+    // A first line that only starts like a date is not offered: it would be read as neither.
+    notecraft_store::page::save_body(&s.md_page, "Thursday, planning notes\n\nWords here.\n").expect("fixture");
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    h.get_by_label_contains("planning notes").click_secondary();
+    settle(&mut h);
+    assert_eq!(h.query_all_by_label("Change date and time…").count(), 0, "not offered");
 }
 
 /// Issue #520: Review > Check Accessibility lists what a screen reader would stumble on, each

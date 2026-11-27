@@ -5467,15 +5467,19 @@ impl NoteCraftApp {
             let name = image.strip_prefix("assets/").unwrap_or(image);
             let _ = self.session.run("page.detach", &params(&[("path", &path_str(&job.dir)), ("name", name)]));
         }
-        if let Some(error) = failed {
+        // Undoes the import: the new pages to the recycle bin and the document out of the page.
+        let undo = |app: &mut Self, error: &str| {
             for page in pages.iter().rev() {
-                let _ = self.session.run("node.delete", &params(&[("path", &path_str(page))]));
+                let _ = app.session.run("node.delete", &params(&[("path", &path_str(page))]));
             }
             if let Some(name) = made.link.strip_prefix("assets/") {
-                let _ = self.session.run("page.detach", &params(&[("path", &path_str(&job.dir)), ("name", name)]));
+                let _ = app.session.run("page.detach", &params(&[("path", &path_str(&job.dir)), ("name", name)]));
             }
-            self.session.refresh();
-            self.complain(&crate::i18n::format_message_id("ui.printout_pages_failed_error", &[("name", &job.name), ("error", &error)]));
+            app.session.refresh();
+            app.complain(&crate::i18n::format_message_id("ui.printout_pages_failed_error", &[("name", &job.name), ("error", error)]));
+        };
+        if let Some(error) = failed {
+            undo(self, &error);
             return;
         }
         let mut roots = vec![self.session.root().to_path_buf()];
@@ -5495,6 +5499,9 @@ impl NoteCraftApp {
                 ed.attachments = notecraft_store::assets::list(&ed.dir);
             }
         } else if !self.add_to_page_file(&job.dir, &text) {
+            // The page asked on could not be written: no import half made, the new pages go.
+            let error = self.status.clone();
+            undo(self, &error);
             return;
         }
         self.session.refresh();
@@ -8620,7 +8627,8 @@ impl NoteCraftApp {
             _ => return,
         };
         let now = notecraft_model::time::long_from_iso(&notecraft_model::time::iso_now()).and_then(|t| notecraft_model::time::parse_stamp(&t));
-        let shown = notecraft_model::time::parse_stamp(&words);
+        // Only a line that reads as a date and time: anything else is left alone.
+        let Some(shown) = notecraft_model::time::parse_stamp(&words).map(Some) else { return };
         let pick = |stamp: Option<notecraft_model::time::Stamp>| stamp.unwrap_or(notecraft_model::time::Stamp { date: None, time: None });
         let (shown, now) = (pick(shown), pick(now));
         self.dialog = Some(Dialog::PageStamp {
@@ -18080,6 +18088,19 @@ mod alert_tests {
             let ed = h.state().editor.as_ref().expect("the page asked on is open");
             assert!(ed.body.contains("sheet.pdf"), "the document is attached");
             assert_eq!(ed.body.matches("notecraft:").count(), 3, "a link to each new page:\n{}", ed.body);
+            let roots = vec![h.state().session.root().to_path_buf()];
+            let links: Vec<String> = ed
+                .blocks
+                .iter()
+                .filter_map(|b| match b {
+                    notecraft_formats::Block::Paragraph(spans, _) => {
+                        spans.iter().find_map(|s| s.link.clone()).filter(|l| l.starts_with("notecraft:"))
+                    }
+                    _ => None,
+                })
+                .collect();
+            let want: Vec<String> = after[at + 1..at + 4].iter().filter_map(|p| notecraft_store::links::page_uri(&roots, p)).collect();
+            assert_eq!(links, want, "each link reads back as the page it names");
             assert!(!ed.body.contains(".printout-"), "no pictures on the page asked on:\n{}", ed.body);
             let left: Vec<String> = notecraft_store::assets::list(&page).into_iter().map(|(n, _)| n).filter(|n| n.contains(".printout-")).collect();
             assert!(left.is_empty(), "the pictures left its folder: {left:?}");

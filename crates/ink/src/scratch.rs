@@ -8,8 +8,8 @@
 
 use crate::{Drawing, Stroke, shape};
 
-/// The fewest turns back a scratch makes along its line: five passes.
-const MIN_TURNS: usize = 4;
+/// The fewest passes back and forth a scratch makes along its line.
+const MIN_PASSES: usize = 5;
 
 /// Whether a stroke is shaped like a scratch-out: at least five passes back and forth along its
 /// longer side, each going a good part of the way, its path at least three times as long as
@@ -36,12 +36,11 @@ pub fn is_scratch(stroke: &Stroke) -> bool {
     if path < extent * 3.0 {
         return false;
     }
-    // Turns back along the longer side, counting only runs that go a good part of the way, so a
-    // tremor is no turn.
+    // Passes along the longer side: runs one way that go a good part of the way, so a tremor
+    // is no pass. The last run counts like the others.
     let reach = extent * 0.4;
     let coord = |i: usize| if along_x { dabs[i].x } else { dabs[i].y };
-    let (mut turns, mut direction, mut anchor) = (0usize, 0i8, coord(0));
-    let mut run = 0.0_f32;
+    let (mut passes, mut direction, mut start) = (0usize, 0i8, coord(0));
     for i in 1..dabs.len() {
         let step = coord(i) - coord(i - 1);
         let now = if step > 0.0 {
@@ -54,19 +53,18 @@ pub fn is_scratch(stroke: &Stroke) -> bool {
         if now == 0 {
             continue;
         }
-        if direction == 0 {
-            direction = now;
-        } else if now != direction {
-            // A turn counts once the run before it went far enough.
-            if run >= reach {
-                turns += 1;
+        if direction != 0 && now != direction {
+            if (coord(i - 1) - start).abs() >= reach {
+                passes += 1;
             }
-            direction = now;
-            anchor = coord(i - 1);
+            start = coord(i - 1);
         }
-        run = (coord(i) - anchor).abs();
+        direction = now;
     }
-    turns >= MIN_TURNS
+    if (coord(dabs.len() - 1) - start).abs() >= reach {
+        passes += 1;
+    }
+    passes >= MIN_PASSES
 }
 
 /// Points along a stroke's path no more than `step` apart, its readings among them.
@@ -84,6 +82,29 @@ fn along(stroke: &Stroke, step: f32) -> Vec<(f32, f32)> {
         out.push((last.x, last.y));
     }
     out
+}
+
+/// Whether more than half a stroke's length lies inside, however its readings are spaced: each
+/// line between two readings is weighed by its length. A dot is inside or not.
+fn mostly_inside(stroke: &Stroke, inside: &dyn Fn((f32, f32)) -> bool) -> bool {
+    if let [only] = stroke.dabs.as_slice() {
+        return inside((only.x, only.y));
+    }
+    let (mut within, mut total) = (0.0_f32, 0.0_f32);
+    for pair in stroke.dabs.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let len = a.distance_to(b);
+        let n = ((len / 0.5).ceil() as usize).clamp(1, 4096);
+        let hit = (0..n)
+            .filter(|k| {
+                let t = (*k as f32 + 0.5) / n as f32;
+                inside((a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t))
+            })
+            .count();
+        within += len * hit as f32 / n as f32;
+        total += len;
+    }
+    total > 0.0 && within * 2.0 > total
 }
 
 /// The strokes a scratch rubs out: those its path crosses that lie mostly inside the ground it
@@ -104,11 +125,7 @@ pub fn scratched(drawing: &Drawing, scratch: &Stroke) -> Vec<usize> {
         .strokes
         .iter()
         .enumerate()
-        .filter(|(_, s)| {
-            let points = along(s, 1.0);
-            let under = points.iter().filter(|p| inside(**p)).count();
-            !points.is_empty() && under * 2 > points.len() && path.iter().any(|(x, y)| shape::touches(s, *x, *y, scratch.width / 2.0 + 1.0))
-        })
+        .filter(|(_, s)| mostly_inside(s, &inside) && path.iter().any(|(x, y)| shape::touches(s, *x, *y, scratch.width / 2.0 + 1.0)))
         .map(|(i, _)| i)
         .collect()
 }
@@ -141,6 +158,8 @@ mod tests {
     fn a_scratch_is_told_from_writing() {
         assert!(is_scratch(&zigzag(0.0, 0.0, 60.0, 6)), "six passes back and forth");
         assert!(!is_scratch(&zigzag(0.0, 0.0, 60.0, 3)), "a W is not a scratch");
+        assert!(!is_scratch(&zigzag(0.0, 0.0, 60.0, 4)), "four passes are not five");
+        assert!(is_scratch(&zigzag(0.0, 0.0, 60.0, 5)), "five are");
         assert!(!is_scratch(&stroke(&(0..20).map(|i| (i as f32 * 5.0, 0.0)).collect::<Vec<_>>())), "a line");
         let circle: Vec<(f32, f32)> = (0..40).map(|i| (i as f32 * 0.157).sin_cos()).map(|(s, c)| (30.0 * c, 30.0 * s)).collect();
         assert!(!is_scratch(&stroke(&circle)), "a loop");
@@ -157,6 +176,12 @@ mod tests {
         d.add(stroke(&[(10.0, 200.0), (50.0, 200.0)])); // elsewhere
         let scratch = zigzag(0.0, 0.0, 60.0, 6);
         assert_eq!(scratched(&d, &scratch), vec![0]);
+        // Readings packed close under it and one far away: judged by length, it is mostly out.
+        let mut d2 = Drawing::new(400.0, 400.0);
+        let mut points: Vec<(f32, f32)> = (0..=80).map(|i| (10.0 + i as f32 * 0.5, 6.0)).collect();
+        points.push((150.0, 6.0));
+        d2.add(stroke(&points));
+        assert!(scratched(&d2, &scratch).is_empty(), "most of its length is outside");
         let empty = Drawing::new(400.0, 400.0);
         assert!(scratched(&empty, &scratch).is_empty(), "over nothing it stays a scribble");
     }

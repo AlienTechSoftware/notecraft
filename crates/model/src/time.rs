@@ -178,7 +178,8 @@ pub fn parse_stamp(text: &str) -> Option<Stamp> {
     let d: u32 = words.next()?.parse().ok()?;
     let month = words.next()?;
     let y: i64 = words.next()?.parse().ok()?;
-    if words.next().is_some() {
+    // Years a calendar can be written for, and the date dialog offers.
+    if words.next().is_some() || !(1..=9999).contains(&y) {
         return None;
     }
     let m = u32::try_from(MONTHS.iter().position(|n| *n == month)? + 1).ok()?;
@@ -191,7 +192,7 @@ pub fn parse_stamp(text: &str) -> Option<Stamp> {
 /// Writes a page's stamp in the form [`parse_stamp`] reads: the weekday worked out from the date.
 /// Empty when both are left off.
 pub fn format_stamp(stamp: Stamp) -> String {
-    let date = stamp.date.and_then(|(y, m, d)| {
+    let date = stamp.date.filter(|(y, m, d)| (1..=9999).contains(y) && (1..=12).contains(m) && (1..=31).contains(d)).and_then(|(y, m, d)| {
         let days = days_from_civil(y, m, d);
         let weekday = WEEKDAYS.get(days.rem_euclid(7) as usize)?;
         let month = MONTHS.get(m.checked_sub(1)? as usize)?;
@@ -228,7 +229,17 @@ mod tests {
         assert_eq!(parse_stamp("09:05"), Some(Stamp { date: None, time: Some((9, 5)) }));
         assert_eq!(format_stamp(Stamp { date: Some((2026, 12, 25)), time: None }), "Friday, 25 December 2026", "the weekday follows the date");
         assert_eq!(format_stamp(Stamp { date: None, time: None }), "");
-        for bad in ["", "Thursday, 31 November 2026", "Someday, 1 May 2026", "25:00", "11:4", "Thursday, 26 Nov 2026", "hello"] {
+        for bad in [
+            "",
+            "Thursday, 1 January -9223372036854775808",
+            "Thursday, 1 January 0",
+            "Thursday, 31 November 2026",
+            "Someday, 1 May 2026",
+            "25:00",
+            "11:4",
+            "Thursday, 26 Nov 2026",
+            "hello",
+        ] {
             assert_eq!(parse_stamp(bad), None, "{bad}");
         }
         assert_eq!(days_in_month(2024, 2), 29);

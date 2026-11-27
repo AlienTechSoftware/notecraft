@@ -122,21 +122,31 @@ pub fn check(blocks: &[Block]) -> Vec<Finding> {
     found
 }
 
-/// The pictures and links inside a line.
+/// The pictures and links inside a line. A link's words are judged whole: the runs of a label
+/// that is partly bold, say, each carry the link, and are read together.
 fn spans_findings(spans: &[Span], block: usize, found: &mut Vec<Finding>) {
-    for span in spans {
+    let mut i = 0;
+    while i < spans.len() {
+        let span = &spans[i];
         if let Some(src) = &span.image {
             if span.text.trim().is_empty() {
                 found.push(Finding { kind: Kind::PictureWithoutDescription, block, about: file_name(src) });
             }
+            i += 1;
             continue;
         }
-        if span.link.is_some() {
-            let words: String =
-                span.text.trim().trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ");
-            if words.is_empty() || UNCLEAR.contains(&words.as_str()) {
-                found.push(Finding { kind: Kind::UnclearLink, block, about: span.text.trim().to_string() });
-            }
+        let Some(target) = span.link.as_ref() else {
+            i += 1;
+            continue;
+        };
+        let mut label = String::new();
+        while i < spans.len() && spans[i].link.as_ref() == Some(target) && spans[i].image.is_none() {
+            label.push_str(&spans[i].text);
+            i += 1;
+        }
+        let words: String = label.trim().trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ");
+        if words.is_empty() || UNCLEAR.contains(&words.as_str()) {
+            found.push(Finding { kind: Kind::UnclearLink, block, about: label.trim().to_string() });
         }
     }
 }
@@ -171,7 +181,9 @@ mod tests {
         assert_eq!(found[1].about, "click here");
         let table = blocks("|  |  |\n|---|---|\n| a | b |\n");
         assert_eq!(check(&table).iter().map(|f| f.kind).collect::<Vec<_>>(), [Kind::TableWithoutHeader]);
-        let fine = blocks("# Plan\n\n## Steps\n\nRead [the budget](https://b.test).\n\n![a pie chart](assets/pie.png)\n");
+        let fine = blocks(
+            "# Plan\n\n## Steps\n\nRead [the budget](https://b.test) and [**Budget** **2026**](https://c.test) and [**Plan** \u{2013} **2026**](https://d.test).\n\n![a pie chart](assets/pie.png)\n",
+        );
         assert!(check(&fine).is_empty(), "{:?}", check(&fine));
     }
 }

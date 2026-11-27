@@ -1372,9 +1372,15 @@ fn stamp_place_id(ctx: &egui::Context) -> egui::Id {
     egui::Id::new(("page-stamp-place", ctx.viewport_id()))
 }
 
-/// Notes where the block just drawn is, when it is the page's stamp.
+/// Notes where the block just drawn is, when it is the page's stamp and reads as a date and time
+/// the dialog can show: a first line such as "Thursday, planning notes" is not offered (it
+/// would be taken off the page, read as neither).
 fn note_stamp(ui: &mut Ui, blocks: &[Block], i: usize, top: f32) {
-    if is_page_stamp(blocks, i) {
+    let readable = || match blocks.get(i) {
+        Some(Block::Paragraph(spans, _)) => notecraft_model::time::parse_stamp(&spans.iter().map(|s| s.text.as_str()).collect::<String>()).is_some(),
+        _ => false,
+    };
+    if is_page_stamp(blocks, i) && readable() {
         let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().min.y.max(top + 1.0));
         let pass = ui.ctx().cumulative_pass_nr();
         let id = stamp_place_id(ui.ctx());
