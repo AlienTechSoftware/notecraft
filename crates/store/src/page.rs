@@ -225,26 +225,34 @@ struct Kept {
 }
 
 /// The page's own files a version keeps beside its words (issue #553): its ink, and the files
-/// in its `assets` folder, as paths in the page's folder with `/` between, in name order.
-fn companions(dir: &Path) -> Vec<String> {
+/// in its `assets` folder, as paths in the page's folder with `/` between, in name order. A
+/// folder that cannot be read is an error, so a version never leaves files out without saying;
+/// only a page with no `assets` folder has none there.
+fn companions(dir: &Path) -> Result<Vec<String>> {
     let mut found = ink_files(dir);
     let assets = dir.join("assets");
     // A folder that is a link to somewhere else is not the page's own.
     if fs::symlink_metadata(&assets).is_ok_and(|m| m.file_type().is_symlink()) {
-        return found;
+        return Ok(found);
     }
-    if let Ok(entries) = fs::read_dir(&assets) {
-        let mut assets: Vec<String> = entries
-            .flatten()
-            .filter(|e| e.file_type().is_ok_and(|k| k.is_file()))
-            // Not a file a restore is staging beside its place.
-            .filter(|e| !e.file_name().to_string_lossy().starts_with(".restore-"))
-            .map(|e| format!("assets/{}", e.file_name().to_string_lossy()))
-            .collect();
-        assets.sort();
-        found.extend(assets);
+    let entries = match fs::read_dir(&assets) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(found),
+        Err(e) => return Err(StoreError::io("read", &assets, e)),
+    };
+    let mut names = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| StoreError::io("read", &assets, e))?;
+        let kind = entry.file_type().map_err(|e| StoreError::io("read", &entry.path(), e))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // Not a file a restore is staging beside its place.
+        if kind.is_file() && !name.starts_with(".restore-") {
+            names.push(format!("assets/{name}"));
+        }
     }
-    found
+    names.sort();
+    found.extend(names);
+    Ok(found)
 }
 
 /// A page's own file from its path in a version, only inside the page's folder: no part of the
@@ -296,8 +304,15 @@ fn keep_blob(dir: &Path, bytes: &[u8]) -> Result<String> {
             Ok(there) if there == bytes => return Ok(name),
             Ok(_) => continue,
             Err(_) => {
-                let tmp = blobs.join(format!("{name}.tmp"));
-                fs::write(&tmp, bytes).map_err(|e| StoreError::io("write", &tmp, e))?;
+                // A name nobody can know beforehand, made new here: nothing already there, a link
+                // included, is written through.
+                let tmp = blobs.join(format!(".{}.tmp", new_id()));
+                let written =
+                    fs::OpenOptions::new().write(true).create_new(true).open(&tmp).and_then(|mut f| std::io::Write::write_all(&mut f, bytes));
+                if let Err(e) = written {
+                    let _ = fs::remove_file(&tmp);
+                    return Err(StoreError::io("write", &tmp, e));
+                }
                 fs::rename(&tmp, &path).map_err(|e| {
                     let _ = fs::remove_file(&tmp);
                     StoreError::io("replace", &path, e)
@@ -316,9 +331,9 @@ fn keep_companions(dir: &Path) -> Result<Vec<Kept>> {
         log::warn!("page versions keep the words alone: the folder for copies is a link: {dir:?}");
         return Ok(kept);
     }
-    for path in companions(dir) {
+    for path in companions(dir)? {
         let Some(file) = companion_path(dir, &path) else { continue };
-        let Ok(meta) = fs::metadata(&file) else { continue };
+        let meta = fs::metadata(&file).map_err(|e| StoreError::io("read", &file, e))?;
         if meta.len() > MAX_COMPANION_BYTES {
             kept.push(Kept { path, bytes: meta.len(), blob: None });
             continue;
@@ -332,16 +347,20 @@ fn keep_companions(dir: &Path) -> Result<Vec<Kept>> {
 
 /// What the page's own files are now, by their contents, to tell whether they changed since the
 /// last version, without keeping anything.
-fn companions_now(dir: &Path) -> Vec<(String, u64, Option<String>)> {
-    companions(dir)
-        .into_iter()
+/// `None` when they cannot all be read: then a new version is kept, and says why.
+fn companions_now(dir: &Path) -> Option<Vec<(String, u64, Option<String>)>> {
+    let listed = companions(dir).ok()?;
+    let now: Vec<_> = listed
+        .iter()
+        .cloned()
         .filter_map(|path| {
             let file = companion_path(dir, &path)?;
             let len = fs::metadata(&file).ok()?.len();
             let name = (len <= MAX_COMPANION_BYTES).then(|| fs::read(&file).ok().map(|b| content_name(&b))).flatten();
             Some((path, len, name))
         })
-        .collect()
+        .collect();
+    (now.len() == listed.len()).then_some(now)
 }
 
 /// The list of the page's own files a version kept, or `None` for a version from before they
@@ -451,7 +470,7 @@ fn snapshot_current(dir: &Path, file: &Path, force: bool) -> Result<()> {
         // The same words and the same ink and attachments: nothing to keep.
         let same_files = || {
             read_manifest(last).ok().flatten().is_none_or(|kept| {
-                let now = companions_now(dir);
+                let Some(now) = companions_now(dir) else { return false };
                 now.len() == kept.len()
                     && now.iter().zip(&kept).all(|((path, len, name), k)| {
                         *path == k.path && *len == k.bytes && name.as_deref().zip(k.blob.as_deref()).is_none_or(|(n, b)| b.starts_with(n))
@@ -482,11 +501,18 @@ fn snapshot_current(dir: &Path, file: &Path, force: bool) -> Result<()> {
         return Err(StoreError::io("write", &snapshot, e));
     }
     // The page's ink and attachments as they are, kept with its words (issue #553).
-    if copies_are_safe(dir)
-        && let Err(e) = keep_companions(dir).and_then(|kept| write_manifest(&entry, &kept))
-    {
-        let _ = fs::remove_dir_all(&entry);
-        return Err(e);
+    // When the page's files cannot all be read, the version keeps its words alone and says so
+    // ("words only"), rather than leave files out as if kept, or stop the page being saved.
+    if copies_are_safe(dir) {
+        match keep_companions(dir) {
+            Ok(kept) => {
+                if let Err(e) = write_manifest(&entry, &kept) {
+                    let _ = fs::remove_dir_all(&entry);
+                    return Err(e);
+                }
+            }
+            Err(e) => log::warn!("page version keeps its words alone: the page's files could not all be read: page={dir:?} error={e}"),
+        }
     }
     let info = format!("id = {}\ncreated = {}\n", kv::quote(&id), kv::quote(&iso_now()));
     if let Err(e) = fs::write(entry.join("version.toml"), info) {
@@ -1294,6 +1320,28 @@ mod tests {
             std::os::unix::fs::symlink(&elsewhere, page.join("assets")).expect("link");
             assert!(restore_version(&page, &kept[0].id).is_err(), "refused");
             assert!(fs::read_dir(&elsewhere).expect("elsewhere").next().is_none(), "nothing written outside the page");
+        }
+    }
+
+    /// Review of #553: files that cannot be read are not left out as if kept: the version keeps
+    /// its words alone and says so, and the page is still saved.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_files_make_a_words_only_version() {
+        use std::os::unix::fs::PermissionsExt;
+        let t = crate::testing::TempDir::new("page-version-unreadable");
+        let settings = crate::settings::Settings::at(t.path().join("settings.toml"));
+        let notebook = crate::ops::create_notebook(t.path(), "Notebook", None, &settings).expect("notebook");
+        let page = crate::ops::create_node(&notebook, "Page", notecraft_model::NodeKind::Page, None, &settings).expect("page");
+        fs::create_dir_all(page.join("assets")).expect("assets");
+        fs::write(page.join("assets").join("a.png"), b"one").expect("asset");
+        fs::set_permissions(page.join("assets"), fs::Permissions::from_mode(0o000)).expect("lock");
+        let readable = fs::read_dir(page.join("assets")).is_ok();
+        let saved = save_body(&page, "changed words");
+        fs::set_permissions(page.join("assets"), fs::Permissions::from_mode(0o755)).expect("unlock");
+        saved.expect("the page is still saved");
+        if !readable {
+            assert_eq!(versions(&page).expect("versions")[0].files, None, "words only");
         }
     }
 
