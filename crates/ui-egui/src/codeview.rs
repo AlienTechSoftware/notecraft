@@ -560,8 +560,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     if picked && entry.kind == Kind::Ocr && state.dirty {
                         // Drawn on the row itself, at its right edge, so it sits beside the file name.
                         let at = egui::Rect::from_min_size(egui::pos2(row.rect.right() - 24.0, row.rect.top() + 1.0), vec2(22.0, 18.0));
-                        // i18n-exempt: ✔ is the check mark that saves an edit; its meaning is in the hover text.
-                        let save = ui.put(at, egui::Button::new("✔").small()).on_hover_text(crate::tl_id!("ui.save_ocr_file"));
+                        let save = check_button(ui, at, t, crate::tl_id!("ui.save_ocr_file"));
                         if save.clicked() {
                             out.wrote = Some((entry.name.clone(), state.text.clone()));
                             state.dirty = false;
@@ -906,6 +905,19 @@ fn scale_stroke(stroke: &notecraft_ink::Stroke, scale: f32) -> notecraft_ink::St
 }
 
 /// One row of the list: the name, and what the file is.
+/// The check mark that saves an OCR file's edits, drawn with lines rather than as a glyph, so it
+/// shows whatever fonts the computer has. Its accessible name is `label`, the hover text says what it does.
+fn check_button(ui: &mut Ui, at: Rect, t: &Tokens, label: &str) -> egui::Response {
+    let response = ui.put(at, egui::Button::new("").small()).on_hover_text(label);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    let r = response.rect.shrink(5.0);
+    let stroke = egui::Stroke::new(1.6, t.accent);
+    let (a, b, c) = (egui::pos2(r.left(), r.center().y), egui::pos2(r.left() + r.width() * 0.4, r.bottom()), egui::pos2(r.right(), r.top()));
+    ui.painter().line_segment([a, b], stroke);
+    ui.painter().line_segment([b, c], stroke);
+    response
+}
+
 fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option<FileAction>, page_dir: &Path) -> egui::Response {
     let height = 20.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
@@ -975,6 +987,39 @@ mod tests {
         assert!(cut, "the view says the text was cut");
         assert!(text.contains(&"a".repeat(1000)), "and shows the start of it");
         assert!(!text.contains('\u{e9}'), "the character across the limit is left out whole");
+    }
+
+    /// Typing in an OCR file, picked in the source view, shows the check mark on its own row until it
+    /// is saved. Without it the edit could be lost with no sign that it is waiting to be saved.
+    #[test]
+    fn an_edited_ocr_file_shows_its_check_mark_on_its_row() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable;
+
+        let t = notecraft_store::testing::TempDir::new("codeview-ocr-dirty");
+        let dir = t.path().join("page");
+        std::fs::create_dir_all(&dir).expect("dir");
+        std::fs::write(dir.join("index.md"), "# Page").expect("page");
+        std::fs::write(dir.join("run.ocr.json"), r#"{"text":"Sourdough"}"#).expect("ocr file");
+        let entries = files(&dir, "index.md", &[]);
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let state = State { dir: Some(dir.clone()), picked: Some("run.ocr.json".to_string()), ..State::default() };
+        let text_id = egui::Id::new(("code-text-edit", "run.ocr.json"));
+        let mut h = Harness::builder().with_size(vec2(1200.0, 900.0)).with_accessibility_check(false).build_ui_state(
+            |ui, state: &mut State| {
+                show(ui, state, &entries, &dir, &tokens, 800.0);
+            },
+            state,
+        );
+        h.run_steps(2);
+        let save = "Save this OCR file";
+        assert!(h.query_by_label(save).is_none(), "an unchanged OCR file shows no check mark");
+        h.ctx.memory_mut(|m| m.request_focus(text_id));
+        h.run_steps(2);
+        h.input_mut().events.push(egui::Event::Text("x".to_string()));
+        h.run_steps(3);
+        assert!(h.state().dirty, "the typed edit is recorded as unsaved");
+        assert!(h.query_by_label(save).is_some(), "the edited OCR file shows its check mark on its row");
     }
 
     /// Shows the code view for the page file `index.md` in `dir`, types `typed` into its editor,

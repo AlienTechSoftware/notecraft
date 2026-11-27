@@ -30,6 +30,21 @@ const LINE_PALETTE: [Color32; 8] = [
 ];
 
 /// The colour of a recognised line: the one chosen for it, or its place in the palette.
+/// The check mark that saves an edited OCR file, drawn with lines so it shows whatever fonts the
+/// computer has (a check glyph is not in every font).
+fn check_button(ui: &mut egui::Ui) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(22.0, 18.0), Sense::click());
+    let visuals = ui.style().interact(&response);
+    ui.painter().rect(rect, visuals.corner_radius, visuals.weak_bg_fill, visuals.bg_stroke, StrokeKind::Inside);
+    let r = rect.shrink(5.0);
+    let stroke = Stroke::new(1.6, visuals.text_color());
+    let (a, b, c) = (egui::pos2(r.left(), r.center().y), egui::pos2(r.left() + r.width() * 0.4, r.bottom()), egui::pos2(r.right(), r.top()));
+    ui.painter().line_segment([a, b], stroke);
+    ui.painter().line_segment([b, c], stroke);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Save this OCR file"));
+    response
+}
+
 fn line_colour(loaded: &Loaded, index: usize) -> Color32 {
     loaded.line_colours.get(&index).copied().unwrap_or(LINE_PALETTE[index % LINE_PALETTE.len()])
 }
@@ -325,7 +340,7 @@ impl Lab {
 
     /// Closes the open file. Unsaved edits are written first, so they are never lost.
     fn leave_viewing(&mut self) {
-        if self.viewing_json.as_ref().is_some_and(|(_, text)| *text != self.viewing_saved) {
+        if self.viewing_dirty() {
             self.save_viewing();
         }
         self.viewing_json = None;
@@ -1645,6 +1660,11 @@ impl Lab {
         }
     }
 
+    /// Whether the open file's text has been edited and not yet saved.
+    fn viewing_dirty(&self) -> bool {
+        self.viewing_json.as_ref().is_some_and(|(_, text)| *text != self.viewing_saved)
+    }
+
     /// Writes the open file's edited text back to its file, and makes it the saved text.
     fn save_viewing(&mut self) {
         let Some((path, text)) = self.viewing_json.clone() else { return };
@@ -1668,7 +1688,7 @@ impl Lab {
             let mut save = false;
             ui.horizontal(|ui| {
                 ui.strong(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
-                if dirty && ui.small_button("✔").on_hover_text("Save this OCR file").clicked() {
+                if dirty && check_button(ui).on_hover_text("Save this OCR file").clicked() {
                     save = true;
                 }
             });
@@ -2102,6 +2122,25 @@ mod tests {
         let screen = Lab::to_screen(origin, 2.0, [30.0, 10.0]);
         assert_eq!(screen, egui::pos2(160.0, 60.0));
         assert_eq!(Lab::to_pixels(origin, 2.0, screen), [30.0, 10.0]);
+    }
+
+    #[test]
+    fn an_edited_ocr_file_is_dirty_until_it_is_saved_to_disk() {
+        let dir = std::env::temp_dir().join(format!("ocr-lab-dirty-{}", crate::unique_suffix()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let file = dir.join("p.png.ocr.json");
+        std::fs::write(&file, "{\"text\": \"Sourdough\"}").expect("file");
+        let mut lab = Lab::new(dir.clone(), None, None, false, telemetry::Log::open(&dir.join("log.txt")));
+        lab.show_file(&file);
+        assert!(!lab.viewing_dirty(), "a file just opened is not dirty");
+        if let Some((_, text)) = lab.viewing_json.as_mut() {
+            text.push(' ');
+        }
+        assert!(lab.viewing_dirty(), "an edit makes the file dirty, so the check mark shows");
+        lab.save_viewing();
+        assert!(!lab.viewing_dirty(), "saving clears the dirty state");
+        assert_eq!(std::fs::read_to_string(&file).expect("saved"), "{\"text\": \"Sourdough\"} ", "the edit is on disk");
+        std::fs::remove_dir_all(&dir).expect("clean up");
     }
 
     #[test]
