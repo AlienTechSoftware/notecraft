@@ -253,6 +253,9 @@ fn version_row(ui: &mut Ui, t: &Tokens, title: &str, sub: &str, selected: bool) 
     row.on_hover_text(sub)
 }
 
+/// The footer row under the ribbon's groups, where the display options button sits.
+const DISPLAY_FOOTER_H: f32 = 16.0;
+
 pub(crate) fn modal_frame(tokens: &Tokens) -> egui::Frame {
     egui::Frame::NONE.fill(tokens.panel).stroke(egui::Stroke::new(1.5, tokens.accent)).inner_margin(egui::Margin::same(16))
 }
@@ -3265,6 +3268,17 @@ impl NoteCraftApp {
 
     /// Folds the ribbon away to its tab names, or puts it back, and keeps the choice for the
     /// next start (Ctrl+F1, as in Office; issue #136). The page gets the ribbon's height.
+    /// Folds the ribbon to its tab names (`true`) or shows it in full (`false`), as the display
+    /// menu's Show tabs only and Always show Ribbon do. The choice is kept in the settings.
+    pub fn set_ribbon_collapsed(&mut self, collapsed: bool) {
+        self.ribbon_peek = false;
+        if self.ribbon_collapsed == collapsed {
+            return;
+        }
+        self.ribbon_collapsed = collapsed;
+        let _ = self.session.settings.set("ribbon_collapsed", if collapsed { "true" } else { "false" });
+    }
+
     pub fn toggle_ribbon(&mut self) {
         // In Full Page View the ribbon stays folded: asking for it shows its commands over the
         // page for a moment, and the choice made outside Full Page View is left as it was
@@ -7143,12 +7157,23 @@ impl NoteCraftApp {
         let mut acts = Vec::new();
         if !self.ribbon_folded() {
             egui::Panel::top("ribbon")
-                .exact_size(ribbon::GROUP_H + 8.0)
+                .exact_size(ribbon::GROUP_H + 8.0 + DISPLAY_FOOTER_H)
                 .frame(egui::Frame::new().fill(tokens.panel).inner_margin(egui::Margin::symmetric(4, 0)))
                 .show_separator_line(false)
                 .show(ui, |ui| {
                     acts = ribbon::show(ui, &tab, source, &view, format, &tokens);
+                    // The display options sit in a footer row under the groups, at the bottom right, as OneNote has them.
+                    let body = ui.max_rect();
+                    let at = egui::Rect::from_min_size(egui::pos2(body.max.x - 26.0, body.max.y - DISPLAY_FOOTER_H + 1.0), vec2(22.0, 14.0));
+                    ribbon::display_options(ui, at, self.ribbon_collapsed, &tokens, &mut acts);
                 });
+            // The ribbon's bottom edge: a 1px panel under the whole ribbon, so it reads as its own
+            // control and is not covered by the panels below.
+            egui::Panel::top("ribbon-edge")
+                .exact_size(2.0)
+                .frame(egui::Frame::new().fill(crate::theme::mix(tokens.panel, tokens.text, 0.45)))
+                .show_separator_line(false)
+                .show(ui, |_| {});
         } else if self.ribbon_peek {
             // Folded, with a tab clicked: the tab's commands over the top of the page, as Office
             // shows them, so the page does not jump down and back. Using one, clicking anywhere
@@ -7462,6 +7487,7 @@ impl NoteCraftApp {
                 self.ribbon_tab = name;
             }
             ribbon::Act::ToggleRibbon => self.toggle_ribbon(),
+            ribbon::Act::SetRibbonCollapsed(collapsed) => self.set_ribbon_collapsed(collapsed),
             ribbon::Act::Mark(mark) => self.apply_mark(mark),
             ribbon::Act::FontSize(size) => self.apply_font_size(size),
             ribbon::Act::TextColour(colour) => self.apply_text_colour(pageedit::InlineFormat::Colour(colour)),
@@ -18029,6 +18055,28 @@ mod keep_boxes_tests {
         let (_t, _page, mut h) = two_boxes(false, "link-menu-opens-dialog");
         h.state_mut().ribbon_act(ribbon::Act::Insert("link"));
         assert!(matches!(h.state().dialog, Some(Dialog::Link { .. })), "the Link action opens the Link dialog");
+    }
+
+    /// Issue #505 follow-up: the ribbon's display menu, at its bottom right, folds and unfolds the
+    /// ribbon. Full-screen mode, the Simplified ribbon and hiding the Quick Access Toolbar are
+    /// listed, and say they are not built yet.
+    #[test]
+    fn the_ribbon_display_menu_folds_and_unfolds_the_ribbon() {
+        use egui_kittest::kittest::Queryable as _;
+        let (_t, _page, mut h) = two_boxes(false, "ribbon-display-menu");
+        h.get_by_label("Ribbon display options").click();
+        h.run_steps(2);
+        for missing in ["Full-screen mode", "Simplified Ribbon", "Hide Quick Access Toolbar"] {
+            assert!(h.query_all_by_label(missing).next().is_some(), "{missing} is listed");
+        }
+        h.get_by_label("Show tabs only").click();
+        h.run_steps(2);
+        assert!(h.state().ribbon_collapsed, "show tabs only folds the ribbon");
+        h.get_by_label("Ribbon display options").click();
+        h.run_steps(2);
+        h.get_by_label("Always show Ribbon").click();
+        h.run_steps(2);
+        assert!(!h.state().ribbon_collapsed, "always show ribbon unfolds it");
     }
 
     #[test]

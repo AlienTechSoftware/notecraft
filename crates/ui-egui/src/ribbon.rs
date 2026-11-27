@@ -250,6 +250,8 @@ pub enum Act {
     FormatPainter(bool),
     /// Fold the ribbon away to its tab names, or put it back (Ctrl+F1).
     ToggleRibbon,
+    /// The display menu's choice: `true` shows tabs only, `false` always shows the ribbon.
+    SetRibbonCollapsed(bool),
     /// Sort the table's rows by the caret's column: true for descending (issue #171).
     TableSort(bool),
     /// One tree, or two columns: the organisers and then the pages, as OneNote has it.
@@ -1014,7 +1016,51 @@ pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, collapsed
             if ribbon_fold(ui, collapsed, t).clicked() {
                 acts.push(Act::ToggleRibbon);
             }
+            // Folded, there is no footer row to put the display options in, so they sit here,
+            // beside the fold control, to bring the ribbon back.
+            if collapsed {
+                let (at, _) = ui.allocate_exact_size(vec2(22.0, TAB_STRIP_H - 6.0), Sense::hover());
+                display_options(ui, at, collapsed, t, acts);
+            }
         });
+    });
+}
+
+/// The ribbon display options: a small button at the end of the tab names with a menu of how
+/// the ribbon is shown. Show tabs only and Always show Ribbon set the fold; the entries NoteCraft
+/// does not build yet are listed disabled, with the reason, not left out.
+pub fn display_options(ui: &mut Ui, at: egui::Rect, collapsed: bool, t: &Tokens, acts: &mut Vec<Act>) {
+    let (rect, resp) = (at, ui.interact(at, ui.id().with("ribbon-display-options"), Sense::click()));
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, 3.0, t.band_hover);
+    }
+    let c = rect.center();
+    let stroke = egui::Stroke::new(1.6, t.text);
+    ui.painter().add(egui::Shape::line(vec![egui::pos2(c.x - 4.0, c.y - 1.5), egui::pos2(c.x, c.y + 2.5), egui::pos2(c.x + 4.0, c.y - 1.5)], stroke));
+    let label = crate::tl_id!("ui.ribbon_display_options").to_string();
+    let enabled = ui.is_enabled();
+    let named = label.clone();
+    resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &named));
+    let shown = resp.on_hover_text(label);
+    egui::Popup::menu(&shown).show(|ui| {
+        ui.set_min_width(220.0);
+        if ui.selectable_label(true, crate::tl_id!("ui.classic_ribbon")).clicked() {
+            ui.close();
+        }
+        let not_built = crate::tl_id!("ui.not_built_yet");
+        ui.add_enabled(false, egui::Button::new(crate::tl_id!("ui.simplified_ribbon"))).on_disabled_hover_text(not_built);
+        ui.separator();
+        ui.add_enabled(false, egui::Button::new(crate::tl_id!("ui.full_screen_mode"))).on_disabled_hover_text(not_built);
+        if ui.selectable_label(collapsed, crate::tl_id!("ui.show_tabs_only")).clicked() {
+            acts.push(Act::SetRibbonCollapsed(true));
+            ui.close();
+        }
+        if ui.selectable_label(!collapsed, crate::tl_id!("ui.always_show_ribbon")).clicked() {
+            acts.push(Act::SetRibbonCollapsed(false));
+            ui.close();
+        }
+        ui.separator();
+        ui.add_enabled(false, egui::Button::new(crate::tl_id!("ui.hide_quick_access_toolbar"))).on_disabled_hover_text(not_built);
     });
 }
 
