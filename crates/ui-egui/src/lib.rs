@@ -10,6 +10,7 @@
 //! The crate depends on `egui` only. The window itself (eframe) lives in the app
 //! crate, so this crate can also be driven headlessly in tests.
 
+pub mod accessibility;
 pub mod app;
 pub mod backstage;
 pub mod bidi;

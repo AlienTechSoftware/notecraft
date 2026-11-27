@@ -201,10 +201,18 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   used), docking to the left, and the browser build, which has no window to move.
 - **The ribbon is a first pass.** Home, Insert, Draw, History and View with Office-style
   groups, a Styles gallery, a Tags gallery and a File screen. Page Versions previews saved copies and restores their editable content without rolling back
-  the current page title or order. Assets beside the page are not versioned. The
+  the current page title or order. A version keeps the page's ink and attachments too, and
+  restoring it brings them back (issue #553); one taken before that keeps its words alone. The
   notebook recycle bin can restore or permanently remove pages, sections and groups; deleting
-  an entire notebook is not supported. History's Authors group works (below). Missing tabs:
-  Review and Help. Other controls that are not built say so rather than doing nothing.
+  an entire notebook is not supported. History's Authors group works (below). The Review tab
+  has Check Accessibility (issue #520): a panel beside the page lists pictures with no
+  description, links whose words do not say where they go, empty headings, headings that skip a
+  level and tables with an empty header row, each with how to put it right and a Go to button
+  that takes the page there (a picture is selected, ready for its Alt Text); it checks again as
+  the page changes, in either page format. Missing tab: Help. Other controls that are not built
+  say so rather than doing nothing. In a narrow window (docked to the side, a phone) the room
+  round each tab name closes first, and the names that still do not fit are under More tabs
+  (»), the tab in hand always on the strip.
   Ctrl+F1, or the chevron at the end of the tab names, folds the ribbon to its tab names and
   gives the page its room; a tab clicked while it is folded shows its commands over the page
   until one is used, the page is clicked or Escape is pressed. The choice is kept.
@@ -371,7 +379,21 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   together each start on a new sheet; headers, footers and page numbers are not drawn.
 - **A dropped file can be copied in, linked, or inserted as a printout.** PDF rasterization is
   native Rust. LibreOffice is still needed to convert Office documents; without a renderer, the
-  printout action reports an error rather than creating an incomplete page.
+  printout action reports an error rather than creating an incomplete page. **Insert printout on
+  new pages** (issue #572) puts each printed page on a new page of its own right after the page,
+  in order, titled "<document>, page n of N" and starting with a line naming the document and
+  page it is from; the page asked on keeps the document, attached, and a link to each new page.
+  The new pages are made before anything is put on the first one: if one cannot be, those made go
+  to the recycle bin and nothing else changes.
+- **The date and time below a page's title** can be changed or hidden from the page's menu,
+  opened over them (issue #541): Change date and time sets the day, month, year, hour and minute,
+  and shows or hides the date and the time apart; with neither, the line is taken off the page.
+  It is an ordinary line of the page, so it is saved in both page formats and Undo puts it back;
+  the page's file times are not touched.
+- **A scratch-out gesture erases ink**, when File > Options turns it on (issue #569): a quick
+  zigzag of five or more passes over strokes rubs out those it crosses that lie mostly under it,
+  and leaves no stroke of its own, as one step for Undo. Over no ink, or not plainly a scratch,
+  it stays ink.
 - **The clipboard carries text, HTML and pictures, through one boundary.** A copied selection
   is one logical clipboard item: rich-text clients receive HTML with headings, marks, links,
   lists and tables; plain-text clients receive readable text without Markdown syntax. NoteCraft

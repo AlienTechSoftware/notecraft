@@ -16,7 +16,7 @@ use notecraft_model::{PageFormat, Tag};
 
 /// The tabs, in order. "Source" only appears while the page source is shown, the way Office
 /// shows a tab for what is selected.
-pub const TABS: [&str; 5] = ["Home", "Insert", "Draw", "History", "View"];
+pub const TABS: [&str; 6] = ["Home", "Insert", "Draw", "History", "Review", "View"];
 pub const SOURCE_TAB: &str = "Source";
 /// The families grouped by script, with a translated heading for each, and the families of no
 /// listed script under Other. Built once for each catalogue read and kept in egui memory; rebuilding
@@ -226,6 +226,10 @@ pub enum Act {
         block: usize,
         cut: bool,
     },
+    /// Review > Check Accessibility: show or hide the page's accessibility findings (issue #520).
+    CheckAccessibility,
+    /// The page's menu over its date and time, the stamp's block: change or hide them (#541).
+    EditPageStamp(usize),
     /// Draw > Rotate: turn or mirror the ink picked up (issue #544).
     TurnInk(notecraft_ink::pick::Turn),
     /// The eraser's menu: which eraser it is (issue #545).
@@ -718,6 +722,8 @@ pub struct View<'a> {
     pub can_ink_redo: bool,
     /// Whether ink is picked up, which is when Draw > Rotate can turn it (issue #544).
     pub ink_held: bool,
+    /// Whether the accessibility findings are shown beside the page (issue #520).
+    pub accessibility_open: bool,
     /// Which eraser the eraser is (issue #545).
     pub eraser: crate::inkpad::Eraser,
     /// How readily the pen answers pressure, 0 to 100.
@@ -815,6 +821,7 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
                     "Insert" => insert_tab(ui, view, t, &mut acts),
                     "Draw" => draw_tab(ui, view, t, &mut acts),
                     "History" => history_tab(ui, view, t, &mut acts),
+                    "Review" => review_tab(ui, view, t, &mut acts),
                     "View" => view_tab(ui, source, view, t, &mut acts),
                     TABLE_TAB => table_tab(ui, view, t, &mut acts),
                     SOURCE_TAB => source_tab(ui, format, t, &mut acts),
@@ -938,17 +945,53 @@ pub fn tabs(source: bool, in_table: bool) -> Vec<&'static str> {
 /// one.
 pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, collapsed: bool, mic: Mic, t: &Tokens, acts: &mut Vec<Act>) {
     // Folded, no tab is the raised one: there is no ribbon under it to run into.
-    let chosen = if collapsed { "" } else { resolve_tab(tab, source, in_table) };
+    let current = resolve_tab(tab, source, in_table);
+    let chosen = if collapsed { "" } else { current };
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.add_space(4.0);
-        let names = std::iter::once(FILE_TAB).chain(tabs(source, in_table));
-        for name in names {
+        let names: Vec<&str> = std::iter::once(FILE_TAB).chain(tabs(source, in_table)).collect();
+        let font = egui::FontId::proportional(13.5);
+        let widths: Vec<f32> =
+            names.iter().map(|name| ui.painter().layout_no_wrap(crate::tl!(name).to_string(), font.clone(), t.text).size().x).collect();
+        // A narrow window (one docked to the side, a phone) closes the room round each name
+        // before any tab is left off; those that still do not fit go in a menu at the end, so
+        // every tab can be reached however narrow the window (issue #520 added Review).
+        // The right end of the row holds the ribbon's display options and its fold button.
+        let mic_room = if mic == Mic::Hidden { 0.0 } else { 150.0 };
+        let room = (ui.available_width() - mic_room - 70.0).max(0.0);
+        let text: f32 = widths.iter().sum();
+        let pad = ((room - text) / names.len() as f32).clamp(10.0, 26.0);
+        let more_w = 30.0;
+        let mut shown = names.len();
+        if text + pad * names.len() as f32 > room {
+            let mut used = more_w;
+            shown = 0;
+            for w in &widths {
+                if used + w + pad > room {
+                    break;
+                }
+                used += w + pad;
+                shown += 1;
+            }
+            // The tab in hand is always on the strip, folded or not: tabs before it make way, as
+            // many as its own width needs, so the strip still leaves the end of the row free.
+            if let Some(at) = names.iter().position(|n| *n == current)
+                && at >= shown
+            {
+                let needed = |shown: usize| widths[..shown].iter().map(|w| w + pad).sum::<f32>() + widths[at] + pad + more_w;
+                while shown > 0 && needed(shown) > room {
+                    shown -= 1;
+                }
+            }
+        }
+        let hidden: Vec<&str> = names[shown..].iter().copied().filter(|n| *n != current).collect();
+        let visible: Vec<&str> = names.iter().enumerate().filter(|(i, n)| *i < shown || **n == current).map(|(_, n)| *n).collect();
+        for name in visible {
             let selected = name == chosen;
             let display_name = crate::tl!(name);
-            let font = egui::FontId::proportional(13.5);
             let galley = ui.painter().layout_no_wrap(display_name.to_string(), font.clone(), t.text);
-            let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 26.0, TAB_STRIP_H), Sense::click());
+            let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + pad, TAB_STRIP_H), Sense::click());
             let painter = ui.painter_at(rect);
             if selected {
                 // Raised: the tab and the ribbon are one surface, so there is no line between.
@@ -958,13 +1001,31 @@ pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, collapsed
                 painter.rect_filled(rect.shrink2(vec2(1.0, 3.0)), 3.0, t.band_hover);
             }
             let colour = if selected { t.accent } else { t.band_text };
-            painter.text(rect.center() + vec2(0.0, 1.0), Align2::CENTER_CENTER, display_name, font, colour);
+            painter.text(rect.center() + vec2(0.0, 1.0), Align2::CENTER_CENTER, display_name, font.clone(), colour);
             let enabled = ui.is_enabled();
             let label = display_name.to_string();
             resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, selected, label.clone()));
             if resp.clicked() {
                 acts.push(if name == FILE_TAB { Act::File } else { Act::Tab(name.to_string()) });
             }
+        }
+        if !hidden.is_empty() {
+            let (rect, resp) = ui.allocate_exact_size(vec2(more_w, TAB_STRIP_H), Sense::click());
+            if resp.hovered() {
+                ui.painter().rect_filled(rect.shrink2(vec2(1.0, 3.0)), 3.0, t.band_hover);
+            }
+            ui.painter().text(rect.center(), Align2::CENTER_CENTER, "\u{bb}", egui::FontId::proportional(15.0), t.band_text);
+            let enabled = ui.is_enabled();
+            resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, crate::tl_id!("ui.more_tabs")));
+            let resp = resp.on_hover_text(crate::tl_id!("ui.more_tabs"));
+            egui::Popup::menu(&resp).show(|ui| {
+                for name in &hidden {
+                    if ui.button(crate::tl!(name)).clicked() {
+                        acts.push(if *name == FILE_TAB { Act::File } else { Act::Tab(name.to_string()) });
+                        ui.close();
+                    }
+                }
+            });
         }
         if mic != Mic::Hidden {
             ui.add_space(12.0);
@@ -4202,6 +4263,27 @@ fn soon(ui: &mut Ui, icon: Icon, label: &str, t: &Tokens) {
 }
 
 /// OneNote's History tab, with the same groups and controls.
+/// The Review tab (issue #520): for now its Accessibility group, as OneNote's Review tab has.
+fn review_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
+    group(ui, crate::tl_id!("ui.accessibility"), t, |ui| {
+        let resp = ui
+            .add_enabled_ui(view.has_page, |ui| {
+                big_on(
+                    ui,
+                    Icon::Search,
+                    crate::tl_id!("ui.check_accessibility"),
+                    crate::tl_id!("ui.check_accessibility_tip"),
+                    view.accessibility_open,
+                    t,
+                )
+            })
+            .inner;
+        if resp.clicked() {
+            acts.push(Act::CheckAccessibility);
+        }
+    });
+}
+
 fn history_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
     group(ui, crate::tl_id!("ui.unread"), t, |ui| {
         if big(ui, Icon::PageStack, crate::tl_id!("ui.next_unread_2"), crate::tl_id!("ui.go_to_the_next_page_changed_since_you_last_read_it"), t)
@@ -4825,8 +4907,8 @@ mod tests {
 
     #[test]
     fn the_tabs_are_office_like_and_source_comes_and_goes() {
-        assert_eq!(tabs(false, false), vec!["Home", "Insert", "Draw", "History", "View"]);
-        assert_eq!(tabs(true, false), vec!["Home", "Insert", "Draw", "History", "View", "Source"]);
+        assert_eq!(tabs(false, false), vec!["Home", "Insert", "Draw", "History", "Review", "View"]);
+        assert_eq!(tabs(true, false), vec!["Home", "Insert", "Draw", "History", "Review", "View", "Source"]);
         assert_eq!(resolve_tab("Insert", false, false), "Insert");
         assert_eq!(resolve_tab("Draw", false, false), "Draw");
         assert_eq!(resolve_tab("Source", true, false), "Source");
@@ -4836,7 +4918,7 @@ mod tests {
 
         // The Table tab goes with the caret: it is offered only while the caret is in a
         // table, and leaving one takes the tab and its commands away.
-        assert_eq!(tabs(false, true), vec!["Home", "Insert", "Draw", "History", "View", "Table"]);
+        assert_eq!(tabs(false, true), vec!["Home", "Insert", "Draw", "History", "Review", "View", "Table"]);
         assert_eq!(resolve_tab("Table", false, true), "Table");
         assert_eq!(resolve_tab("Table", false, false), "Home", "out of the table, out of the tab");
     }
@@ -4912,7 +4994,7 @@ mod tests {
 
     #[test]
     fn every_tab_draws_without_panicking_and_asks_for_nothing_by_itself() {
-        for tab in ["Home", "Insert", "History", "View", "Source", "junk"] {
+        for tab in ["Home", "Insert", "History", "Review", "View", "Source", "junk"] {
             for source in [false, true] {
                 assert_eq!(draw(tab, source), Vec::new(), "{tab} asked for something nobody clicked");
             }

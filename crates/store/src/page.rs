@@ -38,9 +38,15 @@ pub struct Version {
     pub id: String,
     pub created: String,
     pub bytes: u64,
+    /// How many of the page's own files (its ink and attachments) the version keeps beside its
+    /// words (issue #553). `None` for a version taken before versions kept them: its words
+    /// alone can be brought back.
+    pub files: Option<usize>,
 }
 
 const MAX_VERSIONS: usize = 50;
+/// What a page's versions may take up, their page files and the copies of its ink and
+/// attachments together; the newest version is kept whatever its size.
 const MAX_VERSION_BYTES: u64 = 128 * 1024 * 1024;
 const VERSION_INTERVAL_NS: u128 = 5 * 60 * 1_000_000_000;
 
@@ -91,7 +97,10 @@ pub fn versions(dir: &Path) -> Result<Vec<Version>> {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
             Err(e) => return Err(StoreError::io("read", &snapshot, e)),
         };
-        found.push(Version { id, created: values.get("created").cloned().unwrap_or_default(), bytes });
+        // The files a version can bring back: those it kept a copy of. A list that cannot be read
+        // whole counts as none, and restoring that version says why.
+        let files = read_manifest(&dir).ok().flatten().map(|kept| kept.iter().filter(|k| k.blob.is_some()).count());
+        found.push(Version { id, created: values.get("created").cloned().unwrap_or_default(), bytes, files });
     }
     found.sort_by(|a, b| b.id.cmp(&a.id));
     Ok(found)
@@ -132,8 +141,323 @@ pub fn restore_version(dir: &Path, id: &str) -> Result<()> {
     if out.len() > MAX_PAGE_BYTES {
         return Err(StoreError::invalid("this page is too large to save"));
     }
+    // The page's own files as the version kept them, every one read and checked before any is
+    // written, so a damaged copy changes nothing (issue #553).
+    let manifest = read_manifest(&version_dir(dir).join(id))?;
+    if manifest.as_ref().is_some_and(|kept| kept.iter().any(|k| k.blob.is_some())) && !copies_are_safe(dir) {
+        return Err(StoreError::invalid("the folder the page version's files are kept in is a link; nothing was restored"));
+    }
+    let mut put_back: Vec<(PathBuf, Vec<u8>, Option<Vec<u8>>)> = Vec::new();
+    for kept in manifest.unwrap_or_default() {
+        let Some(blob) = kept.blob else { continue };
+        let target = companion_path(dir, &kept.path).ok_or_else(|| StoreError::invalid("a page version names a file outside its page"))?;
+        let source = blobs_dir(dir).join(&blob);
+        let bytes = fs::read(&source).map_err(|e| StoreError::io("read", &source, e))?;
+        if bytes.len() as u64 != kept.bytes || !blob.starts_with(&content_name(&bytes)) {
+            return Err(StoreError::invalid(format!("the copy of {} kept with that version is damaged; nothing was restored", kept.path)));
+        }
+        // What is there now must be read first, so it can be put back if the restore goes wrong
+        // and is kept by the version taken before it: a file there that cannot be read stops
+        // the restore before anything changes. Only a file not there at all has nothing to keep.
+        let before = match fs::read(&target) {
+            Ok(there) => Some(there),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(StoreError::io("read", &target, e)),
+        };
+        if before.as_deref() != Some(bytes.as_slice()) {
+            put_back.push((target, bytes, before));
+        }
+    }
+    // The page as it is now is kept as a version first, so the restore can itself be undone.
     snapshot_current(dir, &file, true)?;
-    write_atomic_file(&file, &out)
+    // Each file written beside its place first, under a name no other file has, so nothing is
+    // overwritten until everything is ready.
+    let mut staged: Vec<(PathBuf, PathBuf, Option<Vec<u8>>)> = Vec::new();
+    let cleanup = |staged: &[(PathBuf, PathBuf, Option<Vec<u8>>)]| {
+        for (_, tmp, _) in staged {
+            let _ = fs::remove_file(tmp);
+        }
+    };
+    for (target, bytes, before) in &put_back {
+        let staging = target.parent().map(Path::to_path_buf).unwrap_or_else(|| dir.to_path_buf());
+        if let Err(e) = fs::create_dir_all(&staging) {
+            cleanup(&staged);
+            return Err(StoreError::io("create", &staging, e));
+        }
+        let tmp = staging.join(staging_name());
+        let written = fs::OpenOptions::new().write(true).create_new(true).open(&tmp).and_then(|mut f| std::io::Write::write_all(&mut f, bytes));
+        if let Err(e) = written {
+            let _ = fs::remove_file(&tmp);
+            cleanup(&staged);
+            return Err(StoreError::io("write", &tmp, e));
+        }
+        staged.push((target.clone(), tmp, before.clone()));
+    }
+    if let Err(e) = write_atomic_file(&file, &out) {
+        cleanup(&staged);
+        return Err(e);
+    }
+    // Only the files the version kept: a file added since is left as it is. Should one not go
+    // in, the page's words and the files already put back return to how they were.
+    for (n, (target, tmp, _)) in staged.iter().enumerate() {
+        if let Err(e) = fs::rename(tmp, target) {
+            for (done, _, before) in staged[..n].iter().rev() {
+                match before {
+                    Some(bytes) => {
+                        let _ = fs::write(done, bytes);
+                    }
+                    None => {
+                        let _ = fs::remove_file(done);
+                    }
+                }
+            }
+            cleanup(&staged[n..]);
+            let _ = write_atomic_file(&file, &current);
+            return Err(StoreError::io("replace", target, e));
+        }
+    }
+    Ok(())
+}
+
+/// The largest single file a version keeps a copy of; a larger one is named in the version as
+/// not kept, and restoring leaves it as it is.
+const MAX_COMPANION_BYTES: u64 = 32 * 1024 * 1024;
+
+/// One of the page's own files as a version knows it: where it is in the page's folder, how
+/// long it was, and the copy kept of it, if one was.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Kept {
+    path: String,
+    bytes: u64,
+    blob: Option<String>,
+}
+
+/// The page's own files a version keeps beside its words (issue #553): its ink, and the files
+/// in its `assets` folder, as paths in the page's folder with `/` between, in name order. A
+/// folder that cannot be read is an error, so a version never leaves files out without saying;
+/// only a page with no `assets` folder has none there.
+fn companions(dir: &Path) -> Result<Vec<String>> {
+    let mut found = ink_files(dir);
+    let assets = dir.join("assets");
+    // A folder that is a link to somewhere else is not the page's own.
+    if fs::symlink_metadata(&assets).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Ok(found);
+    }
+    let entries = match fs::read_dir(&assets) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(found),
+        Err(e) => return Err(StoreError::io("read", &assets, e)),
+    };
+    let mut names = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| StoreError::io("read", &assets, e))?;
+        let kind = entry.file_type().map_err(|e| StoreError::io("read", &entry.path(), e))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // Not a file a restore is staging beside its place.
+        if kind.is_file() && !is_staging_name(&name) {
+            names.push(format!("assets/{name}"));
+        }
+    }
+    names.sort();
+    found.extend(names);
+    Ok(found)
+}
+
+/// A page's own file from its path in a version, only inside the page's folder: no part of the
+/// way to it may be a link, which could lead outside the page.
+fn companion_path(dir: &Path, path: &str) -> Option<PathBuf> {
+    let mut out = dir.to_path_buf();
+    for part in path.split('/') {
+        if part.is_empty() || part == "." || part == ".." || part.contains(['\\', ':']) {
+            return None;
+        }
+        out.push(part);
+        if fs::symlink_metadata(&out).is_ok_and(|m| m.file_type().is_symlink()) {
+            return None;
+        }
+    }
+    Some(out)
+}
+
+/// The name a restore stages a file under beside its place: `.restore-`, a fresh version id and
+/// `.tmp`. Only a name of exactly that shape is passed over when a version lists the page's files,
+/// so an attachment that merely starts the same way is kept like any other.
+fn staging_name() -> String {
+    format!(".restore-{}.tmp", new_id())
+}
+
+fn is_staging_name(name: &str) -> bool {
+    name.strip_prefix(".restore-").and_then(|rest| rest.strip_suffix(".tmp")).is_some_and(valid_version_id)
+}
+
+fn blobs_dir(dir: &Path) -> PathBuf {
+    version_dir(dir).join("blobs")
+}
+
+/// Whether the folders the copies are kept in are the page's own: none of `.notecraft`, its
+/// `versions` folder and the `blobs` folder in it is a link, which could lead outside the page.
+/// When one is, no copy is kept, read or taken away.
+fn copies_are_safe(dir: &Path) -> bool {
+    let linked = |p: &Path| fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink());
+    let hidden = dir.join(".notecraft");
+    !linked(&hidden) && !linked(&version_dir(dir)) && !linked(&blobs_dir(dir))
+}
+
+/// A name for some bytes from what they are: two 64-bit FNV-1a sums with different starting
+/// points, in hex. A copy is named by it, so the same file kept by many versions is kept once;
+/// two different files that came to the same name are told apart by their bytes when kept.
+fn content_name(bytes: &[u8]) -> String {
+    let sum = |start: u64| bytes.iter().fold(start, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0000_0100_0000_01b3));
+    format!("{:016x}{:016x}", sum(0xcbf2_9ce4_8422_2325), sum(0x84222325_cbf29ce4))
+}
+
+/// Keeps a copy of some bytes among the versions' copies, once, and gives its name.
+fn keep_blob(dir: &Path, bytes: &[u8]) -> Result<String> {
+    let blobs = blobs_dir(dir);
+    fs::create_dir_all(&blobs).map_err(|e| StoreError::io("create", &blobs, e))?;
+    let base = content_name(bytes);
+    for n in 0..16 {
+        let name = if n == 0 { base.clone() } else { format!("{base}-{n}") };
+        let path = blobs.join(&name);
+        match fs::read(&path) {
+            Ok(there) if there == bytes => return Ok(name),
+            Ok(_) => continue,
+            Err(_) => {
+                // A name nobody can know beforehand, made new here: nothing already there, a link
+                // included, is written through.
+                let tmp = blobs.join(format!(".{}.tmp", new_id()));
+                let written =
+                    fs::OpenOptions::new().write(true).create_new(true).open(&tmp).and_then(|mut f| std::io::Write::write_all(&mut f, bytes));
+                if let Err(e) = written {
+                    let _ = fs::remove_file(&tmp);
+                    return Err(StoreError::io("write", &tmp, e));
+                }
+                fs::rename(&tmp, &path).map_err(|e| {
+                    let _ = fs::remove_file(&tmp);
+                    StoreError::io("replace", &path, e)
+                })?;
+                return Ok(name);
+            }
+        }
+    }
+    Err(StoreError::invalid("too many different files share one name among the page's versions"))
+}
+
+/// The page's own files as they are now, with a copy of each kept, for a new version.
+fn keep_companions(dir: &Path) -> Result<Vec<Kept>> {
+    let mut kept = Vec::new();
+    if !copies_are_safe(dir) {
+        log::warn!("page versions keep the words alone: the folder for copies is a link: {dir:?}");
+        return Ok(kept);
+    }
+    for path in companions(dir)? {
+        let Some(file) = companion_path(dir, &path) else { continue };
+        let meta = fs::metadata(&file).map_err(|e| StoreError::io("read", &file, e))?;
+        if meta.len() > MAX_COMPANION_BYTES {
+            kept.push(Kept { path, bytes: meta.len(), blob: None });
+            continue;
+        }
+        let bytes = fs::read(&file).map_err(|e| StoreError::io("read", &file, e))?;
+        let blob = keep_blob(dir, &bytes)?;
+        kept.push(Kept { path, bytes: bytes.len() as u64, blob: Some(blob) });
+    }
+    Ok(kept)
+}
+
+/// What the page's own files are now, by their contents, to tell whether they changed since the
+/// last version, without keeping anything.
+/// `None` when they cannot all be read: then a new version is kept, and says why.
+fn companions_now(dir: &Path) -> Option<Vec<(String, u64, Option<String>)>> {
+    let listed = companions(dir).ok()?;
+    let now: Vec<_> = listed
+        .iter()
+        .cloned()
+        .filter_map(|path| {
+            let file = companion_path(dir, &path)?;
+            let len = fs::metadata(&file).ok()?.len();
+            let name = (len <= MAX_COMPANION_BYTES).then(|| fs::read(&file).ok().map(|b| content_name(&b))).flatten();
+            Some((path, len, name))
+        })
+        .collect();
+    (now.len() == listed.len()).then_some(now)
+}
+
+/// The list of the page's own files a version kept, or `None` for a version from before they
+/// were kept (its words alone). One line each: the copy's name (or `-` for a file too large to
+/// keep), its length, and its path in the page's folder, with tabs between. A list that cannot
+/// be read, or has a line that is not one of these, is an error rather than a shorter list.
+fn read_manifest(version: &Path) -> Result<Option<Vec<Kept>>> {
+    let file = version.join("files.txt");
+    let text = match fs::read_to_string(&file) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(StoreError::io("read", &file, e)),
+    };
+    let mut kept = Vec::new();
+    for line in text.lines().filter(|l| !l.is_empty()) {
+        let mut parts = line.splitn(3, '\t');
+        let parsed = (|| {
+            let (blob, bytes, path) = (parts.next()?, parts.next()?.parse().ok()?, parts.next()?);
+            (!path.is_empty() && !blob.is_empty()).then(|| Kept { path: decode_path(path), bytes, blob: (blob != "-").then(|| blob.to_string()) })
+        })();
+        match parsed {
+            Some(entry) => kept.push(entry),
+            None => return Err(StoreError::invalid(format!("the list of files kept with a page version is damaged: {}", file.display()))),
+        }
+    }
+    Ok(Some(kept))
+}
+
+/// A path as the list of kept files writes it: `%`, tabs and line breaks as `%25`, `%09`, `%0A`
+/// and `%0D`, so a file name with one in it is still one line. A list written before had none of
+/// these, and reads the same.
+fn encode_path(path: &str) -> String {
+    path.replace('%', "%25").replace('\t', "%09").replace('\n', "%0A").replace('\r', "%0D")
+}
+
+fn decode_path(path: &str) -> String {
+    path.replace("%09", "\t").replace("%0A", "\n").replace("%0D", "\r").replace("%25", "%")
+}
+
+fn write_manifest(version: &Path, kept: &[Kept]) -> Result<()> {
+    let text: String = kept.iter().map(|k| format!("{}\t{}\t{}\n", k.blob.as_deref().unwrap_or("-"), k.bytes, encode_path(&k.path))).collect();
+    let file = version.join("files.txt");
+    fs::write(&file, text).map_err(|e| StoreError::io("write", &file, e))
+}
+
+/// Takes away the copies no version names any more.
+fn drop_unused_blobs(dir: &Path, versions: &[PathBuf]) {
+    if !copies_are_safe(dir) {
+        return;
+    }
+    let mut used = std::collections::HashSet::new();
+    // A version still being kept (its folder there, its record not yet) may already have copies
+    // its list does not name yet: none is taken away until it is done.
+    let all: Vec<PathBuf> = match fs::read_dir(version_dir(dir)) {
+        Ok(entries) => entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir() && p.file_name().and_then(|n| n.to_str()).is_some_and(valid_version_id))
+            .collect(),
+        Err(_) => return,
+    };
+    if all.iter().any(|v| !v.join("version.toml").is_file()) {
+        return;
+    }
+    for version in versions.iter().chain(all.iter()).filter(|v| v.is_dir()) {
+        match read_manifest(version) {
+            Ok(kept) => used.extend(kept.unwrap_or_default().into_iter().filter_map(|k| k.blob)),
+            // A list that cannot be read may name any copy: none is taken away.
+            Err(_) => return,
+        }
+    }
+    let Ok(entries) = fs::read_dir(blobs_dir(dir)) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !used.contains(&name) {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
 }
 
 fn version_dir(dir: &Path) -> PathBuf {
@@ -149,8 +473,12 @@ fn snapshot_current(dir: &Path, file: &Path, force: bool) -> Result<()> {
         return Ok(());
     }
     let versions = version_dir(dir);
+    // The versions themselves, not the folder of copies of the page's own files beside them.
     let mut existing: Vec<PathBuf> = match fs::read_dir(&versions) {
-        Ok(entries) => entries.filter_map(|entry| entry.ok().map(|e| e.path())).filter(|path| path.is_dir()).collect(),
+        Ok(entries) => entries
+            .filter_map(|entry| entry.ok().map(|e| e.path()))
+            .filter(|path| path.is_dir() && path.file_name().and_then(|n| n.to_str()).is_some_and(valid_version_id))
+            .collect(),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         Err(e) => return Err(StoreError::io("read", &versions, e)),
     };
@@ -158,8 +486,19 @@ fn snapshot_current(dir: &Path, file: &Path, force: bool) -> Result<()> {
     let current = fs::read(file).map_err(|e| StoreError::io("read", file, e))?;
     if let Some(last) = existing.last() {
         let previous = last.join(file.file_name().unwrap_or_default());
+        // The same words and the same ink and attachments: nothing to keep.
+        let same_files = || {
+            read_manifest(last).ok().flatten().is_none_or(|kept| {
+                let Some(now) = companions_now(dir) else { return false };
+                now.len() == kept.len()
+                    && now.iter().zip(&kept).all(|((path, len, name), k)| {
+                        *path == k.path && *len == k.bytes && name.as_deref().zip(k.blob.as_deref()).is_none_or(|(n, b)| b.starts_with(n))
+                    })
+            })
+        };
         if let Ok(bytes) = fs::read(&previous)
             && bytes == current
+            && same_files()
         {
             return Ok(());
         }
@@ -180,29 +519,56 @@ fn snapshot_current(dir: &Path, file: &Path, force: bool) -> Result<()> {
         let _ = fs::remove_dir_all(&entry);
         return Err(StoreError::io("write", &snapshot, e));
     }
+    // The page's ink and attachments as they are, kept with its words (issue #553).
+    // When the page's files cannot all be read, the version keeps its words alone and says so
+    // ("words only"), rather than leave files out as if kept, or stop the page being saved.
+    if copies_are_safe(dir) {
+        match keep_companions(dir) {
+            Ok(kept) => {
+                if let Err(e) = write_manifest(&entry, &kept) {
+                    let _ = fs::remove_dir_all(&entry);
+                    return Err(e);
+                }
+            }
+            Err(e) => log::warn!("page version keeps its words alone: the page's files could not all be read: page={dir:?} error={e}"),
+        }
+    }
     let info = format!("id = {}\ncreated = {}\n", kv::quote(&id), kv::quote(&iso_now()));
     if let Err(e) = fs::write(entry.join("version.toml"), info) {
         let _ = fs::remove_dir_all(&entry);
         return Err(StoreError::io("write", &entry.join("version.toml"), e));
     }
     existing.push(entry);
-    let mut total = 0u64;
-    let mut sizes = Vec::with_capacity(existing.len());
-    for version in &existing {
-        let snapshot = version.join(file.file_name().unwrap_or_default());
-        let size = fs::metadata(&snapshot).map(|meta| meta.len()).unwrap_or(0);
-        total = total.saturating_add(size);
-        sizes.push(size);
+    // What the versions from `from` on take up: their page files, and the copies they name, each
+    // copy once however many name it (issue #553). The newest is always kept.
+    let page_sizes: Vec<u64> =
+        existing.iter().map(|v| fs::metadata(v.join(file.file_name().unwrap_or_default())).map(|m| m.len()).unwrap_or(0)).collect();
+    let names: Vec<Vec<String>> =
+        existing.iter().map(|v| read_manifest(v).ok().flatten().unwrap_or_default().into_iter().filter_map(|k| k.blob).collect()).collect();
+    let blob_size = |name: &String| fs::metadata(blobs_dir(dir).join(name)).map(|m| m.len()).unwrap_or(0);
+    let drop = versions_to_drop(&page_sizes, &names, blob_size, MAX_VERSIONS, MAX_VERSION_BYTES);
+    for version in &existing[..drop] {
+        let _ = fs::remove_dir_all(version);
     }
-    let mut remove_count = existing.len().saturating_sub(MAX_VERSIONS);
+    // Every version folder: one that could not be removed still names its copies.
+    drop_unused_blobs(dir, &existing);
+    Ok(())
+}
+
+/// How many of the oldest versions go, so that at most `max_versions` are left and they take up
+/// no more than `max_bytes`: their page files, and the copies they name, each copy counted once
+/// however many name it. The newest is always kept.
+fn versions_to_drop(page_sizes: &[u64], names: &[Vec<String>], blob_size: impl Fn(&String) -> u64, max_versions: usize, max_bytes: u64) -> usize {
+    let taken = |from: usize| -> u64 {
+        let mut seen = std::collections::HashSet::new();
+        let copies: u64 = names[from..].iter().flatten().filter(|n| seen.insert(*n)).map(&blob_size).sum();
+        page_sizes[from..].iter().sum::<u64>().saturating_add(copies)
+    };
     let mut next = 0;
-    while next < existing.len() && (remove_count > 0 || total > MAX_VERSION_BYTES) {
-        total = total.saturating_sub(sizes[next]);
-        let _ = fs::remove_dir_all(&existing[next]);
-        remove_count = remove_count.saturating_sub(1);
+    while next + 1 < page_sizes.len() && (page_sizes.len() - next > max_versions || taken(next) > max_bytes) {
         next += 1;
     }
-    Ok(())
+    next
 }
 
 /// The editable part of a page's file: the inside of the HTML body, or the Markdown after the
@@ -241,6 +607,10 @@ pub fn direction(dir: &Path) -> Result<Option<Dir>> {
 /// Writes the page's direction into its own file, so it travels with the folder.
 /// `None` takes it out again and lets every line decide for itself.
 pub fn set_direction(dir: &Path, want: Option<Dir>) -> Result<()> {
+    // One writer to the page at a time, as the other setters: a save keeping a version in the
+    // meantime is not undone by this one's tidying of copies (issue #553).
+    let writer = crate::coordination::page_writer(dir)?;
+    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
     let out = match (format, want) {
@@ -525,6 +895,10 @@ pub fn table_columns(dir: &Path) -> Result<tablecols::Widths> {
 
 /// Writes them into the page's own file, beside the arrangement of its boxes.
 pub fn set_table_columns(dir: &Path, widths: &tablecols::Widths) -> Result<()> {
+    // One writer to the page at a time, as the other setters: a save keeping a version in the
+    // meantime is not undone by this one's tidying of copies (issue #553).
+    let writer = crate::coordination::page_writer(dir)?;
+    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
     let line = tablecols::write(widths);
@@ -613,6 +987,10 @@ pub fn justified(dir: &Path) -> Result<justify::Justified> {
 
 /// Writes them into the page's own file, beside the table column widths.
 pub fn set_justified(dir: &Path, marked: &justify::Justified) -> Result<()> {
+    // One writer to the page at a time, as the other setters: a save keeping a version in the
+    // meantime is not undone by this one's tidying of copies (issue #553).
+    let writer = crate::coordination::page_writer(dir)?;
+    let _guard = writer.lock().map_err(|_| StoreError::invalid("the page writer is unavailable"))?;
     let (format, file) = page_file(dir).ok_or_else(|| StoreError::NotFound(format!("{} is not a page", dir.display())))?;
     let text = fs::read_to_string(&file).map_err(|e| StoreError::io("read", &file, e))?;
     let line = justify::write(marked);
@@ -858,6 +1236,181 @@ mod tests {
                 "{format:?}: pre-restore copy"
             );
         }
+    }
+
+    /// Issue #553: a version keeps the page's ink and attachments with its words; restoring it
+    /// brings them back as they were, leaves a file added since alone, and refuses a damaged
+    /// copy before anything is written; a version from before files were kept says so.
+    #[test]
+    fn a_version_keeps_the_ink_and_attachments_with_the_words() {
+        let t = crate::testing::TempDir::new("page-version-files");
+        let settings = crate::settings::Settings::at(t.path().join("settings.toml"));
+        let notebook = crate::ops::create_notebook(t.path(), "Notebook", None, &settings).expect("notebook");
+        let page = crate::ops::create_node(&notebook, "Page", notecraft_model::NodeKind::Page, None, &settings).expect("page");
+        let ink = |word: &str| {
+            format!(
+                "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:nc=\"https://notecraft.org/ns/ink\"><title>{word}</title></svg>"
+            )
+        };
+        fs::write(page.join("ink.svg"), ink("first")).expect("ink");
+        fs::create_dir_all(page.join("assets")).expect("assets");
+        fs::write(page.join("assets").join("a.png"), b"one").expect("asset");
+        let initial = load_page(&page).expect("initial").body;
+        save_body(&page, "changed words").expect("save");
+        let kept = versions(&page).expect("versions");
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].files, Some(2), "the ink and the attachment are kept with the words");
+        // Changed since: the ink, the attachment, and a new attachment.
+        fs::write(page.join("ink.svg"), ink("second")).expect("ink");
+        fs::write(page.join("assets").join("a.png"), b"two").expect("asset");
+        fs::write(page.join("assets").join("b.png"), b"new").expect("new asset");
+        // A damaged copy: nothing is restored.
+        let blob = read_manifest(&version_dir(&page).join(&kept[0].id))
+            .expect("manifest")
+            .expect("a list")
+            .into_iter()
+            .find(|k| k.path == "assets/a.png")
+            .and_then(|k| k.blob)
+            .expect("kept");
+        let original = fs::read(blobs_dir(&page).join(&blob)).expect("blob");
+        fs::write(blobs_dir(&page).join(&blob), b"bad").expect("damage");
+        assert!(restore_version(&page, &kept[0].id).is_err(), "a damaged copy is refused");
+        assert_eq!(load_page(&page).expect("page").body, "changed words", "nothing was restored");
+        assert_eq!(fs::read(page.join("assets").join("a.png")).expect("asset"), b"two");
+        fs::write(blobs_dir(&page).join(&blob), original).expect("mend");
+        restore_version(&page, &kept[0].id).expect("restore");
+        assert_eq!(load_page(&page).expect("page").body, initial);
+        assert!(fs::read_to_string(page.join("ink.svg")).expect("ink").contains("first"), "the ink as it was");
+        assert_eq!(fs::read(page.join("assets").join("a.png")).expect("asset"), b"one", "the attachment as it was");
+        assert_eq!(fs::read(page.join("assets").join("b.png")).expect("new asset"), b"new", "a file added since is left alone");
+        // The page as it was before the restore is a version too, with its three files.
+        let now = versions(&page).expect("versions");
+        assert_eq!(now.len(), 2);
+        assert_eq!(now[0].files, Some(3));
+        // A version from before files were kept: its words alone.
+        let legacy = version_dir(&page).join(&now[1].id).join("files.txt");
+        fs::remove_file(legacy).expect("as an old version");
+        assert_eq!(versions(&page).expect("versions")[1].files, None, "says it keeps the words alone");
+        // The copies folder is not taken for a version.
+        assert!(versions(&page).expect("versions").iter().all(|v| v.id.len() == 20));
+    }
+
+    /// Review of #553: a restore that cannot put a file back leaves the page as it was; a damaged
+    /// list of kept files is an error, not a shorter list; a linked assets folder is not written
+    /// through; and only the files a version kept a copy of are counted.
+    #[test]
+    fn a_version_restore_is_all_or_nothing() {
+        let t = crate::testing::TempDir::new("page-version-rollback");
+        let settings = crate::settings::Settings::at(t.path().join("settings.toml"));
+        let notebook = crate::ops::create_notebook(t.path(), "Notebook", None, &settings).expect("notebook");
+        let page = crate::ops::create_node(&notebook, "Page", notecraft_model::NodeKind::Page, None, &settings).expect("page");
+        fs::create_dir_all(page.join("assets")).expect("assets");
+        fs::write(page.join("assets").join("a.png"), b"one").expect("asset");
+        fs::write(page.join("assets").join("b.png"), b"bee").expect("asset");
+        #[cfg(unix)]
+        fs::write(page.join("assets").join("odd\tname\n%41.txt"), b"odd").expect("an odd name");
+        fs::write(page.join("assets").join(".restore-diagram.png"), b"mine").expect("a name like a staging one");
+        save_body(&page, "changed words").expect("save");
+        let kept = versions(&page).expect("versions");
+        assert_eq!(
+            kept[0].files,
+            Some(if cfg!(unix) { 4 } else { 3 }),
+            "a name with a tab or line break in it is one file, and one that only starts like a staged copy is kept"
+        );
+        assert!(is_staging_name(&staging_name()) && !is_staging_name(".restore-diagram.png"));
+        fs::remove_file(page.join("assets").join(".restore-diagram.png")).expect("tidy");
+        // b.png changed, and a.png's place is now a folder: a.png cannot go back.
+        fs::write(page.join("assets").join("b.png"), b"new").expect("asset");
+        fs::remove_file(page.join("assets").join("a.png")).expect("remove");
+        fs::create_dir_all(page.join("assets").join("a.png").join("inside")).expect("a folder in its place");
+        assert!(restore_version(&page, &kept[0].id).is_err());
+        assert_eq!(load_page(&page).expect("page").body, "changed words", "the words as they were");
+        assert_eq!(fs::read(page.join("assets").join("b.png")).expect("b"), b"new", "and the other file");
+        let strays: Vec<_> =
+            fs::read_dir(page.join("assets")).expect("assets").flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".tmp")).collect();
+        assert!(strays.is_empty(), "no staged copy left behind");
+        fs::remove_dir_all(page.join("assets").join("a.png")).expect("tidy");
+        // A damaged list: an error, and the copies it may name are not thrown away.
+        let list = version_dir(&page).join(&kept[0].id).join("files.txt");
+        let good = fs::read_to_string(&list).expect("list");
+        fs::write(&list, format!("{good}junk line\n")).expect("damage");
+        assert!(restore_version(&page, &kept[0].id).is_err(), "a damaged list is refused");
+        assert_eq!(versions(&page).expect("versions").iter().find(|v| v.id == kept[0].id).and_then(|v| v.files), None);
+        fs::write(&list, &good).expect("mend");
+        // A linked assets folder is not written through.
+        #[cfg(unix)]
+        {
+            let elsewhere = t.path().join("elsewhere");
+            fs::create_dir_all(&elsewhere).expect("elsewhere");
+            fs::rename(page.join("assets"), t.path().join("moved-assets")).expect("move away");
+            std::os::unix::fs::symlink(&elsewhere, page.join("assets")).expect("link");
+            assert!(restore_version(&page, &kept[0].id).is_err(), "refused");
+            assert!(fs::read_dir(&elsewhere).expect("elsewhere").next().is_none(), "nothing written outside the page");
+        }
+    }
+
+    /// Review of #553: files that cannot be read are not left out as if kept: the version keeps
+    /// its words alone and says so, and the page is still saved.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_files_make_a_words_only_version() {
+        use std::os::unix::fs::PermissionsExt;
+        let t = crate::testing::TempDir::new("page-version-unreadable");
+        let settings = crate::settings::Settings::at(t.path().join("settings.toml"));
+        let notebook = crate::ops::create_notebook(t.path(), "Notebook", None, &settings).expect("notebook");
+        let page = crate::ops::create_node(&notebook, "Page", notecraft_model::NodeKind::Page, None, &settings).expect("page");
+        fs::create_dir_all(page.join("assets")).expect("assets");
+        fs::write(page.join("assets").join("a.png"), b"one").expect("asset");
+        fs::set_permissions(page.join("assets"), fs::Permissions::from_mode(0o000)).expect("lock");
+        let readable = fs::read_dir(page.join("assets")).is_ok();
+        let saved = save_body(&page, "changed words");
+        fs::set_permissions(page.join("assets"), fs::Permissions::from_mode(0o755)).expect("unlock");
+        saved.expect("the page is still saved");
+        if !readable {
+            assert_eq!(versions(&page).expect("versions")[0].files, None, "words only");
+        }
+    }
+
+    /// Review of #553: when the folder the copies go in is a link, no copy is kept through it,
+    /// none is taken away, and the version keeps its words alone, as before.
+    #[cfg(unix)]
+    #[test]
+    fn copies_are_not_kept_through_a_linked_folder() {
+        let t = crate::testing::TempDir::new("page-version-linked-copies");
+        let settings = crate::settings::Settings::at(t.path().join("settings.toml"));
+        let notebook = crate::ops::create_notebook(t.path(), "Notebook", None, &settings).expect("notebook");
+        let page = crate::ops::create_node(&notebook, "Page", notecraft_model::NodeKind::Page, None, &settings).expect("page");
+        fs::create_dir_all(page.join("assets")).expect("assets");
+        fs::write(page.join("assets").join("a.png"), b"one").expect("asset");
+        let elsewhere = t.path().join("elsewhere");
+        fs::create_dir_all(&elsewhere).expect("elsewhere");
+        fs::create_dir_all(version_dir(&page)).expect("versions");
+        std::os::unix::fs::symlink(&elsewhere, blobs_dir(&page)).expect("link");
+        save_body(&page, "changed words").expect("the page is still saved");
+        let kept = versions(&page).expect("versions");
+        assert_eq!(kept.len(), 1, "a version of the words");
+        assert_eq!(kept[0].files, None, "and its words alone");
+        assert!(fs::read_dir(&elsewhere).expect("elsewhere").next().is_none(), "nothing written through the link");
+    }
+
+    /// Review of #553: the size cap counts the copies the versions keep, each once, and the newest
+    /// version is kept even when it alone is over the cap.
+    #[test]
+    fn the_version_cap_counts_the_copies_once() {
+        let size = |n: &String| match n.as_str() {
+            "big" => 60,
+            "big2" => 70,
+            _ => 1,
+        };
+        let names = |list: &[&[&str]]| list.iter().map(|v| v.iter().map(|s| s.to_string()).collect::<Vec<_>>()).collect::<Vec<_>>();
+        // Three versions sharing one big copy: counted once, so all fit in 100.
+        assert_eq!(versions_to_drop(&[5, 5, 5], &names(&[&["big"], &["big"], &["big"]]), size, 50, 100), 0);
+        // A different big copy each: the oldest goes until what is left fits.
+        assert_eq!(versions_to_drop(&[5, 5, 5], &names(&[&["big"], &["big2"], &["small"]]), size, 50, 100), 1);
+        // Over the cap on its own: the newest stays.
+        assert_eq!(versions_to_drop(&[5, 5], &names(&[&[], &["big", "big2"]]), size, 50, 100), 1);
+        // The count limit still holds.
+        assert_eq!(versions_to_drop(&[1, 1, 1, 1], &names(&[&[], &[], &[], &[]]), size, 2, 100), 2);
     }
 
     /// Issue #278: a saved version can be read without restoring it.
