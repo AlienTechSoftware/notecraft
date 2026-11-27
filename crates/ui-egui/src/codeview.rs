@@ -552,8 +552,9 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     let picked = state.picked.as_deref() == Some(entry.name.as_str());
                     let row = row(ui, entry, picked, t, &mut out.file_action, dir);
                     if row.clicked() {
+                        // `loaded` is kept, so the loader sees the change and saves an OCR file's unsaved
+                        // edits before it reads the next file; clicking the same file keeps them too.
                         state.picked = Some(entry.name.clone());
-                        state.loaded = None;
                         state.as_code = false;
                     }
                     // An OCR file with unsaved edits shows a floppy on its row, like the lab's samples. A click saves it.

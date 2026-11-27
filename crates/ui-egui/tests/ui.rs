@@ -3266,7 +3266,7 @@ fn the_laser_pointer_leaves_a_fading_trail_and_nothing_on_the_page() {
     // long the machine takes to draw it. A slow runner then cannot age the trail out early.
     let mut clock = h.ctx.input(|i| i.time);
     let mut tick = |h: &mut Harness<'_, NoteCraftApp>| {
-        clock += 0.1;
+        clock += 0.05;
         h.input_mut().time = Some(clock);
     };
     tick(&mut h);
@@ -3282,7 +3282,7 @@ fn the_laser_pointer_leaves_a_fading_trail_and_nothing_on_the_page() {
     }
     review(&mut h, "laser_pointer");
     let drawn = red(&support::gui::render(&mut h).expect("render")).saturating_sub(base);
-    // Every point is at most 0.6 s old here, inside the 0.8 s fade, so the whole trail is drawn.
+    // Every point is at most 0.65 s old here (13 ticks of 0.05 s), inside the 0.8 s fade, so the whole trail is drawn.
     assert!(drawn > 100, "the trail is drawn in red while pointing ({drawn} pixels)");
     let end = from + egui::vec2(240.0, 72.0);
     tick(&mut h);

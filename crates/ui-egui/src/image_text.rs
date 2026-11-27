@@ -39,7 +39,8 @@ pub fn saved_text_lines(picture: &Path) -> Option<Vec<String>> {
     if value.get("schema")?.as_str()? != "notecraft.ocr" || value.get("version")?.as_u64()? != 1 {
         return None;
     }
-    let lines: Vec<String> = value.get("lines")?.as_array()?.iter().filter_map(|l| l.get("text")?.as_str().map(str::to_string)).collect();
+    // A file with a line that has no text is incomplete: nothing is converted from it, rather than part of it.
+    let lines: Vec<String> = value.get("lines")?.as_array()?.iter().map(|l| l.get("text")?.as_str().map(str::to_string)).collect::<Option<_>>()?;
     (!lines.is_empty()).then_some(lines)
 }
 /// Draws the boxes over a picture shown at `rect`. `size` is the picture's size in pixels.
