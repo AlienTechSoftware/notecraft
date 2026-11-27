@@ -17396,7 +17396,8 @@ fn a_page_menu_at_the_window_edge_turns_to_stay_inside() {
     h.state_mut().open_path(&s.md_page.to_string_lossy());
     settle(&mut h);
     // Just above the status bar, which is not the page.
-    for (x, y) in [(size.x - 30.0, 300.0), (500.0, size.y - 60.0), (size.x - 30.0, size.y - 60.0)] {
+    // Below the ribbon's footer row, which pushes the page down (issue #505).
+    for (x, y) in [(size.x - 30.0, 330.0), (500.0, size.y - 60.0), (size.x - 30.0, size.y - 60.0)] {
         ask(&mut h, "ui.click", json!({"x": x, "y": y, "button": "right"})).expect("right-click the page");
         settle(&mut h);
         for item in ["This page", "Equation", "Attach a file", "Lock read only"] {
@@ -19674,4 +19675,19 @@ fn a_paste_in_the_find_bar_goes_into_its_field_and_not_the_page() {
         assert_eq!(look_at(&mut h)["pageFind"]["words"].as_str(), Some("More"), "{path}: into the field, once");
         assert_eq!(look_at(&mut h)["pageFind"]["count"].as_u64(), Some(1));
     }
+}
+
+/// The ribbon's tab row with its display options button, and the menu it opens. Set
+/// NOTECRAFT_UI_VISUAL_DIR to save the pictures; without it this checks the menu is there.
+#[test]
+fn the_ribbon_display_menu_is_drawn_and_opens() {
+    let (_t, app, s) = sample_app("ui-ribbon-display-menu");
+    let mut h = harness(app, LIGHT);
+    h.state_mut().open_path(&s.html_page.to_string_lossy());
+    settle(&mut h);
+    review(&mut h, "ribbon-tabs-before");
+    h.get_by_label("Ribbon display options").click();
+    h.run_steps(3);
+    review(&mut h, "ribbon-display-menu-open");
+    assert!(h.query_all_by_label("Show tabs only").next().is_some(), "the menu lists Show tabs only");
 }

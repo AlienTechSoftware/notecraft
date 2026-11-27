@@ -1724,3 +1724,10 @@
 @id	ui.find_close	Close Find
 @id	ui.find_close_tip	Close the find bar and go back to the page (Escape)
 @id	ui.discard_ocr_edits	Discard the unsaved edits of this OCR file
+@id	ui.ribbon_display_options	Ribbon display options
+@id	ui.classic_ribbon	Classic Ribbon
+@id	ui.simplified_ribbon	Simplified Ribbon
+@id	ui.full_screen_mode	Full-screen mode
+@id	ui.show_tabs_only	Show tabs only
+@id	ui.always_show_ribbon	Always show Ribbon
+@id	ui.hide_quick_access_toolbar	Hide Quick Access Toolbar
