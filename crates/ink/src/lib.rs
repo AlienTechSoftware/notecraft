@@ -30,6 +30,7 @@ pub mod pick;
 pub mod rack;
 pub mod recognise;
 pub mod ruler;
+pub mod scratch;
 pub mod shape;
 pub mod shapes;
 pub mod svg;

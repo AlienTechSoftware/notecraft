@@ -143,9 +143,98 @@ pub fn is_long_date(text: &str) -> bool {
     WEEKDAYS.iter().any(|w| text.starts_with(w) && text[w.len()..].starts_with(", "))
 }
 
+/// The date and time a page's stamp shows below its title (issue #541): either may be left off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Stamp {
+    /// Year, month and day.
+    pub date: Option<(i64, u32, u32)>,
+    /// Hours and minutes, on a 24-hour clock.
+    pub time: Option<(u32, u32)>,
+}
+
+/// Reads a page's stamp as [`long_from_iso`] writes it, `Thursday, 26 November 2026, 11:40`, or
+/// with the date or the time left off (`Thursday, 26 November 2026`, `11:40`). `None` for
+/// anything else, a date that does not exist included.
+pub fn parse_stamp(text: &str) -> Option<Stamp> {
+    let text = text.trim();
+    let clock = |t: &str| -> Option<(u32, u32)> {
+        let (h, m) = t.split_once(':')?;
+        if h.is_empty() || h.len() > 2 || m.len() != 2 || !h.bytes().chain(m.bytes()).all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
+        (h <= 23 && m <= 59).then_some((h, m))
+    };
+    if let Some(time) = clock(text) {
+        return Some(Stamp { date: None, time: Some(time) });
+    }
+    let weekday = WEEKDAYS.iter().find(|w| text.starts_with(**w) && text[w.len()..].starts_with(", "))?;
+    let rest = &text[weekday.len() + 2..];
+    let (date, time) = match rest.rsplit_once(", ") {
+        Some((date, time)) if clock(time).is_some() => (date, clock(time)),
+        _ => (rest, None),
+    };
+    let mut words = date.split_whitespace();
+    let d: u32 = words.next()?.parse().ok()?;
+    let month = words.next()?;
+    let y: i64 = words.next()?.parse().ok()?;
+    if words.next().is_some() {
+        return None;
+    }
+    let m = u32::try_from(MONTHS.iter().position(|n| *n == month)? + 1).ok()?;
+    if !(1..=31).contains(&d) || civil_from_days(days_from_civil(y, m, d)) != (y, m, d) {
+        return None;
+    }
+    Some(Stamp { date: Some((y, m, d)), time })
+}
+
+/// Writes a page's stamp in the form [`parse_stamp`] reads: the weekday worked out from the date.
+/// Empty when both are left off.
+pub fn format_stamp(stamp: Stamp) -> String {
+    let date = stamp.date.and_then(|(y, m, d)| {
+        let days = days_from_civil(y, m, d);
+        let weekday = WEEKDAYS.get(days.rem_euclid(7) as usize)?;
+        let month = MONTHS.get(m.checked_sub(1)? as usize)?;
+        Some(format!("{weekday}, {d} {month} {y}"))
+    });
+    let time = stamp.time.map(|(h, m)| format!("{h:02}:{m:02}"));
+    match (date, time) {
+        (Some(date), Some(time)) => format!("{date}, {time}"),
+        (Some(date), None) => date,
+        (None, Some(time)) => time,
+        (None, None) => String::new(),
+    }
+}
+
+/// How many days a month has, for a date picker.
+pub fn days_in_month(y: i64, m: u32) -> u32 {
+    let next = if m == 12 { days_from_civil(y + 1, 1, 1) } else { days_from_civil(y, m + 1, 1) };
+    u32::try_from(next - days_from_civil(y, m, 1)).unwrap_or(31)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #541: a page's stamp is read and written with its date, its time, or both, the
+    /// weekday following the date; a date that does not exist is not a stamp.
+    #[test]
+    fn a_stamp_reads_and_writes_with_either_part_left_off() {
+        let both = parse_stamp("Thursday, 26 November 2026, 11:40").expect("both");
+        assert_eq!(both, Stamp { date: Some((2026, 11, 26)), time: Some((11, 40)) });
+        assert_eq!(format_stamp(both), "Thursday, 26 November 2026, 11:40");
+        let date = parse_stamp("Thursday, 26 November 2026").expect("date");
+        assert_eq!(date.time, None);
+        assert_eq!(parse_stamp("09:05"), Some(Stamp { date: None, time: Some((9, 5)) }));
+        assert_eq!(format_stamp(Stamp { date: Some((2026, 12, 25)), time: None }), "Friday, 25 December 2026", "the weekday follows the date");
+        assert_eq!(format_stamp(Stamp { date: None, time: None }), "");
+        for bad in ["", "Thursday, 31 November 2026", "Someday, 1 May 2026", "25:00", "11:4", "Thursday, 26 Nov 2026", "hello"] {
+            assert_eq!(parse_stamp(bad), None, "{bad}");
+        }
+        assert_eq!(days_in_month(2024, 2), 29);
+        assert_eq!(days_in_month(2026, 2), 28);
+        assert_eq!(days_in_month(2026, 12), 31);
+    }
 
     #[test]
     fn secs_from_iso_reads_back_what_iso_from_secs_wrote() {

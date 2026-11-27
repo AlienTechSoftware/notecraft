@@ -96,6 +96,39 @@ pub fn printout_page(format: PageFormat, link: &str, page: usize) -> String {
     }
 }
 
+/// The line a printout's page starts with, when each printed page has a page of its own (issue
+/// #572): which document it is from, and which of its pages.
+pub fn printout_from(format: PageFormat, name: &str, page: usize, count: usize) -> String {
+    let words = crate::i18n::format_message_id("ui.printout_from", &[("name", name), ("page", &page.to_string()), ("count", &count.to_string())]);
+    match format {
+        PageFormat::Html => format!("<p>{}</p>\n", escape_html(&words)),
+        PageFormat::Cmgfm => format!("{}\n", escape_markdown(&words)),
+    }
+}
+
+/// A line that is a link, in a paragraph of its own.
+pub fn link_line(format: PageFormat, uri: &str, label: &str) -> String {
+    match format {
+        PageFormat::Html => format!("\n<p><a href=\"{}\">{}</a></p>\n", escape_html(uri), escape_html(label)),
+        PageFormat::Cmgfm => format!("\n[{}](<{uri}>)\n", escape_markdown(label)),
+    }
+}
+
+fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+fn escape_markdown(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if matches!(c, '\\' | '[' | ']' | '*' | '_' | '`' | '<' | '>' | '#') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 fn attachment_icon(link: &str) -> String {
     let name = link.strip_prefix("assets/").unwrap_or(link);
     format!("assets/{name}{}", attachment_icon_extension())

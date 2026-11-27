@@ -1365,6 +1365,31 @@ pub fn is_title_echo(blocks: &[Block], i: usize, title: &str) -> bool {
 /// It is drawn as a stamp, quiet and grey, the way OneNote draws the date under a page
 /// title, rather than as an ordinary paragraph. It is still a paragraph in the file, so
 /// anything can read it; this only says which one it is.
+/// Where the page's stamp, the date and time below its title, was drawn: its block and its
+/// rectangle, with the pass it was drawn in, so the page's menu can offer to change it when it
+/// is opened over it (issue #541).
+fn stamp_place_id(ctx: &egui::Context) -> egui::Id {
+    egui::Id::new(("page-stamp-place", ctx.viewport_id()))
+}
+
+/// Notes where the block just drawn is, when it is the page's stamp.
+fn note_stamp(ui: &mut Ui, blocks: &[Block], i: usize, top: f32) {
+    if is_page_stamp(blocks, i) {
+        let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().min.y.max(top + 1.0));
+        let pass = ui.ctx().cumulative_pass_nr();
+        let id = stamp_place_id(ui.ctx());
+        ui.data_mut(|d| d.insert_temp(id, (i, rect, pass)));
+    }
+}
+
+/// The page's stamp block and where it was drawn, if it was drawn this pass or the one before.
+pub fn stamp_place(ctx: &egui::Context) -> Option<(usize, egui::Rect)> {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data(|d| d.get_temp::<(usize, egui::Rect, u64)>(stamp_place_id(ctx)))
+        .filter(|(_, _, drawn)| pass.saturating_sub(*drawn) <= 1)
+        .map(|(i, rect, _)| (i, rect))
+}
+
 pub fn is_page_stamp(blocks: &[Block], i: usize) -> bool {
     // The first block of a page, or the second when the page opens with its own heading.
     let after_heading = i == 1 && matches!(blocks.first(), Some(Block::Heading { level: 1, .. }));
@@ -1376,7 +1401,8 @@ pub fn is_page_stamp(blocks: &[Block], i: usize) -> bool {
     match blocks.get(i) {
         Some(Block::Paragraph(spans, _)) => {
             let words: String = spans.iter().map(|s| s.text.as_str()).collect();
-            notecraft_model::time::is_long_date(&words)
+            // With its time left off, or its date, it is still the stamp (issue #541).
+            notecraft_model::time::is_long_date(&words) || notecraft_model::time::parse_stamp(&words).is_some()
         }
         _ => false,
     }
@@ -2781,6 +2807,7 @@ pub fn show_blocks(
                         }
                     }
                 }
+                note_stamp(ui, blocks, i, top);
                 frame_block(ui, top, outlined, t, zoom);
                 paragraph_header_below(ui, page_dir, blocks, i, &mut changed, zoom);
                 if let Some(a) = action.take() {
@@ -3123,6 +3150,7 @@ pub fn show_blocks(
                     }
                 }
             }
+            note_stamp(ui, blocks, i, top);
             frame_block(ui, top, outlined, t, zoom);
             paragraph_header_below(ui, page_dir, blocks, i, &mut changed, zoom);
         } else {
@@ -3258,6 +3286,7 @@ pub fn show_blocks(
                 let over_link = resp.hover_pos().and_then(|p| link_under(ui, &block, &resp, p, t, page, zoom)).is_some();
                 ui.ctx().set_cursor_icon(if over_link { egui::CursorIcon::PointingHand } else { egui::CursorIcon::Text });
             }
+            note_stamp(ui, blocks, i, top);
             frame_block(ui, top, false, t, zoom);
             paragraph_header_below(ui, page_dir, blocks, i, &mut changed, zoom);
         }

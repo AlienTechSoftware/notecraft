@@ -42,6 +42,8 @@ pub enum Act {
     SetUiScale(u16),
     /// Options > switch tools with the device in hand, on or off (issue #9).
     SetAutoSwitch(bool),
+    /// Erase ink with a scratch-out gesture, on or off (issue #569).
+    SetScratchOut(bool),
     /// Options > Quick Notes (issue #567): new Quick Notes go into this section, or with `None`
     /// into the Quick Notes notebook NoteCraft keeps for them.
     SetQuickNotesSection(Option<std::path::PathBuf>),
@@ -209,6 +211,7 @@ pub fn show(
     languages: &[crate::i18n::LanguageChoice],
     ui_scale: u16,
     auto_switch: bool,
+    scratch_out: bool,
     quick_notes: &QuickNotes,
     update_check_off: bool,
     welcome_notebook_update_prompt: bool,
@@ -250,6 +253,7 @@ pub fn show(
                         languages,
                         ui_scale,
                         auto_switch,
+                        scratch_out,
                         quick_notes,
                         update_check_off,
                         welcome_notebook_update_prompt,
@@ -730,6 +734,7 @@ fn options_page(
     languages: &[crate::i18n::LanguageChoice],
     ui_scale: u16,
     auto_switch: bool,
+    scratch_out: bool,
     quick_notes: &QuickNotes,
     update_check_off: bool,
     welcome_notebook_update_prompt: bool,
@@ -817,6 +822,13 @@ fn options_page(
         acts.push(Act::SetAutoSwitch(switching));
     }
     ui.label(egui::RichText::new(crate::tl_id!("ui.auto_switch_tip")).size(11.5).color(t.muted));
+    ui.add_space(12.0);
+    // Issue #569: a quick zigzag over ink rubs it out, when this is on.
+    let mut scratching = scratch_out;
+    if ui.checkbox(&mut scratching, crate::tl_id!("ui.scratch_out")).changed() {
+        acts.push(Act::SetScratchOut(scratching));
+    }
+    ui.label(egui::RichText::new(crate::tl_id!("ui.scratch_out_tip")).size(11.5).color(t.muted));
     ui.add_space(12.0);
     section_heading(ui, 1);
     let current = crate::i18n::format_message_id("ui.notebooks_folder_current", &[("folder", notebooks_folder)]);
@@ -956,6 +968,7 @@ mod tests {
                 &crate::i18n::available_languages(),
                 100,
                 true,
+                false,
                 &QuickNotes::default(),
                 false,
                 true,
