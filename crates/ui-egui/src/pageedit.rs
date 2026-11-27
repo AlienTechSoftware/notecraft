@@ -2262,6 +2262,11 @@ pub fn autolink_typed(caret: &mut Caret, block: &Block) -> bool {
     let Some((start, end, markup)) = autolink_typed_address(&caret.text, at) else {
         return false;
     };
+    // An address already inside a link keeps that link's target: nothing is written over it.
+    let inside_link = caret.inline.as_ref().is_some_and(|inline| (start..end).any(|i| inline_edit::link_span(inline.spans(), i).is_some()));
+    if inside_link {
+        return false;
+    }
     caret.replace_range(block, (start, end), &markup);
     caret.selection = (at, at);
     caret.place = Some(at);
@@ -2922,6 +2927,12 @@ pub fn show_blocks(
                     remember_caret_anchor(ui, &out, c);
                     let mut cursor_range = out.cursor_range;
                     // Issue #540: a web address that a space has just followed becomes a link.
+                    // The caret is where the text box has it now, not where it was before the key.
+                    if out.response.changed()
+                        && let Some(r) = cursor_range
+                    {
+                        c.selection = (r.primary.index.0, r.secondary.index.0);
+                    }
                     if out.response.changed() && autolink_typed(c, &block) {
                         ui.ctx().request_repaint();
                     }
@@ -4660,6 +4671,17 @@ mod tests {
 
         let mut plain = Caret { text: "no space yet https://example.test".into(), selection: (33, 33), ..caret.clone() };
         assert!(!autolink_typed(&mut plain, &block), "nothing happens until a space is typed");
+    }
+
+    /// Issue #540 review: an address already inside a link is left alone, so its target is kept.
+    #[test]
+    fn an_address_inside_a_link_is_not_linked_again() {
+        let block = blocks("[https://example.test/x](https://example.test/x)").remove(0);
+        let typed = "https://example.test/x ";
+        let end = typed.chars().count();
+        let mut caret =
+            Caret { block: 0, text: typed.to_string(), focus: true, selection: (end, end), place: None, cell: None, span: None, inline: None };
+        assert!(!autolink_typed(&mut caret, &block), "the link keeps its own target");
     }
 
     /// Issue #165: the Format Painter picks up the formatting at the caret and puts exactly that

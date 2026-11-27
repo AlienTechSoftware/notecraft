@@ -17,6 +17,16 @@ Developer setup, workflow, and automation for local NoteCraft work. The newcomer
 summary is [`README_DEV.md`](../../README_DEV.md); this skill is the detailed and
 authoritative reference for the gates and CI/CD lanes.
 
+### A plea to every developer and AI assistant
+
+Please hold a high standard on this project, and do not take shortcuts. The gates, tests and
+reviews are there because someone who never sees your change will use it. A green run that
+skipped a check, a test written to pass rather than to prove, or a fix that only hides the
+symptom costs far more later than it saves now. If a check cannot run, say so and leave the
+result unverified. Do not reach for `--no-verify`, do not weaken a test to make it pass, and
+do not claim a behaviour works until someone has seen it work. Write the test first, fix the
+cause, and report exactly what you ran and what it showed.
+
 ---
 
 ## One-Time Setup
