@@ -30,6 +30,19 @@ const LINE_PALETTE: [Color32; 8] = [
 ];
 
 /// The colour of a recognised line: the one chosen for it, or its place in the palette.
+/// The [✕] that discards an edited OCR file's changes, drawn with lines like the check mark.
+fn cross_button(ui: &mut egui::Ui) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(22.0, 18.0), Sense::click());
+    let visuals = ui.style().interact(&response);
+    ui.painter().rect(rect, visuals.corner_radius, visuals.weak_bg_fill, visuals.bg_stroke, StrokeKind::Inside);
+    let r = rect.shrink(6.0);
+    let stroke = Stroke::new(1.6, visuals.text_color());
+    ui.painter().line_segment([r.left_top(), r.right_bottom()], stroke);
+    ui.painter().line_segment([r.right_top(), r.left_bottom()], stroke);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Discard the unsaved edits of this OCR file"));
+    response
+}
+
 /// The check mark that saves an edited OCR file, drawn with lines so it shows whatever fonts the
 /// computer has (a check glyph is not in every font).
 fn check_button(ui: &mut egui::Ui) -> egui::Response {
@@ -1315,6 +1328,8 @@ impl Lab {
         let mut view_json: Option<PathBuf> = None;
         // The check mark on the open OCR file's row was clicked: its edits are saved.
         let mut save_json = false;
+        // The [✕] on the open OCR file's row was clicked: its unsaved edits are thrown away.
+        let mut discard_json = false;
         // Language, then how the sample was made, then what it contains. A sample with several content
         // tags appears under each of them.
         type Contents = std::collections::BTreeMap<String, Vec<usize>>;
@@ -1424,11 +1439,16 @@ impl Lab {
                                                                 view_json = Some(text_file.clone());
                                                             }
                                                             // Beside the file's name, once its text is edited and not saved.
-                                                            if showing
-                                                                && self.viewing_dirty()
-                                                                && check_button(ui).on_hover_text("Save this OCR file").clicked()
-                                                            {
-                                                                save_json = true;
+                                                            if showing && self.viewing_dirty() {
+                                                                if check_button(ui).on_hover_text("Save this OCR file").clicked() {
+                                                                    save_json = true;
+                                                                }
+                                                                if cross_button(ui)
+                                                                    .on_hover_text("Discard the unsaved edits of this OCR file")
+                                                                    .clicked()
+                                                                {
+                                                                    discard_json = true;
+                                                                }
                                                             }
                                                         });
                                                     });
@@ -1470,6 +1490,9 @@ impl Lab {
         }
         if save_json {
             self.save_viewing();
+        }
+        if discard_json {
+            self.discard_viewing();
         }
         // Clicking the file's row shows it, and clicking it again hides it.
         if let Some(path) = view_json {
@@ -1685,6 +1708,19 @@ impl Lab {
         self.viewing_changed = true;
     }
 
+    /// Throws the open file's unsaved edits away: its text is read again from disk.
+    fn discard_viewing(&mut self) {
+        let Some((path, _)) = self.viewing_json.clone() else { return };
+        match std::fs::read_to_string(&path) {
+            Ok(text) => {
+                self.viewing_json = Some((path.clone(), text.trim_start_matches('\u{feff}').to_string()));
+                self.viewing_changed = false;
+                self.status = format!("Discarded the edits to {}", path.display());
+            }
+            Err(e) => self.status = format!("Could not read {}: {e}", path.display()),
+        }
+    }
+
     /// Writes the open file's edited text back to its file, and clears the dirty state.
     fn save_viewing(&mut self) {
         let Some((path, text)) = self.viewing_json.clone() else { return };
@@ -1709,10 +1745,16 @@ impl Lab {
             let dirty = self.viewing_changed;
             let mut edited = false;
             let mut save = false;
+            let mut discard = false;
             ui.horizontal(|ui| {
                 ui.strong(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
-                if dirty && check_button(ui).on_hover_text("Save this OCR file").clicked() {
-                    save = true;
+                if dirty {
+                    if check_button(ui).on_hover_text("Save this OCR file").clicked() {
+                        save = true;
+                    }
+                    if cross_button(ui).on_hover_text("Discard the unsaved edits of this OCR file").clicked() {
+                        discard = true;
+                    }
                 }
             });
             ui.separator();
@@ -1731,6 +1773,9 @@ impl Lab {
             }
             if save {
                 self.save_viewing();
+            }
+            if discard {
+                self.discard_viewing();
             }
             return;
         }
@@ -2171,6 +2216,26 @@ mod tests {
         lab.save_viewing();
         assert!(!lab.viewing_dirty(), "saving clears the dirty state");
         assert_eq!(std::fs::read_to_string(&file).expect("saved"), "{\"text\": \"Sourdough\"}", "the file is written");
+        std::fs::remove_dir_all(&dir).expect("clean up");
+    }
+
+    #[test]
+    fn discarding_an_edited_ocr_file_brings_back_what_is_on_disk() {
+        let dir = std::env::temp_dir().join(format!("ocr-lab-discard-{}", crate::unique_suffix()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let file = dir.join("p.png.ocr.json");
+        std::fs::write(&file, "{\"text\": \"Sourdough\"}").expect("file");
+        let mut lab = Lab::new(dir.clone(), None, None, false, telemetry::Log::open(&dir.join("log.txt")));
+        lab.show_file(&file);
+        lab.note_edit();
+        if let Some((_, text)) = lab.viewing_json.as_mut() {
+            text.clear();
+        }
+        assert!(lab.viewing_dirty(), "the edit is unsaved");
+        lab.discard_viewing();
+        assert!(!lab.viewing_dirty(), "discarding clears the dirty state");
+        assert_eq!(lab.viewing_json.as_ref().map(|(_, t)| t.as_str()), Some("{\"text\": \"Sourdough\"}"), "the file's text is back");
+        assert_eq!(std::fs::read_to_string(&file).expect("file"), "{\"text\": \"Sourdough\"}", "nothing was written");
         std::fs::remove_dir_all(&dir).expect("clean up");
     }
 

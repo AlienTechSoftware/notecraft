@@ -1723,3 +1723,4 @@
 @id	ui.find_next_tip	[[RLI]]$$$The next place found (F3)@@@[[PDI]]
 @id	ui.find_close	[[RLI]]$$$Close Find@@@[[PDI]]
 @id	ui.find_close_tip	[[RLI]]$$$Close the find bar and go back to the page (Escape)@@@[[PDI]]
+@id	ui.discard_ocr_edits	[[RLI]]$$$Discard the unsaved edits of this OCR file@@@[[PDI]]

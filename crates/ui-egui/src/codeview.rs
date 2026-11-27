@@ -566,6 +566,12 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                             out.wrote = Some((entry.name.clone(), state.text.clone()));
                             state.dirty = false;
                         }
+                        // To its left, [✕] throws the unsaved edits away: the file is read again from disk.
+                        let at_cancel = at.translate(vec2(-24.0, 0.0));
+                        if cross_button(ui, at_cancel, t, crate::tl_id!("ui.discard_ocr_edits")).clicked() {
+                            state.loaded = None;
+                            state.dirty = false;
+                        }
                     }
                 }
             });
@@ -919,6 +925,17 @@ fn check_button(ui: &mut Ui, at: Rect, t: &Tokens, label: &str) -> egui::Respons
     response
 }
 
+/// The [✕] that discards an OCR file's unsaved edits, drawn with lines like the check mark.
+fn cross_button(ui: &mut Ui, at: Rect, t: &Tokens, label: &str) -> egui::Response {
+    let response = ui.put(at, egui::Button::new("").small()).on_hover_text(label);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    let r = response.rect.shrink(6.0);
+    let stroke = egui::Stroke::new(1.6, t.accent);
+    ui.painter().line_segment([r.left_top(), r.right_bottom()], stroke);
+    ui.painter().line_segment([r.right_top(), r.left_bottom()], stroke);
+    response
+}
+
 fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option<FileAction>, page_dir: &Path) -> egui::Response {
     let height = 20.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
@@ -1021,6 +1038,13 @@ mod tests {
         h.run_steps(3);
         assert!(h.state().dirty, "the typed edit is recorded as unsaved");
         assert!(h.query_by_label(save).is_some(), "the edited OCR file shows its check mark on its row");
+        // [✕] beside the check throws the edit away, and the check goes with it.
+        let discard = "Discard the unsaved edits of this OCR file";
+        assert!(h.query_by_label(discard).is_some(), "and a cross beside it discards the edit");
+        h.get_by_label(discard).click();
+        h.run_steps(3);
+        assert!(!h.state().dirty, "discarding clears the unsaved state");
+        assert!(h.query_by_label(save).is_none(), "and the check mark goes");
     }
 
     /// Shows the code view for the page file `index.md` in `dir`, types `typed` into its editor,

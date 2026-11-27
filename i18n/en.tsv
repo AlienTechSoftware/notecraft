@@ -1723,3 +1723,4 @@
 @id	ui.find_next_tip	The next place found (F3)
 @id	ui.find_close	Close Find
 @id	ui.find_close_tip	Close the find bar and go back to the page (Escape)
+@id	ui.discard_ocr_edits	Discard the unsaved edits of this OCR file
