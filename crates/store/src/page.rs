@@ -147,7 +147,7 @@ pub fn restore_version(dir: &Path, id: &str) -> Result<()> {
     if manifest.as_ref().is_some_and(|kept| kept.iter().any(|k| k.blob.is_some())) && !copies_are_safe(dir) {
         return Err(StoreError::invalid("the folder the page version's files are kept in is a link; nothing was restored"));
     }
-    let mut put_back: Vec<(PathBuf, Vec<u8>)> = Vec::new();
+    let mut put_back: Vec<(PathBuf, Vec<u8>, Option<Vec<u8>>)> = Vec::new();
     for kept in manifest.unwrap_or_default() {
         let Some(blob) = kept.blob else { continue };
         let target = companion_path(dir, &kept.path).ok_or_else(|| StoreError::invalid("a page version names a file outside its page"))?;
@@ -156,8 +156,16 @@ pub fn restore_version(dir: &Path, id: &str) -> Result<()> {
         if bytes.len() as u64 != kept.bytes || !blob.starts_with(&content_name(&bytes)) {
             return Err(StoreError::invalid(format!("the copy of {} kept with that version is damaged; nothing was restored", kept.path)));
         }
-        if fs::read(&target).ok().as_deref() != Some(bytes.as_slice()) {
-            put_back.push((target, bytes));
+        // What is there now must be read first, so it can be put back if the restore goes wrong
+        // and is kept by the version taken before it: a file there that cannot be read stops
+        // the restore before anything changes. Only a file not there at all has nothing to keep.
+        let before = match fs::read(&target) {
+            Ok(there) => Some(there),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(StoreError::io("read", &target, e)),
+        };
+        if before.as_deref() != Some(bytes.as_slice()) {
+            put_back.push((target, bytes, before));
         }
     }
     // The page as it is now is kept as a version first, so the restore can itself be undone.
@@ -170,20 +178,20 @@ pub fn restore_version(dir: &Path, id: &str) -> Result<()> {
             let _ = fs::remove_file(tmp);
         }
     };
-    for (target, bytes) in &put_back {
+    for (target, bytes, before) in &put_back {
         let staging = target.parent().map(Path::to_path_buf).unwrap_or_else(|| dir.to_path_buf());
         if let Err(e) = fs::create_dir_all(&staging) {
             cleanup(&staged);
             return Err(StoreError::io("create", &staging, e));
         }
-        let tmp = staging.join(format!(".restore-{}.tmp", new_id()));
+        let tmp = staging.join(staging_name());
         let written = fs::OpenOptions::new().write(true).create_new(true).open(&tmp).and_then(|mut f| std::io::Write::write_all(&mut f, bytes));
         if let Err(e) = written {
             let _ = fs::remove_file(&tmp);
             cleanup(&staged);
             return Err(StoreError::io("write", &tmp, e));
         }
-        staged.push((target.clone(), tmp, fs::read(target).ok()));
+        staged.push((target.clone(), tmp, before.clone()));
     }
     if let Err(e) = write_atomic_file(&file, &out) {
         cleanup(&staged);
@@ -246,7 +254,7 @@ fn companions(dir: &Path) -> Result<Vec<String>> {
         let kind = entry.file_type().map_err(|e| StoreError::io("read", &entry.path(), e))?;
         let name = entry.file_name().to_string_lossy().into_owned();
         // Not a file a restore is staging beside its place.
-        if kind.is_file() && !name.starts_with(".restore-") {
+        if kind.is_file() && !is_staging_name(&name) {
             names.push(format!("assets/{name}"));
         }
     }
@@ -269,6 +277,17 @@ fn companion_path(dir: &Path, path: &str) -> Option<PathBuf> {
         }
     }
     Some(out)
+}
+
+/// The name a restore stages a file under beside its place: `.restore-`, a fresh version id and
+/// `.tmp`. Only a name of exactly that shape is passed over when a version lists the page's files,
+/// so an attachment that merely starts the same way is kept like any other.
+fn staging_name() -> String {
+    format!(".restore-{}.tmp", new_id())
+}
+
+fn is_staging_name(name: &str) -> bool {
+    name.strip_prefix(".restore-").and_then(|rest| rest.strip_suffix(".tmp")).is_some_and(valid_version_id)
 }
 
 fn blobs_dir(dir: &Path) -> PathBuf {
@@ -1290,9 +1309,16 @@ mod tests {
         fs::write(page.join("assets").join("b.png"), b"bee").expect("asset");
         #[cfg(unix)]
         fs::write(page.join("assets").join("odd\tname\n%41.txt"), b"odd").expect("an odd name");
+        fs::write(page.join("assets").join(".restore-diagram.png"), b"mine").expect("a name like a staging one");
         save_body(&page, "changed words").expect("save");
         let kept = versions(&page).expect("versions");
-        assert_eq!(kept[0].files, Some(if cfg!(unix) { 3 } else { 2 }), "a name with a tab or line break in it is one file");
+        assert_eq!(
+            kept[0].files,
+            Some(if cfg!(unix) { 4 } else { 3 }),
+            "a name with a tab or line break in it is one file, and one that only starts like a staged copy is kept"
+        );
+        assert!(is_staging_name(&staging_name()) && !is_staging_name(".restore-diagram.png"));
+        fs::remove_file(page.join("assets").join(".restore-diagram.png")).expect("tidy");
         // b.png changed, and a.png's place is now a folder: a.png cannot go back.
         fs::write(page.join("assets").join("b.png"), b"new").expect("asset");
         fs::remove_file(page.join("assets").join("a.png")).expect("remove");
