@@ -550,7 +550,9 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
             egui::ScrollArea::vertical().id_salt("code-files").max_height(height - 24.0).show(ui, |ui| {
                 for entry in entries {
                     let picked = state.picked.as_deref() == Some(entry.name.as_str());
-                    let row = row(ui, entry, picked, t, &mut out.file_action, dir);
+                    // While the OCR marks show at the row's right edge, the file size moves left of them.
+                    let marks = picked && entry.kind == Kind::Ocr && state.dirty;
+                    let row = row(ui, entry, picked, t, &mut out.file_action, dir, marks);
                     if row.clicked() {
                         // `loaded` is kept, so the loader sees the change and saves an OCR file's unsaved
                         // edits before it reads the next file; clicking the same file keeps them too.
@@ -561,7 +563,7 @@ pub fn show(ui: &mut Ui, state: &mut State, entries: &[Entry], dir: &Path, t: &T
                     if picked && entry.kind == Kind::Ocr && state.dirty {
                         // Drawn on the row itself, at its right edge, so it sits beside the file name.
                         let at = egui::Rect::from_min_size(
-                            egui::pos2(row.rect.right() - 24.0, row.rect.center().y - MARK_SIDE / 2.0),
+                            egui::pos2(row.rect.right() - 26.0, row.rect.center().y - MARK_SIDE / 2.0),
                             vec2(MARK_SIDE, MARK_SIDE),
                         );
                         let save = check_button(ui, at, t, crate::tl_id!("ui.save_ocr_file"));
@@ -949,7 +951,7 @@ fn cross_button(ui: &mut Ui, at: Rect, t: &Tokens, label: &str) -> egui::Respons
     mark_button(ui, at, t, label, true)
 }
 
-fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option<FileAction>, page_dir: &Path) -> egui::Response {
+fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option<FileAction>, page_dir: &Path, marks: bool) -> egui::Response {
     let height = 20.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
     if picked || resp.hovered() {
@@ -958,7 +960,8 @@ fn row(ui: &mut Ui, entry: &Entry, picked: bool, t: &Tokens, action: &mut Option
     let colour = if entry.used { t.text } else { t.muted };
     let at = egui::pos2(rect.min.x + 6.0, rect.center().y);
     ui.painter().text(at, egui::Align2::LEFT_CENTER, &entry.name, egui::FontId::monospace(12.0), colour);
-    let right = egui::pos2(rect.max.x - 6.0, rect.center().y);
+    // Left of the OCR marks when they show (they take 54 px at the right edge).
+    let right = egui::pos2(rect.max.x - 6.0 - if marks { 54.0 } else { 0.0 }, rect.center().y);
     ui.painter().text(right, egui::Align2::RIGHT_CENTER, size_text(entry.bytes), egui::FontId::proportional(10.0), t.muted);
     let enabled = ui.is_enabled();
     let label = format!("{} ({})", entry.name, size_text(entry.bytes));
