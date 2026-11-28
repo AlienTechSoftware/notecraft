@@ -64,7 +64,8 @@ function Invoke-Build {
 
         $wasmOpt = Get-WasmOpt
         foreach ($file in Get-ChildItem (Join-Path $demo '*.wasm')) {
-            & $wasmOpt -O3 --strip-debug --enable-bulk-memory --enable-bulk-memory-opt --enable-call-indirect-overlong `
+            # -O1, not -O3: -O3 ran for over 20 minutes on this build without finishing (2026-11-28).
+            & $wasmOpt -O1 --strip-debug --enable-bulk-memory --enable-bulk-memory-opt --enable-call-indirect-overlong `
                 --enable-multivalue --enable-mutable-globals --enable-nontrapping-float-to-int --enable-reference-types `
                 --enable-sign-ext --enable-simd --enable-tail-call $file.FullName -o $file.FullName
         }
