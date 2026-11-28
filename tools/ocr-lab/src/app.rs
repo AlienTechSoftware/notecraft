@@ -638,6 +638,7 @@ impl Lab {
     /// page-only parts of the ribbon are switched off, since there is no page to act on.
     fn ribbon_view(&self) -> ribbon::View<'_> {
         ribbon::View {
+            layout: ribbon::Layout::Classic,
             split_panes: false,
             always_on_top: false,
             docked: false,
@@ -663,8 +664,6 @@ impl Lab {
             page_colour: None,
             rule_colour: None,
             paper_size: None,
-            can_undo: false,
-            can_redo: false,
             can_ink_redo: false,
             ink_held: false,
             accessibility_open: false,
@@ -1154,7 +1153,8 @@ impl Lab {
                 .frame(egui::Frame::new().fill(tokens.band).inner_margin(egui::Margin::symmetric(4, 0)))
                 .show_separator_line(false)
                 .show(ui, |ui| {
-                    ribbon::tab_strip(ui, &self.ribbon_tab, false, false, folded, ribbon::Mic::default(), &tokens, &mut acts);
+                    let display = ribbon::Display { collapsed: folded, layout: ribbon::Layout::Classic };
+                    ribbon::tab_strip(ui, &self.ribbon_tab, false, false, display, ribbon::Mic::default(), &tokens, &mut acts);
                 });
             if !folded {
                 egui::Panel::top("drawing-ribbon")

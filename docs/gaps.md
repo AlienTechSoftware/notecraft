@@ -216,6 +216,9 @@ narrower than 600 points, on Android, a narrow desktop window or the browser bui
   Ctrl+F1, or the chevron at the end of the tab names, folds the ribbon to its tab names and
   gives the page its room; a tab clicked while it is folded shows its commands over the page
   until one is used, the page is clicked or Escape is pressed. The choice is kept.
+  The ribbon display menu also switches between the full Classic Ribbon and the
+  single-row Simplified Ribbon. More commands opens the active tab's full set.
+  The layout choice is kept separately from folding.
 - **Find Tags is a first pass.** Home > Find Tags opens a Tags Summary beside the page. It lists the
   tagged lines of this page, this section, this notebook or every open notebook, grouped by tag, by
   section or by page, with a count to each group (issue #565), can keep only the To Do items not yet
