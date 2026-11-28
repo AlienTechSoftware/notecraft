@@ -1090,10 +1090,14 @@ pub fn tabs(source: bool, in_table: bool) -> Vec<&'static str> {
 }
 
 /// The Alt key letter of each ribbon tab (issue #515), the one Alt and the letter opens it with.
-pub const TAB_KEYS: [(char, &str); 6] = [('H', "Home"), ('I', "Insert"), ('D', "Draw"), ('Y', "History"), ('R', "Review"), ('V', "View")];
+pub const TAB_KEYS: [(char, &str); 8] =
+    [('H', "Home"), ('I', "Insert"), ('D', "Draw"), ('Y', "History"), ('R', "Review"), ('V', "View"), ('T', "Table"), ('S', SOURCE_TAB)];
 
 /// The key letter a tab is marked with, if it has one.
 pub fn tab_key(name: &str) -> Option<char> {
+    if name == FILE_TAB {
+        return Some('F');
+    }
     TAB_KEYS.iter().find(|(_, tab)| *tab == name).map(|(letter, _)| *letter)
 }
 
@@ -1245,12 +1249,6 @@ pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, display: 
             ui.add_space(6.0);
             if ribbon_fold(ui, collapsed, t).clicked() {
                 acts.push(Act::ToggleRibbon);
-            }
-            // Folded, there is no footer row to put the display options in, so they sit here,
-            // beside the fold control, to bring the ribbon back.
-            if collapsed {
-                let (at, _) = ui.allocate_exact_size(vec2(22.0, TAB_STRIP_H - 6.0), Sense::hover());
-                display_options(ui, at, display, t, acts);
             }
         });
     });

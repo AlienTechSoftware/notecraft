@@ -349,6 +349,11 @@ impl NoteCraftApp {
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
         }
+        // A window that draws its own frame keeps its title band, with its window controls, so it
+        // can still be moved, minimized and closed on this screen (review of #599).
+        if self.frameless {
+            self.title_band(ui, false);
+        }
         ui.vertical_centered(|ui| {
             ui.add_space(24.0);
             ui.heading(crate::tl_id!("ui.window_conflict_title"));

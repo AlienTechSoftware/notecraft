@@ -7259,9 +7259,18 @@ impl NoteCraftApp {
                 _ => None,
             })
         });
+        // Alt+F opens the File backstage, as the File tab does (issue #515).
+        if ui.ctx().input(|i| {
+            i.events
+                .iter()
+                .any(|e| matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. } if modifiers.alt && single_letter(key) == Some('F')))
+        }) {
+            self.ribbon_act(ribbon::Act::File);
+        }
         if let Some(name) = alt_tab {
             self.ribbon_tab = name.to_owned();
-            self.ribbon_peek = false;
+            // Folded, the tab opens over the page as a peek; expanded, it is already shown.
+            self.ribbon_peek = self.ribbon_folded();
         }
         let (tab, source, tokens) = (self.ribbon_tab.clone(), self.show_source, self.tokens);
         let font_selection = self.font_selection(ui.ctx());
@@ -18601,6 +18610,71 @@ mod keep_boxes_tests {
         }
     }
 
+    /// Review of #599: Alt+Y on a folded ribbon opens the tab as an overlay and keeps the fold.
+    #[test]
+    fn alt_and_a_letter_on_a_folded_ribbon_opens_the_tab_over_the_page() {
+        let (_t, _page, mut h) = two_boxes(false, "keytips-folded");
+        h.state_mut().set_ribbon_collapsed(true);
+        h.run_steps(2);
+        h.key_press_modifiers(egui::Modifiers::ALT, egui::Key::Y);
+        h.run_steps(2);
+        assert_eq!(h.state().ribbon_tab, "History");
+        assert!(h.state().ribbon_peek, "the tab opens over the page while the ribbon stays folded");
+        assert!(h.state().ribbon_collapsed, "the fold is kept");
+    }
+
+    /// Review of #599: Alt with a tab letter opens the tab and does not type the letter.
+    #[test]
+    fn alt_and_a_letter_does_not_type_into_the_page() {
+        let (_t, _page, mut h) = two_boxes(false, "keytips-no-type");
+        let before = h.state().body().unwrap_or_default().to_string();
+        h.key_press_modifiers(egui::Modifiers::ALT, egui::Key::Y);
+        h.run_steps(2);
+        assert_eq!(h.state().body().unwrap_or_default().to_string(), before, "Alt+Y leaves the page text alone");
+    }
+    /// Review of #599: a window with its own frame keeps its window controls on the conflict
+    /// screen, so it can still be moved, minimized and closed.
+    #[test]
+    fn a_page_conflict_keeps_the_window_controls_when_the_window_draws_its_own_frame() {
+        use egui_kittest::kittest::Queryable as _;
+        let (_t, page, mut h) = two_boxes(false, "conflict-controls");
+        h.state_mut().set_frameless(true);
+        // A local edit makes the window dirty; then the page changes on disk underneath it.
+        h.state_mut().ribbon_act(ribbon::Act::Insert("space"));
+        h.run_steps(1);
+        let (_format, file) = notecraft_store::tree::page_file(&page).expect("the page has a file");
+        let mut text = std::fs::read_to_string(&file).expect("read the page");
+        text.push_str("\n<p>changed elsewhere</p>\n");
+        std::fs::write(&file, text).expect("write the page");
+        h.run_steps(3);
+        assert!(h.state().page_conflict, "a dirty window whose page changed on disk is in conflict");
+        assert!(h.query_all_by_label("Minimize").next().is_some(), "Minimize is on the conflict screen");
+        assert!(h.query_all_by_label("Close").next().is_some(), "Close is on the conflict screen");
+    }
+    #[test]
+    fn alt_and_each_tab_letter_opens_its_tab() {
+        for (key, tab) in [
+            (egui::Key::H, "Home"),
+            (egui::Key::I, "Insert"),
+            (egui::Key::D, "Draw"),
+            (egui::Key::Y, "History"),
+            (egui::Key::R, "Review"),
+            (egui::Key::V, "View"),
+        ] {
+            let (_t, _page, mut h) = two_boxes(false, "keytips-each");
+            h.key_press_modifiers(egui::Modifiers::ALT, key);
+            h.run_steps(2);
+            assert_eq!(h.state().ribbon_tab, tab, "Alt+{key:?} opens {tab}");
+        }
+    }
+    /// Review of #599: Alt+F opens the File backstage, as the File tab does.
+    #[test]
+    fn alt_and_f_opens_the_file_backstage() {
+        let (_t, _page, mut h) = two_boxes(false, "keytips-file");
+        h.key_press_modifiers(egui::Modifiers::ALT, egui::Key::F);
+        h.run_steps(2);
+        assert_eq!(h.state().backstage, Some("Info"), "Alt+F opens the File backstage");
+    }
     /// Issue #515: Alt, then the letter a tab is marked with, opens that ribbon tab.
     #[test]
     fn alt_and_a_letter_opens_the_ribbon_tab_it_marks() {
@@ -18624,6 +18698,11 @@ mod keep_boxes_tests {
         h.get_by_label("Show tabs only").click();
         h.run_steps(2);
         assert!(h.state().ribbon_collapsed, "show tabs only folds the ribbon");
+        assert!(h.query_all_by_label("Ribbon display options").next().is_none(), "the display button is hidden when the ribbon is folded");
+        assert!(h.query_all_by_label("Show the ribbon (Ctrl+F1)").next().is_some(), "the fold control is named");
+        h.get_by_label("Show the ribbon (Ctrl+F1)").click();
+        h.run_steps(2);
+        assert!(!h.state().ribbon_collapsed, "the fold control unfolds the ribbon");
         h.get_by_label("Ribbon display options").click();
         h.run_steps(2);
         h.get_by_label("Always show Ribbon").click();
