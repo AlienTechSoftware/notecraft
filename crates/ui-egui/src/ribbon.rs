@@ -278,6 +278,8 @@ pub enum Act {
     /// Paste > Keep text only, and Ctrl+Shift+V (issue #535): the clipboard's text alone, as if
     /// typed, with none of the formatting it came with.
     PastePlain,
+    /// Paste > Merge Formatting (issue #564).
+    PasteMerge,
     /// More or less indent on a list item.
     Indent(bool),
     /// Which way the line the caret is in reads. `None` lets the words decide again.
@@ -2120,6 +2122,11 @@ fn paste_buttons(ui: &mut Ui, paste: egui::Response, options: egui::Response, t:
         first_choice(ui, popup_id, &keep);
         if keep.clicked() {
             acts.push(Act::Paste);
+            ui.close();
+        }
+        // Issue #564: the source's structure and emphasis, in the page's own fonts and colours.
+        if floating::menu_row(ui, None, crate::tl_id!("ui.merge_formatting"), t).clicked() {
+            acts.push(Act::PasteMerge);
             ui.close();
         }
         if floating::menu_row_shortcut(ui, None, crate::tl_id!("ui.keep_text_only"), plain, t).clicked() {

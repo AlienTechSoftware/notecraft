@@ -3743,6 +3743,29 @@ pub fn paste_at(blocks: &mut Vec<Block>, caret: &mut Option<Caret>, at: usize, n
 }
 
 /// The blocks a pasted table or paragraph list becomes.
+/// Paste > Merge Formatting (issue #564): pasted blocks take the page's own typography. The
+/// source's fonts, sizes, colours and highlights go; its structure (headings, lists, quotes,
+/// tables, pictures) and inline emphasis (bold, italic, underline, strikethrough, sub- and
+/// superscript, code, maths, links) stay.
+pub fn merge_formatting(mut blocks: Vec<Block>) -> Vec<Block> {
+    let plain = |spans: &mut Vec<notecraft_formats::markdown::Span>| {
+        for span in spans.iter_mut() {
+            span.font_size = None;
+            span.font_family = None;
+            span.colour = None;
+            span.highlight = None;
+        }
+    };
+    for block in &mut blocks {
+        match block {
+            Block::Heading { spans, .. } | Block::Item { spans, .. } | Block::Paragraph(spans, _) | Block::Quote(spans, _) => plain(spans),
+            Block::Table { head, rows, .. } => head.iter_mut().chain(rows.iter_mut().flatten()).for_each(plain),
+            _ => {}
+        }
+    }
+    blocks
+}
+
 pub fn pasted_blocks(p: Pasted) -> Vec<Block> {
     match p {
         Pasted::Inline => Vec::new(),
