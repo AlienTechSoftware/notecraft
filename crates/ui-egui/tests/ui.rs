@@ -301,6 +301,17 @@ fn pump(h: &mut Harness<'_, NoteCraftApp>) {
 /// Background work gets up to half a second. When the page is saved and egui has stopped asking
 /// for repaints, two quiet frames plus a short grace period are enough; do not spend the full
 /// timeout after every interaction. The deadline remains a cap for slow image loads and saves.
+/// Steps the window until it asks for no more repaints (the work it waits on finishes on its own).
+fn wait_until_quiet(h: &mut Harness<'_, NoteCraftApp>) {
+    for _ in 0..5000 {
+        h.step();
+        if !h.ctx.has_requested_repaint() {
+            return;
+        }
+    }
+    panic!("the window kept asking for repaints");
+}
+
 fn settle(h: &mut Harness<'_, NoteCraftApp>) {
     const BACKGROUND: Duration = Duration::from_millis(500);
     const QUIET: Duration = Duration::from_millis(40);
@@ -996,7 +1007,9 @@ fn a_click_under_a_new_pages_date_starts_writing() {
     for format in ["html", "cmgfm"] {
         let (_t, app, s) = sample_app("ui-new-page-click");
         let mut h = harness(app, LIGHT);
-        h.run();
+        // Wait until nothing is left to draw (a background image decode may keep a spinner moving),
+        // rather than for a fixed number of frames; the cap only stops a real hang.
+        wait_until_quiet(&mut h);
         let section = s.md_page.parent().expect("section").to_string_lossy().into_owned();
         let made = ask(&mut h, "engine.execute", json!({"command": "node.create", "params": {"parent": section, "kind": "page", "format": format}}))
             .expect("page");
