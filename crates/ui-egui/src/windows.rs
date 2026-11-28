@@ -26,6 +26,8 @@ struct Child {
 struct Window {
     id: egui::ViewportId,
     quick: bool,
+    /// Whether the window draws its own title bar, as the main window's frame setting says.
+    own_frame: bool,
 }
 
 thread_local! {
@@ -69,8 +71,9 @@ impl Host {
         app.prepare_native_view();
         self.next += 1;
         let id = egui::ViewportId::from_hash_of(("note-window", self.next));
+        let own_frame = app.own_frame();
         CHILDREN.with(|views| views.borrow_mut().insert(id, Child { app, closing: false }));
-        self.windows.push(Window { id, quick });
+        self.windows.push(Window { id, quick, own_frame });
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui) {
@@ -195,7 +198,11 @@ impl Host {
             let title = if window.quick { crate::tl_id!("ui.window_quick_title") } else { "NoteCraft" };
             ctx.show_viewport_deferred(
                 id,
-                egui::ViewportBuilder::default().with_title(title).with_inner_size(size).with_min_inner_size([360.0, 280.0]),
+                egui::ViewportBuilder::default()
+                    .with_title(title)
+                    .with_inner_size(size)
+                    .with_min_inner_size([360.0, 280.0])
+                    .with_decorations(!window.own_frame),
                 move |ui, _class| {
                     render_child(id, ui);
                 },

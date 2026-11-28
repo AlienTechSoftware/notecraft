@@ -939,6 +939,18 @@ pub fn tabs(source: bool, in_table: bool) -> Vec<&'static str> {
     v
 }
 
+/// The Alt key letter of each ribbon tab (issue #515), the one Alt and the letter opens it with.
+pub const TAB_KEYS: [(char, &str); 6] = [('H', "Home"), ('I', "Insert"), ('D', "Draw"), ('Y', "History"), ('R', "Review"), ('V', "View")];
+
+/// The key letter a tab is marked with, if it has one.
+pub fn tab_key(name: &str) -> Option<char> {
+    TAB_KEYS.iter().find(|(_, tab)| *tab == name).map(|(letter, _)| *letter)
+}
+
+/// The tab an Alt letter opens, if any.
+pub fn tab_for_key(letter: char) -> Option<&'static str> {
+    TAB_KEYS.iter().find(|(key, _)| key.eq_ignore_ascii_case(&letter)).map(|(_, tab)| *tab)
+}
 /// The tab names, drawn on the coloured band at the top of the window, File first, as in
 /// Office. The chosen tab is a raised tab in the ribbon's own colour that runs down into the
 /// ribbon below it; the others are white writing on the band, lit when the pointer is over
@@ -1002,6 +1014,10 @@ pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, collapsed
             }
             let colour = if selected { t.accent } else { t.band_text };
             painter.text(rect.center() + vec2(0.0, 1.0), Align2::CENTER_CENTER, display_name, font.clone(), colour);
+            // Alt held: the tab's key letter is shown on it, as the Alt KeyTip (issue #515).
+            if let Some(letter) = ui.input(|i| i.modifiers.alt).then(|| tab_key(name)).flatten() {
+                painter.text(rect.center_top() + vec2(0.0, 2.0), Align2::CENTER_TOP, letter.to_string(), egui::FontId::proportional(10.0), t.accent);
+            }
             let enabled = ui.is_enabled();
             let label = display_name.to_string();
             resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, selected, label.clone()));
