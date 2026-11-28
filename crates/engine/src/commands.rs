@@ -459,10 +459,10 @@ fn picture_names(page: &std::path::Path) -> Vec<String> {
 /// text-recognition.onnx. Nothing is downloaded.
 fn ocr_refresh(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     let page = s.resolve(req(p, "path")?)?;
-    let folder = s.settings.get("ocr_models").filter(|v| !v.trim().is_empty()).ok_or_else(|| {
+    let folder = models_setting(s).ok_or_else(|| {
         EngineError::BadParam("OCR is not set up: set ocr_models to the folder with text-detection.onnx and text-recognition.onnx".into())
     })?;
-    let reader = cached_ocr_reader(std::path::Path::new(&folder))?;
+    let reader = cached_ocr_reader(&folder)?;
     let (mut read, mut unchanged) = (0usize, 0usize);
     for name in picture_names(&page) {
         match notecraft_ocr::refresh_companion(reader.as_ref(), &page.join("assets").join(&name)) {
@@ -519,14 +519,39 @@ fn ocr_text(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
         return Err(EngineError::BadParam(format!("not a picture of the page: {name}")));
     }
     let picture = page.join("assets").join(name);
-    let models = s.settings.get("ocr_models").filter(|v| !v.trim().is_empty()).map(PathBuf::from);
+    let models = models_setting(s);
     picture_text(models.as_deref(), &picture).map(Output::Text).map_err(|e| EngineError::BadParam(e.to_string()))
 }
 
 /// The OCR reader for a models folder, loaded the first time and kept while the setting names the same
 /// folder. Loading the two models takes long enough to notice, and every page open used to pay it.
+/// The folder of the OCR models: the setting `ocr_models`. The browser build has no folder of the
+/// user's: its models are the ones the website serves, so the setting is not needed there.
+pub fn models_setting(s: &Session) -> Option<std::path::PathBuf> {
+    let set = s.settings.get("ocr_models").filter(|v| !v.trim().is_empty()).map(std::path::PathBuf::from);
+    #[cfg(target_arch = "wasm32")]
+    {
+        return Some(set.unwrap_or_else(|| std::path::PathBuf::from("models/ocr")));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    set
+}
+
 fn cached_ocr_reader(models: &std::path::Path) -> Result<std::sync::Arc<notecraft_ocr::OcrsReader>, EngineError> {
     use std::sync::{Arc, Mutex, OnceLock};
+    #[cfg(target_arch = "wasm32")]
+    {
+        // The browser reads its models once, from the site, and keeps them for every picture.
+        static WEB: OnceLock<Arc<notecraft_ocr::OcrsReader>> = OnceLock::new();
+        let _ = models;
+        if let Some(reader) = WEB.get() {
+            return Ok(Arc::clone(reader));
+        }
+        let reader =
+            Arc::new(notecraft_ocr::OcrsReader::from_web_models().map_err(|e| EngineError::BadParam(format!("the OCR models did not load: {e:?}")))?);
+        let _ = WEB.set(Arc::clone(&reader));
+        return Ok(reader);
+    }
     static CACHE: OnceLock<Mutex<Option<(std::path::PathBuf, Arc<notecraft_ocr::OcrsReader>)>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(None));
     let mut slot = cache.lock().unwrap_or_else(|e| e.into_inner());

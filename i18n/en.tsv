@@ -1724,6 +1724,7 @@
 @id	ui.find_close	Close Find
 @id	ui.find_close_tip	Close the find bar and go back to the page (Escape)
 @id	ui.discard_ocr_edits	Discard the unsaved edits of this OCR file
+@id	ui.image_text_why_web	Reading text from pictures is not in the browser version yet.
 @id	ui.ribbon_display_options	Ribbon display options
 @id	ui.ribbon_more_commands	More commands
 @id	ui.classic_ribbon	Classic Ribbon

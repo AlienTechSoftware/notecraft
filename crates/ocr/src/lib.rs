@@ -107,9 +107,33 @@ impl OcrsReader {
         Ok(OcrsReader { ocr })
     }
 
+    /// Loads the detection and recognition models from their bytes. This is how the web and Android
+    /// builds read the models, which they cannot open from a folder on disk.
+    pub fn from_model_bytes(detection: &[u8], recognition: &[u8]) -> Result<OcrsReader, OcrError> {
+        let load = |bytes: &[u8], which: &str| rten::Model::load(bytes.to_vec()).map_err(|e| OcrError::Model(format!("{which}: {e}")));
+        let ocr = ocrs::OcrEngine::new(ocrs::OcrEngineParams {
+            detection_model: Some(load(detection, "detection")?),
+            recognition_model: Some(load(recognition, "recognition")?),
+            ..Default::default()
+        })
+        .map_err(|e| OcrError::Engine(e.to_string()))?;
+        Ok(OcrsReader { ocr })
+    }
+
+    /// The reader for the browser build: its two models are read from the site's `models/ocr/` folder,
+    /// which the website serves beside the app. The read is synchronous, as the app's OCR call is.
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_web_models() -> Result<OcrsReader, OcrError> {
+        let detection = web_fetch("models/ocr/text-detection.onnx")?;
+        let recognition = web_fetch("models/ocr/text-recognition.onnx")?;
+        OcrsReader::from_model_bytes(&detection, &recognition)
+    }
+
     /// Reads the printed-text lines of one picture, in reading order (criteria A1 and A3).
     pub fn read_image(&self, path: &Path) -> Result<Vec<Line>, OcrError> {
-        let decoded = image::open(path).map_err(|e| OcrError::Decode(format!("{}: {e}", path.display())))?;
+        // The bytes come through std::fs (the browser build's files on the web), then are decoded in memory.
+        let bytes = std::fs::read(path).map_err(|e| OcrError::Io(format!("{}: {e}", path.display())))?;
+        let decoded = image::load_from_memory(&bytes).map_err(|e| OcrError::Decode(format!("{}: {e}", path.display())))?;
         let (width, height) = decoded.dimensions();
         let rgb = decoded.into_rgb8();
         let source = ocrs::ImageSource::from_bytes(rgb.as_raw(), (width, height)).map_err(|e| OcrError::Decode(e.to_string()))?;
@@ -178,7 +202,7 @@ pub fn refresh_companion(reader: &dyn PictureReader, picture: &Path) -> Result<R
     }
     let lines = reader.read_picture(picture)?;
     // The reader has already decoded the picture; a size the header does not give is recorded as zero.
-    let (width, height) = image::image_dimensions(picture).unwrap_or((0, 0));
+    let (width, height) = picture_size(picture).unwrap_or((0, 0));
     let json = ocr_json(picture, &hash, width, height, &lines);
     write_replacing(&ocr_json_path(picture), json.as_bytes())?;
     Ok(Refresh::Rewritten)
@@ -235,6 +259,36 @@ fn saved_for(picture: &Path, hash: &str) -> Option<Saved> {
     parse_saved(&value)
 }
 
+/// The size of a picture, read from its header, through the same files as the rest of the reader.
+fn picture_size(picture: &Path) -> Option<(u32, u32)> {
+    let bytes = std::fs::read(picture).ok()?;
+    image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?.into_dimensions().ok()
+}
+
+/// Reads a file the website serves, as bytes: a synchronous request, so the bytes come back in the
+/// call. A binary string (one char per byte) is read through the response text, since a synchronous
+/// request cannot set a response type.
+#[cfg(target_arch = "wasm32")]
+fn web_fetch(path: &str) -> Result<Vec<u8>, OcrError> {
+    let fail = |what: &str| OcrError::Io(format!("{path}: {what}"));
+    let xhr = web_sys::XmlHttpRequest::new().map_err(|_| fail("could not start a request"))?;
+    xhr.open_with_async("GET", path, false).map_err(|_| fail("could not open the request"))?;
+    xhr.override_mime_type("text/plain; charset=x-user-defined").map_err(|_| fail("could not read the file as bytes"))?;
+    xhr.send().map_err(|_| fail("the request failed"))?;
+    if xhr.status().map_err(|_| fail("no status"))? != 200 {
+        return Err(fail("the model is not on the site"));
+    }
+    let text = xhr.response_text().map_err(|_| fail("no response"))?.ok_or_else(|| fail("the response is empty"))?;
+    // x-user-defined keeps bytes 0x00-0x7F as they are and maps 0x80-0xFF to U+F780-U+F7FF.
+    Ok(text
+        .chars()
+        .map(|c| match c as u32 {
+            code @ 0xF780..=0xF7FF => (code - 0xF780 + 0x80) as u8,
+            code => code as u8,
+        })
+        .collect())
+}
+
 /// The SHA-256 of the picture's bytes, in hex: the hash the saved file is stamped with.
 fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
@@ -288,11 +342,24 @@ pub fn ocr_json_path(picture: &Path) -> PathBuf {
 /// Counts names for temporary files, so two writers never share one.
 static TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// Tells this process's temporary files apart from another process's. The browser has no process
+/// ids (its `std` panics on them), and it runs one process, so a fixed tag is enough there.
+fn process_tag() -> u32 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::process::id()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0
+    }
+}
+
 fn write_replacing(path: &Path, bytes: &[u8]) -> Result<(), OcrError> {
     // A name unique to this process and call, so concurrent writers cannot install each other's bytes.
     let n = TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".tmp-{}-{n}", std::process::id()));
+    name.push(format!(".tmp-{}-{n}", process_tag()));
     let temp = path.with_file_name(name);
     std::fs::write(&temp, bytes).map_err(|e| OcrError::Io(format!("{}: {e}", temp.display())))?;
     std::fs::rename(&temp, path).map_err(|e| {
@@ -356,6 +423,27 @@ fn overlaps_vertically(a: &Piece, b: &Piece) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The model files the website serves are the ones ATTRIBUTION.md records: same size, same SHA-256.
+    #[test]
+    fn the_bundled_models_are_the_recorded_ones() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/models/ocr");
+        for (name, size, sha) in [
+            ("text-detection.onnx", 2_499_479u64, "a917b23dbd9524b465df7e922641b3ff2981623df4ded5a0234004ef2fee7cfe"),
+            ("text-recognition.onnx", 9_713_177u64, "86c145c2edb96c8caed5b1ebb8f44d706408922211451c309c625157dd6061c5"),
+        ] {
+            let bytes = std::fs::read(dir.join(name)).unwrap_or_else(|e| panic!("{name} is in assets/models/ocr: {e}"));
+            assert_eq!(bytes.len() as u64, size, "{name} has the recorded size");
+            assert_eq!(sha256_hex(&bytes), sha, "{name} has the recorded SHA-256");
+        }
+    }
+
+    /// The byte loader reports a bad model as an error the app can show, and never panics.
+    #[test]
+    fn models_from_bytes_that_are_not_models_are_an_error() {
+        let result = OcrsReader::from_model_bytes(b"not a model", b"not a model either");
+        assert!(matches!(result, Err(OcrError::Model(_))), "bad bytes are a model error");
+    }
     use std::cell::Cell;
 
     /// A reader that counts its calls and returns one fixed line. It needs no model files.

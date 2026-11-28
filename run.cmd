@@ -30,6 +30,9 @@ REM   run.cmd --control 9100               start the control channel on port 910
 REM   run.cmd --version                    print the app version and exit
 REM   run.cmd --fresh-demo                 rebuild the demo notebook and replace my-notebooks\welcome-notebook
 REM   run.cmd --ocr-lab                   start the OCR test and label tool (tools\ocr-lab) instead of NoteCraft
+REM   run.cmd --wasm build                 build the browser (WASM) version from the current commit
+REM   run.cmd --wasm start                 serve it at http://127.0.0.1:8080/
+REM   run.cmd --wasm stop                  stop that server
 REM   run.cmd --ocr-lab --folder <dir> --models <dir>
 REM                                        the same, on your own test folder and OCR model folder
 REM
@@ -107,6 +110,8 @@ REM ============================================================================
 
 
 cd /d "%~dp0"
+REM --wasm build|start|stop: the browser version, built and served on this computer (scripts\wasm.ps1).
+if /i "%~1"=="--wasm" goto wasm
 REM Enable debug logging for UI egui (container rendering, image resize, etc)
 set RUST_LOG=notecraft_ui_egui=debug
 REM Pass optional NoteCraft arguments through, for example: run.cmd --first-use
@@ -136,4 +141,12 @@ exit /b %errorlevel%
 
 :ocr_lab
 cargo run -p notecraft-ocr-lab -- %*
+exit /b %errorlevel%
+
+:wasm
+if "%~2"=="" (
+    echo Usage: run.cmd --wasm build^|start^|stop
+    exit /b 2
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\wasm.ps1" -Action %~2
 exit /b %errorlevel%

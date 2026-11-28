@@ -3788,6 +3788,7 @@ dependencies = [
  "rten",
  "serde_json",
  "sha2",
+ "web-sys",
 ]
 
 [[package]]

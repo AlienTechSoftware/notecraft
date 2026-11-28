@@ -146,6 +146,9 @@ jobs:
           python3 .github/web-build/bundle_demo.py \
             docs/demo/DemoNotebook website/demo/welcome-notebook.zip \
             --version "$NOTECRAFT_VERSION"
+          # The OCR models the browser reads from models/ocr (CC BY-SA 4.0; see ATTRIBUTION.md).
+          mkdir -p website/demo/models/ocr
+          cp assets/models/ocr/*.onnx assets/models/ocr/LICENSE-CC-BY-SA-4.0.txt website/demo/models/ocr/
 
       - name: Verify built demo embeds the workspace version
         env:
