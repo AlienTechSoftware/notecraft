@@ -225,3 +225,15 @@
 - file: crates/ui-egui/src/app.rs
   find: 'if\s+let\s+Some\(\s*text\s*\)\s*=\s*self\.pending_copy\.take\(\)'
   before: "#[cfg(target_arch = \"wasm32\")] if crate::clipboard::arboard::arrived(ctx) { self.paste_here(); }\n        "
+
+# Rules 29-31: the OCR reads its pictures and writes its companion files through the browser's files, like the
+# other modules (the browser keeps the notebook in memory). The engine's OCR command lists the pictures the same way.
+- file: crates/ocr/Cargo.toml
+  find: 'web-sys = \{ version = "0\.3", features = \["XmlHttpRequest"\] \}'
+  after: "\nnotecraft-model = { workspace = true }"
+- file: crates/ocr/src/lib.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
+- file: crates/engine/src/commands.rs
+  find: '(?![\s\S])'
+  after: "\n// Playground's browser build: files (patches/onenote.yaml).\n#[cfg(target_arch = \"wasm32\")] use notecraft_model::playground::std;\n"
