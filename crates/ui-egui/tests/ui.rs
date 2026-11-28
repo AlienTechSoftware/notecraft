@@ -18160,6 +18160,33 @@ fn ctrl_shift_v_pastes_the_text_only() {
     assert!(body.contains("link.test"), "Paste keeps the link:\n{body}");
 }
 
+/// Issue #564: Paste options > Merge formatting brings a formatted clipboard item in with its
+/// structure, emphasis and links, but in the page's own fonts and colours; one Undo takes it back.
+#[test]
+fn merge_formatting_pastes_in_the_pages_own_typography() {
+    use notecraft_ui_egui::clipboard::Board as _;
+    let board = MemoryBoard::new();
+    let (_t, app, s) = sample_app("ui-paste-merge");
+    let mut h = harness(app.with_clipboard(Box::new(board.clone())), LIGHT);
+    h.state_mut().open_path(&s.md_page.to_string_lossy());
+    settle(&mut h);
+    let original = h.state().body().unwrap_or_default().to_string();
+    let rich = "<p><b style=\"color:red;font-family:Comic Sans MS;font-size:30px\">Rich</b> <a href=\"https://link.test\">words</a></p><ul><li>An item</li></ul>";
+    board.clone().set_html(rich, "Rich words\nAn item").expect("clipboard");
+    ask(&mut h, "ui.caret", json!({"block": 1})).expect("caret");
+    settle(&mut h);
+    h.get_by_label("Paste options").click();
+    settle(&mut h);
+    h.get_by_label("Merge formatting").click();
+    settle(&mut h);
+    let body = h.state().body().unwrap_or_default().to_string();
+    assert!(body.contains("**Rich**") && body.contains("link.test") && body.contains("- An item"), "structure, emphasis and links stay:\n{body}");
+    assert!(!body.contains("Comic Sans") && !body.contains("red") && !body.contains("30"), "the source's typography stays behind:\n{body}");
+    ask(&mut h, "ui.key", json!({"key": "Z", "ctrl": true})).expect("undo");
+    settle(&mut h);
+    assert_eq!(h.state().body().unwrap_or_default(), original, "one Undo takes it back");
+}
+
 /// Issue #535, from review: the text only is the text as written. Stars, brackets and backticks
 /// stay words, in the line the caret is in and in the lines after it; words picked across
 /// paragraphs are replaced; an empty page takes the text; and the native window's Ctrl+Shift+V,
