@@ -55,11 +55,6 @@ pub fn paint(painter: &egui::Painter, rect: Rect, size: [u32; 2], boxes: &[[[f32
     }
 }
 
-/// True in the browser build, which has no OCR engine: Detect text cannot run there.
-const fn web_has_no_ocr() -> bool {
-    cfg!(target_arch = "wasm32")
-}
-
 /// Whether a picture's detected text is shown, per page and block. Kept in egui's temporary data.
 fn overlay_id(page: &Path, block: usize) -> Id {
     Id::new(("image-text-overlay", page.to_path_buf(), block))
@@ -102,10 +97,6 @@ pub fn menu(ui: &mut egui::Ui, picture_rect: Rect, page: &Path, block: usize, pi
                     set_showing(ui.ctx(), page, block, false);
                     ui.close();
                 }
-            } else if web_has_no_ocr() {
-                // The browser build has no text reader, so Detect text is shown off and says why.
-                floating::menu_row_if(ui, false, None, crate::tl_id!("ui.image_text_detect"), t)
-                    .on_disabled_hover_text(crate::tl_id!("ui.image_text_why_web"));
             } else if floating::menu_row(ui, None, crate::tl_id!("ui.image_text_detect"), t).clicked() {
                 if boxes.is_empty() {
                     // No text read yet: the app reads the page's pictures; the overlay comes once they are read.

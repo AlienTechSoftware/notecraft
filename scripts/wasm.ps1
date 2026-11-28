@@ -72,10 +72,16 @@ function Invoke-Build {
 
         $version = (python -c "import tomllib; print(tomllib.load(open('Cargo.toml','rb'))['workspace']['package']['version'])").Trim()
         python .github/web-build/bundle_demo.py docs/demo/DemoNotebook website/demo/welcome-notebook.zip --version $version
+        # The OCR models, which the browser reads from models/ocr beside the app.
+        $models = Join-Path $demo 'models\ocr'
+        New-Item -ItemType Directory -Force -Path $models | Out-Null
+        Copy-Item (Join-Path $src 'assets\models\ocr\*') $models
     } finally {
         Pop-Location
     }
 
+    # The server holds the old folder open, so it stops before the folder is replaced.
+    Stop-WasmServer
     if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
     Copy-Item -Recurse (Join-Path $src 'website\demo') $dist
     Write-Host "Built the web version into $dist"

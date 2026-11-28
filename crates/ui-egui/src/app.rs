@@ -4671,7 +4671,7 @@ impl NoteCraftApp {
     /// Reads the text and boxes of the pictures of a page, once OCR is set up (the setting
     /// ocr_models). A picture that did not change is not read again; with no setting nothing runs.
     fn read_pictures(&mut self, dir: &Path) {
-        if self.session.settings.get("ocr_models").is_some_and(|v| !v.trim().is_empty()) {
+        if self.ocr_models().is_some() {
             let page = dir.to_string_lossy().into_owned();
             if let Err(e) = self.session.run("ocr.refresh", &params(&[("path", &page)])) {
                 log::warn!("picture text was not read for {page}: {e:?}");
@@ -9656,7 +9656,9 @@ impl NoteCraftApp {
 
     /// The folder with the text recognition models, when one is set.
     fn ocr_models(&self) -> Option<PathBuf> {
-        self.session.settings.get("ocr_models").filter(|v| !v.trim().is_empty()).map(PathBuf::from)
+        let set = self.session.settings.get("ocr_models").filter(|v| !v.trim().is_empty()).map(PathBuf::from);
+        // The browser build reads the models the website serves, so Detect text is always set up there.
+        if cfg!(target_arch = "wasm32") { Some(set.unwrap_or_else(|| PathBuf::from("models/ocr"))) } else { set }
     }
 
     /// Shows Copy Text from Picture while it is open, and does what it asks.

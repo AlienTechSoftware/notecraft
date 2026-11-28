@@ -3,6 +3,14 @@
 Every file under `assets/` and `docs/images/` has a row here. `cargo xtask assets` fails if one
 is missing. Last reviewed: 2026-11-21.
 
+## OCR models
+
+| File | What | Origin | Licence status |
+|---|---|---|---|
+| `assets/models/ocr/text-detection.onnx` | The ocrs text-detection model, 2.5 MB, SHA-256 `a917b23dbd9524b465df7e922641b3ff2981623df4ded5a0234004ef2fee7cfe`. Used by the browser build's Detect text, which reads the same files as the desktop | The ocrs project, <https://github.com/robertknight/ocrs>, model files from <https://github.com/robertknight/ocrs-models> (model card <https://huggingface.co/robertknight/ocrs>) | **CC BY-SA 4.0**, text in `assets/models/ocr/LICENSE-CC-BY-SA-4.0.txt`. Credit: Robert Knight, ocrs. Share-alike applies to these weights. Unmodified |
+| `assets/models/ocr/text-recognition.onnx` | The ocrs text-recognition model, 9.7 MB, SHA-256 `86c145c2edb96c8caed5b1ebb8f44d706408922211451c309c625157dd6061c5` | Same as the row above | Same as the row above |
+| `assets/models/ocr/LICENSE-CC-BY-SA-4.0.txt` | The licence text for the two models above | creativecommons.org, `legalcode`, downloaded 2026-11-28 | Public licence text |
+
 ## Brand artwork
 
 | File | What | Origin | Licence status |
