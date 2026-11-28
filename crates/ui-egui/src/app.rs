@@ -255,6 +255,16 @@ fn version_row(ui: &mut Ui, t: &Tokens, title: &str, sub: &str, selected: bool) 
     row.on_hover_text(sub)
 }
 
+/// The letter a key names, if it is one of the letter keys (not Home, Escape and the like).
+fn single_letter(key: &egui::Key) -> Option<char> {
+    let name = key.symbol_or_name();
+    let mut chars = name.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) if c.is_ascii_alphabetic() => Some(c),
+        _ => None,
+    }
+}
+
 /// The footer row under the ribbon's groups, where the display options button sits.
 const DISPLAY_FOOTER_H: f32 = 16.0;
 
@@ -2002,6 +2012,7 @@ pub struct NoteCraftApp {
     painter: Option<FormatPaint>,
     /// The ribbon is folded away to its tab names (Ctrl+F1; issue #136). Kept in the settings.
     ribbon_collapsed: bool,
+    ribbon_layout: ribbon::Layout,
     /// While folded, a tab was clicked: its commands are shown over the page until one is used,
     /// the page is clicked or Escape is pressed.
     ribbon_peek: bool,
@@ -2108,6 +2119,8 @@ impl NoteCraftApp {
         let session_tabs_layout = session.settings.get("tabs_layout").is_some_and(|v| v.trim() == "true");
         let session_pages_right = session.settings.get(PAGES_RIGHT_KEY).is_some_and(|v| v.trim() == "true");
         let session_ribbon_collapsed = session.settings.get("ribbon_collapsed").map(|v| v.trim() == "true").unwrap_or(false);
+        let session_ribbon_layout =
+            session.settings.get(notecraft_engine::RIBBON_LAYOUT_KEY).as_deref().and_then(ribbon::Layout::parse).unwrap_or_default();
         // Two columns in the side panel, the way OneNote separates the notebooks from the
         // pages. This is the product's default navigation layout; the one-tree view remains
         // available as an explicit preference.
@@ -2268,6 +2281,7 @@ impl NoteCraftApp {
             snap_to_grid: session_snap,
             painter: None,
             ribbon_collapsed: session_ribbon_collapsed,
+            ribbon_layout: session_ribbon_layout,
             ribbon_peek: false,
             band_bottom: 0.0,
             zoom_percent: 100,
@@ -2431,6 +2445,11 @@ impl NoteCraftApp {
         }
         let _ = self.session.settings.set(LAST_ZOOM_KEY, &self.zoom_percent.to_string());
         let _ = self.session.settings.set(LAST_SCROLL_KEY, &format!("{:.0}", self.page_offset_y.max(0.0)));
+    }
+
+    /// Whether this window draws its own title bar (true) or keeps the system's (false).
+    pub fn own_frame(&self) -> bool {
+        self.frameless
     }
 
     /// Remembers which page is open, for the next time the window starts.
@@ -6365,7 +6384,8 @@ impl NoteCraftApp {
             ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
             self.title_row(ui, title.as_deref());
             if with_tabs {
-                ribbon::tab_strip(ui, &tab, source, in_table, collapsed, mic, &t, &mut acts);
+                let display = ribbon::Display { collapsed, layout: self.ribbon_layout };
+                ribbon::tab_strip(ui, &tab, source, in_table, display, mic, &t, &mut acts);
             }
         });
         self.band_bottom = band.response.rect.max.y;
@@ -7232,6 +7252,17 @@ impl NoteCraftApp {
 
     /// The ribbon under the title row: tabs and their groups.
     fn ribbon_bar(&mut self, ui: &mut Ui) {
+        // Issue #515: Alt and the letter a tab is marked with opens that tab.
+        let alt_tab = ui.ctx().input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::Key { key, pressed: true, modifiers, .. } if modifiers.alt => ribbon::tab_for_key(single_letter(key)?),
+                _ => None,
+            })
+        });
+        if let Some(name) = alt_tab {
+            self.ribbon_tab = name.to_owned();
+            self.ribbon_peek = false;
+        }
         let (tab, source, tokens) = (self.ribbon_tab.clone(), self.show_source, self.tokens);
         let font_selection = self.font_selection(ui.ctx());
         let family = match &font_selection.family {
@@ -7250,6 +7281,7 @@ impl NoteCraftApp {
             pageedit::FontValue::Unavailable => Some("11".to_owned()),
         };
         let view = ribbon::View {
+            layout: self.ribbon_layout,
             split_panes: self.split_panes,
             always_on_top: self.always_on_top,
             docked: self.docked.is_some(),
@@ -7276,8 +7308,6 @@ impl NoteCraftApp {
             page_colour: self.editor.as_ref().and_then(|e| e.colour),
             rule_colour: self.editor.as_ref().and_then(|e| e.rule_colour),
             paper_size: self.editor.as_ref().and_then(|e| e.paper_size),
-            can_undo: self.editor.as_ref().is_some_and(|e| e.history.can_undo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_undo),
-            can_redo: self.editor.as_ref().is_some_and(|e| e.history.can_redo()) || self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
             can_ink_redo: self.pad.as_ref().is_some_and(crate::inkpad::Pad::can_redo),
             ink_held: self.pad.as_ref().is_some_and(|pad| pad.holding() > 0),
             accessibility_open: self.accessibility_open,
@@ -7310,9 +7340,10 @@ impl NoteCraftApp {
         };
         let format = self.editor.as_ref().map(|e| e.format);
         let mut acts = Vec::new();
+        let command_height = ribbon::command_height(self.ribbon_layout) + 8.0;
         if !self.ribbon_folded() {
             egui::Panel::top("ribbon")
-                .exact_size(ribbon::GROUP_H + 8.0 + DISPLAY_FOOTER_H)
+                .exact_size(command_height + DISPLAY_FOOTER_H)
                 .frame(egui::Frame::new().fill(tokens.panel).inner_margin(egui::Margin::symmetric(4, 0)))
                 .show_separator_line(false)
                 .show(ui, |ui| {
@@ -7320,12 +7351,14 @@ impl NoteCraftApp {
                     // The display options sit in a footer row under the groups, at the bottom right, as OneNote has them.
                     let body = ui.max_rect();
                     let at = egui::Rect::from_min_size(egui::pos2(body.max.x - 26.0, body.max.y - DISPLAY_FOOTER_H + 1.0), vec2(22.0, 14.0));
-                    ribbon::display_options(ui, at, self.ribbon_collapsed, &tokens, &mut acts);
+                    let display = ribbon::Display { collapsed: self.ribbon_collapsed, layout: self.ribbon_layout };
+                    ribbon::display_options(ui, at, display, &tokens, &mut acts);
                 });
-            // The ribbon's bottom edge: a 1px panel under the whole ribbon, so it reads as its own
-            // control and is not covered by the panels below.
+            // The full-width edge uses about one point, rounded to whole device pixels.
+            let scale = ui.ctx().pixels_per_point();
+            let edge_height = scale.round().max(1.0) / scale;
             egui::Panel::top("ribbon-edge")
-                .exact_size(2.0)
+                .exact_size(edge_height)
                 .frame(egui::Frame::new().fill(crate::theme::mix(tokens.panel, tokens.text, 0.45)))
                 .show_separator_line(false)
                 .show(ui, |_| {});
@@ -7344,7 +7377,7 @@ impl NoteCraftApp {
                         .stroke(egui::Stroke::new(1.0, tokens.container_border))
                         .show(ui, |ui| {
                             ui.set_width(screen.width() - 8.0);
-                            ui.set_height(ribbon::GROUP_H + 8.0);
+                            ui.set_height(command_height);
                             acts = ribbon::show(ui, &tab, source, &view, format, &tokens);
                         });
                 })
@@ -7643,6 +7676,13 @@ impl NoteCraftApp {
             }
             ribbon::Act::ToggleRibbon => self.toggle_ribbon(),
             ribbon::Act::SetRibbonCollapsed(collapsed) => self.set_ribbon_collapsed(collapsed),
+            ribbon::Act::SetLayout(layout) => {
+                let p = params(&[("layout", layout.as_setting())]);
+                if self.run("ribbon.layout", &p).is_some() {
+                    self.ribbon_layout = layout;
+                    self.ribbon_peek = false;
+                }
+            }
             ribbon::Act::Mark(mark) => self.apply_mark(mark),
             ribbon::Act::FontSize(size) => self.apply_font_size(size),
             ribbon::Act::TextColour(colour) => self.apply_text_colour(pageedit::InlineFormat::Colour(colour)),
@@ -7946,8 +7986,6 @@ impl NoteCraftApp {
                 });
             }
             ribbon::Act::PaperSize(paper) => self.set_paper_size(paper.as_deref().and_then(notecraft_model::paper::Paper::parse)),
-            ribbon::Act::Undo => self.undo(),
-            ribbon::Act::Redo => self.step_back(false),
             ribbon::Act::ToGridCraft => self.hand_table_to_gridcraft(),
             ribbon::Act::FromGridCraft => self.read_table_from_gridcraft(),
             ribbon::Act::NewGridCraft => self.new_gridcraft(),
@@ -18552,9 +18590,30 @@ mod keep_boxes_tests {
         assert!(matches!(h.state().dialog, Some(Dialog::Link { .. })), "the Link action opens the Link dialog");
     }
 
+    /// Issue #577: a secondary note window follows the window's frame preference, so it does not
+    /// add a second title bar above the one NoteCraft draws.
+    #[test]
+    fn a_secondary_window_follows_the_window_frame_preference() {
+        let (_t, page, mut h) = two_boxes(false, "secondary-frame");
+        for own in [true, false] {
+            h.state_mut().set_frameless(own);
+            let request = crate::windows::Request { path: page.clone(), quick: false, docked: false };
+            let child = h.state().child_window(&request).expect("the secondary window opens");
+            assert_eq!(child.own_frame(), own, "secondary window follows own={own}");
+        }
+    }
+
+    /// Issue #515: Alt, then the letter a tab is marked with, opens that ribbon tab.
+    #[test]
+    fn alt_and_a_letter_opens_the_ribbon_tab_it_marks() {
+        let (_t, _page, mut h) = two_boxes(false, "keytips-tab");
+        assert_eq!(h.state().ribbon_tab, "Home");
+        h.key_press_modifiers(egui::Modifiers::ALT, egui::Key::Y);
+        h.run_steps(2);
+        assert_eq!(h.state().ribbon_tab, "History", "Alt+Y opens the History tab");
+    }
     /// Issue #505 follow-up: the ribbon's display menu, at its bottom right, folds and unfolds the
-    /// ribbon. Full-screen mode, the Simplified ribbon and hiding the Quick Access Toolbar are
-    /// listed, and say they are not built yet.
+    /// ribbon. Other display options stay available in the same menu.
     #[test]
     fn the_ribbon_display_menu_folds_and_unfolds_the_ribbon() {
         use egui_kittest::kittest::Queryable as _;

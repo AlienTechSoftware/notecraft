@@ -1726,6 +1726,7 @@
 @id	ui.discard_ocr_edits	[[RLI]]$$$Discard the unsaved edits of this OCR file@@@[[PDI]]
 @id	ui.image_text_why_web	[[RLI]]$$$Reading text from pictures is not in the browser version yet.@@@[[PDI]]
 @id	ui.ribbon_display_options	[[RLI]]$$$Ribbon display options@@@[[PDI]]
+@id	ui.ribbon_more_commands	[[RLI]]$$$More commands@@@[[PDI]]
 @id	ui.classic_ribbon	[[RLI]]$$$Classic Ribbon@@@[[PDI]]
 @id	ui.simplified_ribbon	[[RLI]]$$$Simplified Ribbon@@@[[PDI]]
 @id	ui.full_screen_mode	[[RLI]]$$$Full-screen mode@@@[[PDI]]

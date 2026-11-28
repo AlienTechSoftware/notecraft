@@ -256,6 +256,7 @@ pub enum Act {
     ToggleRibbon,
     /// The display menu's choice: `true` shows tabs only, `false` always shows the ribbon.
     SetRibbonCollapsed(bool),
+    SetLayout(Layout),
     /// Sort the table's rows by the caret's column: true for descending (issue #171).
     TableSort(bool),
     /// One tree, or two columns: the organisers and then the pages, as OneNote has it.
@@ -356,8 +357,6 @@ pub enum Act {
     /// Colour the open page's rule and grid lines, or `None` for the theme's own (issue #288).
     RuleColour(Option<notecraft_model::NodeColor>),
     /// Take back the last change to the page, or put it back.
-    Undo,
-    Redo,
     /// Hand the table the caret is in to GridCraft.
     ToGridCraft,
     /// Read the spreadsheet back into the table it came from.
@@ -668,6 +667,7 @@ fn first_grid_line(min: f32, anchor: f32, step: f32) -> f32 {
 /// What the View tab shows about the window.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct View<'a> {
+    pub layout: Layout,
     /// True when the side panel is two columns.
     pub split_panes: bool,
     /// True when the window is kept above the others.
@@ -716,8 +716,6 @@ pub struct View<'a> {
     /// The open page's sheet; `None` is Auto (issue #269).
     pub paper_size: Option<notecraft_model::paper::Paper>,
     /// Whether the page has anything to take back, and anything to put back.
-    pub can_undo: bool,
-    pub can_redo: bool,
     /// Whether the drawing has a stroke that Undo stroke took back, for Draw > Redo stroke.
     pub can_ink_redo: bool,
     /// Whether ink is picked up, which is when Draw > Rotate can turn it (issue #544).
@@ -787,12 +785,54 @@ const GROUP_NAME_Y: f32 = 10.0;
 /// How far the tool in use sinks into the rack.
 const DROP: f32 = 4.0;
 
+pub use notecraft_engine::RibbonLayout as Layout;
+
+#[derive(Clone, Copy)]
+pub struct Display {
+    pub collapsed: bool,
+    pub layout: Layout,
+}
+
+const SIMPLIFIED_CONTROL_H: f32 = 36.0;
+
+pub fn command_height(layout: Layout) -> f32 {
+    match layout {
+        Layout::Classic => GROUP_H,
+        Layout::Simplified => SIMPLIFIED_CONTROL_H,
+    }
+}
+
 /// Draws the ribbon. `tab` is the chosen tab, `source` whether the page source is shown.
 /// Returns every act the user asked for this frame (usually none or one).
 pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Option<PageFormat>, t: &Tokens) -> Vec<Act> {
     let mut acts = Vec::new();
     ui.add_space(3.0);
     let chosen = resolve_tab(tab, source, view.in_table);
+    if chosen == "Home" || view.layout == Layout::Simplified {
+        update_font_boxes(ui, view);
+    }
+    let key = egui::Id::new(("ribbon", view.layout, chosen));
+    command_strip(ui, key, t, |ui| match view.layout {
+        Layout::Classic => classic_tab(ui, chosen, source, view, format, t, &mut acts),
+        Layout::Simplified => simplified_tab(ui, chosen, source, view, format, t, &mut acts),
+    });
+    acts
+}
+
+fn classic_tab(ui: &mut Ui, chosen: &str, source: bool, view: &View<'_>, format: Option<PageFormat>, t: &Tokens, acts: &mut Vec<Act>) {
+    match chosen {
+        "Insert" => insert_tab(ui, view, t, acts),
+        "Draw" => draw_tab(ui, view, t, acts),
+        "History" => history_tab(ui, view, t, acts),
+        "Review" => review_tab(ui, view, t, acts),
+        "View" => view_tab(ui, source, view, t, acts),
+        TABLE_TAB => table_tab(ui, view, t, acts),
+        SOURCE_TAB => source_tab(ui, format, t, acts),
+        _ => home_tab(ui, view, t, acts),
+    }
+}
+
+fn command_strip(ui: &mut Ui, key: egui::Id, t: &Tokens, add: impl FnOnce(&mut Ui)) {
     // A tab with many groups is wider than a narrow window: the Draw tab alone has eleven,
     // as OneNote's does. Rather than clipping the last of them, the groups scroll sideways.
     // A mouse drag must not scroll: the controls here are clicked and dragged themselves, and a
@@ -800,14 +840,14 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
     // touch screen a finger drag is the only way to reach the groups past the edge, so there
     // it scrolls (egui's OnTouch); a control under the finger still takes its own drag.
     // Where an overflow arrow or the wheel asked the ribbon to go, last frame (issue #277).
-    let jump_id = egui::Id::new(("ribbon-jump", chosen));
+    let jump_id = key.with("jump");
     let jump = ui.data_mut(|d| d.remove_temp::<f32>(jump_id));
     let mut area = egui::ScrollArea::horizontal();
     if let Some(x) = jump {
         area = area.horizontal_scroll_offset(x);
     }
     let out = area
-        .id_salt(("ribbon", chosen))
+        .id_salt(key)
         // The ribbon is an Office-style command band, not a document scroller.  A
         // visible horizontal scrollbar is painted across its bottom edge when a tab
         // is wider than the window, which looks like a stray black artifact.  Keep
@@ -817,21 +857,12 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
         .show(ui, |ui| {
             ui.horizontal_top(|ui| {
                 ui.add_space(4.0);
-                match chosen {
-                    "Insert" => insert_tab(ui, view, t, &mut acts),
-                    "Draw" => draw_tab(ui, view, t, &mut acts),
-                    "History" => history_tab(ui, view, t, &mut acts),
-                    "Review" => review_tab(ui, view, t, &mut acts),
-                    "View" => view_tab(ui, source, view, t, &mut acts),
-                    TABLE_TAB => table_tab(ui, view, t, &mut acts),
-                    SOURCE_TAB => source_tab(ui, format, t, &mut acts),
-                    _ => home_tab(ui, view, t, &mut acts),
-                }
+                add(ui);
             });
         });
+    let last_id = key.with("arrows-last");
     if let Some(x) = overflow_arrows(ui, &out, t) {
         // Ask for another frame only when the arrows move: asking every frame keeps the window redrawing.
-        let last_id = egui::Id::new("ribbon-arrows-last");
         if ui.data(|d| d.get_temp::<f32>(last_id)) != Some(x) {
             ui.ctx().request_repaint();
         }
@@ -840,9 +871,128 @@ pub fn show(ui: &mut Ui, tab: &str, source: bool, view: &View<'_>, format: Optio
             d.insert_temp(jump_id, x);
         });
     } else {
-        ui.data_mut(|d| d.remove::<f32>(egui::Id::new("ribbon-arrows-last")));
+        ui.data_mut(|d| d.remove::<f32>(last_id));
     }
-    acts
+}
+
+/// The shortened command strip always keeps the common editing actions in reach. The
+/// current tab's complete set of commands is available from its last button.
+fn simplified_tab(ui: &mut Ui, chosen: &str, source: bool, view: &View<'_>, format: Option<PageFormat>, t: &Tokens, acts: &mut Vec<Act>) {
+    ui.spacing_mut().item_spacing.x = 2.0;
+    let paste = strip_button(ui, SplitIcon::Mark(Mark::Paste), crate::tl_id!("ui.paste"), crate::tl_id!("ui.ctrl_v_pastes_into_the_page"), false, t);
+    let (rect, more) = ui.allocate_exact_size(vec2(22.0, SIMPLIFIED_CONTROL_H), Sense::click());
+    small_back(ui.painter(), rect, &more, false, t);
+    chevron(ui.painter(), rect.center(), t.text);
+    let name = crate::i18n::format_message_id("ui.name_options", &[("name", crate::tl_id!("ui.paste"))]);
+    more.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &name));
+    let more = more.on_hover_text(name);
+    paste_buttons(ui, paste, more, t, acts);
+
+    let basic = ui
+        .add_enabled_ui(view.text_editable, |ui| {
+            let label = crate::tl_id!("ui.basic_text");
+            strip_button(ui, SplitIcon::Mark(Mark::Bold), label, label, true, t)
+        })
+        .inner;
+    command_popup(&basic, acts, |ui, acts| home_basic_text(ui, view, t, acts));
+
+    let label = crate::tl_id!("ui.styles");
+    let styles = strip_button(ui, SplitIcon::Icon(Icon::Page), label, label, true, t);
+    let style_id = egui::Popup::default_response_id(&styles);
+    let was_open = egui::Popup::is_id_open(ui.ctx(), style_id);
+    if opened_by_keys(&styles) && !was_open {
+        ui.data_mut(|d| d.insert_temp(first_choice_id(style_id), true));
+    }
+    egui::Popup::menu(&styles).show(|ui| {
+        ui.set_min_width(190.0);
+        if style_choices(ui, style_id, view.style, t, acts) {
+            consume_popup_activation(ui);
+            ui.close();
+        }
+    });
+    if was_open && !egui::Popup::is_id_open(ui.ctx(), style_id) && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        styles.request_focus();
+    }
+
+    for (icon, label, tip, act) in [
+        (Icon::Attach, crate::tl_id!("ui.send_page"), crate::tl_id!("ui.portable_send_hint"), Act::SendPage),
+        (Icon::Calendar, crate::tl_id!("ui.meeting_details"), crate::tl_id!("ui.meeting_details_tip"), Act::MeetingDetails),
+    ] {
+        if strip_button(ui, SplitIcon::Icon(icon), label, tip, false, t).clicked() {
+            acts.push(act);
+        }
+    }
+    let label = crate::tl_id!("ui.ribbon_more_commands");
+    let more = strip_button(ui, SplitIcon::Icon(Icon::Bars), label, label, true, t);
+    command_popup(&more, acts, |ui, acts| {
+        ui.set_width((ui.ctx().content_rect().width() - 24.0).max(100.0));
+        let key = ui.id().with(("ribbon-tab-commands", chosen));
+        command_strip(ui, key, t, |ui| classic_tab(ui, chosen, source, view, format, t, acts));
+    });
+}
+
+/// Show a command panel that can open its own pickers above the page.
+fn command_popup(button: &egui::Response, acts: &mut Vec<Act>, add: impl FnOnce(&mut Ui, &mut Vec<Act>)) {
+    let id = egui::Popup::default_response_id(button);
+    let was_open = egui::Popup::is_id_open(&button.ctx, id);
+    if let Some(panel) = egui::Popup::menu(button).close_behavior(egui::PopupCloseBehavior::IgnoreClicks).show(|ui| {
+        let before = acts.len();
+        add(ui, acts);
+        if acts.len() != before {
+            consume_popup_activation(ui);
+            ui.close();
+        }
+    }) {
+        // The tab's pickers are foreground areas of their own. Keep their parent alive while
+        // they handle a click, the same way a folded ribbon stays open over the page.
+        if was_open
+            && panel.response.clicked_elsewhere()
+            && button.ctx.pointer_latest_pos().is_some_and(|pos| {
+                !button.rect.contains(pos) && button.ctx.layer_id_at(pos).is_none_or(|layer| layer.order != egui::Order::Foreground)
+            })
+        {
+            egui::Popup::close_id(&button.ctx, id);
+        }
+    }
+    if was_open && button.ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        button.request_focus();
+    }
+}
+
+/// A command can return focus to the page while the activation key is still in this frame.
+fn consume_popup_activation(ui: &Ui) {
+    ui.input_mut(|input| {
+        input.consume_key(egui::Modifiers::NONE, egui::Key::Enter);
+        if input.consume_key(egui::Modifiers::NONE, egui::Key::Space) {
+            input.events.retain(|event| !matches!(event, egui::Event::Text(text) if text == " "));
+        }
+    });
+}
+
+/// An icon and its visible label, with a larger target than the Classic stack's controls.
+// i18n-ui-text: label,tip
+fn strip_button(ui: &mut Ui, icon: SplitIcon, label: &str, tip: &str, menu: bool, t: &Tokens) -> egui::Response {
+    let font = egui::FontId::proportional(12.0);
+    let label = crate::tl!(label);
+    let painter = ui.painter();
+    let galley = painter.layout_no_wrap(label.to_owned(), font, t.text);
+    let width = galley.size().x + if menu { 51.0 } else { 37.0 };
+    let (rect, response) = ui.allocate_exact_size(vec2(width, SIMPLIFIED_CONTROL_H), Sense::click());
+    let painter = ui.painter_at(rect);
+    small_back(&painter, rect, &response, false, t);
+    let enabled = ui.is_enabled();
+    let icon_rect = Rect::from_center_size(egui::pos2(rect.left() + 15.0, rect.center().y), vec2(20.0, 20.0));
+    match icon {
+        SplitIcon::Icon(icon) => icons::paint_ribbon(ui, icon_rect, icon, if enabled { t.accent } else { t.muted }),
+        SplitIcon::Mark(mark) => ribbon_icons::paint(&painter, icon_rect, mark, if enabled { mark.color(t.text, t.accent) } else { t.muted }),
+    }
+    let pos = egui::pos2(rect.left() + 29.0, rect.center().y - galley.size().y / 2.0);
+    painter.galley_with_override_text_color(pos, galley, if enabled { t.text } else { t.muted });
+    if menu {
+        chevron(&painter, egui::pos2(rect.right() - 11.0, rect.center().y), if enabled { t.text } else { t.muted });
+    }
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+    response.on_hover_text(crate::tl!(tip))
 }
 
 /// How much of the ribbon an arrow moves it by: most of what is in view, so a group cut at
@@ -939,11 +1089,24 @@ pub fn tabs(source: bool, in_table: bool) -> Vec<&'static str> {
     v
 }
 
+/// The Alt key letter of each ribbon tab (issue #515), the one Alt and the letter opens it with.
+pub const TAB_KEYS: [(char, &str); 6] = [('H', "Home"), ('I', "Insert"), ('D', "Draw"), ('Y', "History"), ('R', "Review"), ('V', "View")];
+
+/// The key letter a tab is marked with, if it has one.
+pub fn tab_key(name: &str) -> Option<char> {
+    TAB_KEYS.iter().find(|(_, tab)| *tab == name).map(|(letter, _)| *letter)
+}
+
+/// The tab an Alt letter opens, if any.
+pub fn tab_for_key(letter: char) -> Option<&'static str> {
+    TAB_KEYS.iter().find(|(key, _)| key.eq_ignore_ascii_case(&letter)).map(|(_, tab)| *tab)
+}
 /// The tab names, drawn on the coloured band at the top of the window, File first, as in
 /// Office. The chosen tab is a raised tab in the ribbon's own colour that runs down into the
 /// ribbon below it; the others are white writing on the band, lit when the pointer is over
 /// one.
-pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, collapsed: bool, mic: Mic, t: &Tokens, acts: &mut Vec<Act>) {
+pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, display: Display, mic: Mic, t: &Tokens, acts: &mut Vec<Act>) {
+    let collapsed = display.collapsed;
     // Folded, no tab is the raised one: there is no ribbon under it to run into.
     let current = resolve_tab(tab, source, in_table);
     let chosen = if collapsed { "" } else { current };
@@ -1002,6 +1165,10 @@ pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, collapsed
             }
             let colour = if selected { t.accent } else { t.band_text };
             painter.text(rect.center() + vec2(0.0, 1.0), Align2::CENTER_CENTER, display_name, font.clone(), colour);
+            // Alt held: the tab's key letter is shown on it, as the Alt KeyTip (issue #515).
+            if let Some(letter) = ui.input(|i| i.modifiers.alt).then(|| tab_key(name)).flatten() {
+                painter.text(rect.center_top() + vec2(0.0, 2.0), Align2::CENTER_TOP, letter.to_string(), egui::FontId::proportional(10.0), t.accent);
+            }
             let enabled = ui.is_enabled();
             let label = display_name.to_string();
             resp.widget_info(move || egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, selected, label.clone()));
@@ -1083,16 +1250,15 @@ pub fn tab_strip(ui: &mut Ui, tab: &str, source: bool, in_table: bool, collapsed
             // beside the fold control, to bring the ribbon back.
             if collapsed {
                 let (at, _) = ui.allocate_exact_size(vec2(22.0, TAB_STRIP_H - 6.0), Sense::hover());
-                display_options(ui, at, collapsed, t, acts);
+                display_options(ui, at, display, t, acts);
             }
         });
     });
 }
 
-/// The ribbon display options: a small button at the end of the tab names with a menu of how
-/// the ribbon is shown. Show tabs only and Always show Ribbon set the fold; the entries NoteCraft
-/// does not build yet are listed disabled, with the reason, not left out.
-pub fn display_options(ui: &mut Ui, at: egui::Rect, collapsed: bool, t: &Tokens, acts: &mut Vec<Act>) {
+/// The layout and visibility choices are available from both the expanded and folded ribbon.
+pub fn display_options(ui: &mut Ui, at: egui::Rect, display: Display, t: &Tokens, acts: &mut Vec<Act>) {
+    let Display { collapsed, layout } = display;
     let (rect, resp) = (at, ui.interact(at, ui.id().with("ribbon-display-options"), Sense::click()));
     if resp.hovered() {
         ui.painter().rect_filled(rect, 3.0, t.band_hover);
@@ -1107,11 +1273,13 @@ pub fn display_options(ui: &mut Ui, at: egui::Rect, collapsed: bool, t: &Tokens,
     let shown = resp.on_hover_text(label);
     egui::Popup::menu(&shown).show(|ui| {
         ui.set_min_width(220.0);
-        if ui.selectable_label(true, crate::tl_id!("ui.classic_ribbon")).clicked() {
-            ui.close();
+        for (choice, name) in [(Layout::Classic, crate::tl_id!("ui.classic_ribbon")), (Layout::Simplified, crate::tl_id!("ui.simplified_ribbon"))] {
+            if ui.selectable_label(layout == choice, name).clicked() {
+                acts.push(Act::SetLayout(choice));
+                ui.close();
+            }
         }
         let not_built = crate::tl_id!("ui.not_built_yet");
-        ui.add_enabled(false, egui::Button::new(crate::tl_id!("ui.simplified_ribbon"))).on_disabled_hover_text(not_built);
         ui.separator();
         ui.add_enabled(false, egui::Button::new(crate::tl_id!("ui.full_screen_mode"))).on_disabled_hover_text(not_built);
         if ui.selectable_label(collapsed, crate::tl_id!("ui.show_tabs_only")).clicked() {
@@ -1594,53 +1762,11 @@ pub fn tag_label(tag: Tag) -> String {
 }
 
 fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
-    // Undo comes first, as it does in OneNote's own Home tab: it is the button a writer
-    // reaches for in a hurry, and a page editor without one is not safe to write in.
-    group(ui, crate::tl_id!("ui.undo"), t, |ui| {
-        rows(ui, |ui| {
-            if row_button(ui, Icon::Undo, crate::tl_id!("ui.undo"), crate::tl_id!("ui.ctrl_z_takes_back_the_last_change"), view.can_undo, t).clicked()
-            {
-                acts.push(Act::Undo);
-            }
-            if row_button(ui, Icon::Redo, crate::tl_id!("ui.redo"), crate::tl_id!("ui.ctrl_y_puts_it_back"), view.can_redo, t).clicked() {
-                acts.push(Act::Redo);
-            }
-        });
-    });
     group(ui, crate::tl_id!("ui.clipboard"), t, |ui| {
         // Paste does the usual paste at once; its options keep the formatting or the text only
         // (issue #535).
         let (paste, options) = big_split(ui, Mark::Paste, crate::tl_id!("ui.paste"), crate::tl_id!("ui.ctrl_v_pastes_into_the_page"), t);
-        if paste.clicked() {
-            acts.push(Act::Paste);
-        }
-        let popup_id = egui::Popup::default_response_id(&options);
-        let was_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
-        if opened_by_keys(&options) && !was_open {
-            ui.data_mut(|d| d.insert_temp(first_choice_id(popup_id), true));
-        }
-        egui::Popup::menu(&options).show(|ui| {
-            picker_title(ui, crate::tl_id!("ui.paste_options"), t);
-            let (rich, plain) = if cfg!(target_os = "macos") { ("Cmd+V", "Cmd+Shift+V") } else { ("Ctrl+V", "Ctrl+Shift+V") };
-            let keep = floating::menu_row_shortcut(ui, Some(Glyph::Mark(Mark::Paste)), crate::tl_id!("ui.keep_source_formatting"), rich, t);
-            first_choice(ui, popup_id, &keep);
-            if keep.clicked() {
-                acts.push(Act::Paste);
-                ui.close();
-            }
-            // Issue #564: the source's structure and emphasis, in the page's own fonts and colours.
-            if floating::menu_row(ui, None, crate::tl_id!("ui.merge_formatting"), t).clicked() {
-                acts.push(Act::PasteMerge);
-                ui.close();
-            }
-            if floating::menu_row_shortcut(ui, None, crate::tl_id!("ui.keep_text_only"), plain, t).clicked() {
-                acts.push(Act::PastePlain);
-                ui.close();
-            }
-        });
-        if was_open && !egui::Popup::is_id_open(ui.ctx(), popup_id) && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            options.request_focus();
-        }
+        paste_buttons(ui, paste, options, t, acts);
         rows(ui, |ui| {
             if mark_row(ui, Mark::Cut, crate::tl_id!("ui.cut"), crate::tl_id!("ui.cut_the_selection"), t).clicked() {
                 acts.push(Act::Clipboard("cut"));
@@ -1659,216 +1785,253 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
             }
         });
     });
-    // Issue #373: the font and its size share the top row; the marks and the colours the second;
-    // lists, indentation, alignment and quote the third. Every small control is one size and
-    // takes the keyboard the same way, and with nothing to format they are all unavailable.
-    group(ui, crate::tl_id!("ui.basic_text"), t, |ui| {
-        if !view.text_editable {
-            ui.disable();
-        }
-        rows(ui, |ui| {
-            ui.horizontal(|ui| {
-                // The font name: the same combo box as the size, listing the installed fonts.
-                // The font list is read in the background. While it is not ready the list says so,
-                // and the window asks to be drawn again until it is.
-                let (families, families_note): (Vec<String>, Option<String>) = {
-                    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-                    {
-                        match crate::fonts::catalog_if_ready() {
-                            Some(Ok(catalog)) => (
-                                catalog.families().iter().filter(|name| notecraft_formats::markdown::valid_font_family(name)).cloned().collect(),
-                                None,
-                            ),
-                            Some(Err(error)) => {
-                                log::warn!("Could not discover installed fonts: {error}");
-                                (Vec::new(), Some(crate::tl_id!("ui.font_catalog_unavailable").to_string()))
-                            }
-                            None => {
-                                ui.ctx().request_repaint_after(std::time::Duration::from_millis(150));
-                                (Vec::new(), Some(crate::tl_id!("ui.loading_fonts").to_string()))
-                            }
-                        }
-                    }
-                    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-                    {
-                        (Vec::new(), Some(crate::tl_id!("ui.font_catalog_unavailable").to_string()))
-                    }
-                };
-                // Warn only once the installed list is known; while it loads, nothing is missing yet.
-                // The default setting shows as its translated label, which is not a font name, so it is never missing.
-                let named_family = view.font_family.filter(|family| *family != crate::tl_id!("ui.default"));
-                let family_missing = !families.is_empty() && crate::font_picker::is_missing(named_family.unwrap_or(""), &families);
-                // Record a missing font once, when it first shows, not on every frame.
-                let missing_key = egui::Id::new("notecraft-missing-font-reported");
-                if family_missing {
-                    let shown = named_family.unwrap_or("");
-                    if ui.data(|d| d.get_temp::<String>(missing_key)).as_deref() != Some(shown) {
-                        crate::usage::record(crate::usage::Level::Warning, "font_missing_shown", &[("family", shown)]);
-                        ui.data_mut(|d| d.insert_temp(missing_key, shown.to_owned()));
-                    }
-                } else {
-                    ui.data_mut(|d| d.remove::<String>(missing_key));
+    group(ui, crate::tl_id!("ui.basic_text"), t, |ui| home_basic_text(ui, view, t, acts));
+    group(ui, crate::tl_id!("ui.styles"), t, |ui| {
+        gallery(ui, "styles", view.style, t, acts, |ui, acts| {
+            // The box shows two rows, as OneNote's does: the first two, or, when the caret is in
+            // a later style, that one and the next (the last two for the last), so the current
+            // style is in sight. Ordinary text keeps the headings in the box.
+            let first = STYLES.iter().position(|(_, k)| *k == view.style && *k != "p").filter(|i| *i >= 2).map_or(0, |i| i.min(STYLES.len() - 2));
+            for (label, kind) in STYLES.iter().skip(first).take(2) {
+                if style_row(ui, label, kind, *kind == view.style, t).clicked() {
+                    acts.push(Act::Block(leak(kind)));
                 }
-                // The list grouped by script, with a translated heading for each. Built once per catalogue read.
-                let sections = script_sections(ui.ctx(), &families);
-                // Recently used families, most recent first. Kept for this session in egui memory.
-                let recent_families: Vec<String> = recent_families(ui.ctx());
-                let family_out = crate::combo::show(
-                    ui,
-                    t.text,
-                    crate::combo::Spec {
-                        id: ui.id().with("font-family"),
-                        box_label: crate::tl_id!("ui.font_family_box"),
-                        arrow_label: crate::tl_id!("ui.font_family"),
-                        shown: view.font_family.unwrap_or(""),
-                        width: 96.0,
-                        items: &families,
-                        empty_note: families_note.as_deref(),
-                        accept: &|typed| notecraft_formats::markdown::valid_font_family(typed),
-                        filter: true,
-                        recent: &recent_families,
-                        missing: family_missing,
-                        preview: true,
-                        sections: &sections,
-                        add_font: Some(crate::tl_id!("ui.add_font")),
-                        usage: "ribbon-family",
-                        tokens: *t,
-                    },
-                );
-                if family_out.add_font {
-                    // The Add Font row: pick font files, install them, and read the list again.
-                    if let Some(report) = crate::font_install::pick_and_install()
-                        && !report.copied.is_empty()
-                    {
-                        crate::fonts::rescan_in_background(ui.ctx().clone());
-                    }
-                }
-                if let Some(name) = family_out.chosen {
-                    remember_family(ui.ctx(), &name);
-                    acts.push(Act::FontFamily(name));
-                }
-                // OneNote's size control: an editable box showing the size, and a drop-down arrow.
-                // The box shows the selected size; with no selection it keeps the last size seen.
-                let last_id = ui.id().with("font-size-last");
-                if let Some(now) = view.font_size.filter(|s| s.parse::<u8>().is_ok()) {
-                    ui.data_mut(|d| d.insert_temp(last_id, now.to_owned()));
-                }
-                let shown_owned: String =
-                    view.font_size.map(str::to_owned).or_else(|| ui.data(|d| d.get_temp::<String>(last_id))).unwrap_or_default();
-                let shown = shown_owned.as_str();
-                let sizes: Vec<String> = FONT_SIZES.iter().map(|size| size.to_string()).collect();
-                let size_out = crate::combo::show(
-                    ui,
-                    t.text,
-                    crate::combo::Spec {
-                        id: ui.id().with("font-size"),
-                        box_label: crate::tl_id!("ui.font_size_box"),
-                        arrow_label: crate::tl_id!("ui.font_size"),
-                        shown,
-                        width: 38.0,
-                        items: &sizes,
-                        empty_note: None,
-                        accept: &|typed| crate::font_picker::size_is_usable(typed, &FONT_SIZES),
-                        filter: false,
-                        recent: &[],
-                        missing: false,
-                        preview: false,
-                        sections: &[],
-                        add_font: None,
-                        usage: "ribbon-size",
-                        tokens: *t,
-                    },
-                );
-                let boxes = crate::floating::FontBoxes {
-                    family: view.font_family.unwrap_or("").to_owned(),
-                    size: shown.to_owned(),
-                    families: families.clone(),
-                    families_note: families_note.clone(),
-                    sizes: sizes.clone(),
-                    recent: recent_families.clone(),
-                    family_missing,
-                    sections: sections.clone(),
-                };
-                ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(crate::floating::FONT_BOXES_KEY), boxes));
-                if let Some(size) = size_out.chosen.and_then(|typed| typed.parse::<u8>().ok()) {
-                    acts.push(Act::FontSize(size));
-                }
-                if mark_button(ui, Mark::ClearFormat, crate::tl_id!("ui.clear_formatting_2"), crate::tl_id!("ui.take_the_marks_off"), false, t)
-                    .clicked()
-                {
-                    acts.push(Act::ClearFormatting);
-                }
-            });
-            ui.horizontal(|ui| {
-                if mark_button(ui, Mark::Bold, crate::tl_id!("ui.bold"), crate::tl_id!("ui.bold_ctrl_b"), view.marks.bold, t).clicked() {
-                    acts.push(Act::Mark("bold"));
-                }
-                if mark_button(ui, Mark::Italic, crate::tl_id!("ui.italic"), crate::tl_id!("ui.italic_ctrl_i"), view.marks.italic, t).clicked() {
-                    acts.push(Act::Mark("italic"));
-                }
-                if mark_button(ui, Mark::Underline, crate::tl_id!("ui.underline"), crate::tl_id!("ui.underline"), view.marks.underline, t).clicked() {
-                    acts.push(Act::Mark("underline"));
-                }
-                if mark_button(ui, Mark::Strike, crate::tl_id!("ui.strikethrough"), crate::tl_id!("ui.strike_through"), view.marks.strike, t)
-                    .clicked()
-                {
-                    acts.push(Act::Mark("strike"));
-                }
-                // i18n-exempt: x2 is the compact mathematical symbol for subscript.
-                if small(ui, None, "x2", crate::tl_id!("ui.subscript"), crate::tl_id!("ui.subscript"), view.marks.subscript, t).clicked() {
-                    acts.push(Act::Mark("subscript"));
-                }
-                // i18n-exempt: x^2 is the compact mathematical symbol for superscript.
-                if small(ui, None, "x^2", crate::tl_id!("ui.superscript"), crate::tl_id!("ui.superscript"), view.marks.superscript, t).clicked() {
-                    acts.push(Act::Mark("superscript"));
-                }
-                if small(ui, Some(Icon::Code), "", crate::tl_id!("ui.code_2"), crate::tl_id!("ui.code_in_one_line"), false, t).clicked() {
-                    acts.push(Act::Mark("code"));
-                }
-                // The colours last in the row, so the controls before them keep their places (#260).
-                colour_palette(ui, false, view.text_colour, view.text_colour_mixed, t, acts);
-                colour_palette(ui, true, view.text_highlight, view.text_highlight_mixed, t, acts);
-            });
-            ui.horizontal(|ui| {
-                if small(ui, Some(Icon::ListBullet), "", crate::tl_id!("ui.bullets"), crate::tl_id!("ui.a_bullet_list"), false, t).clicked() {
-                    acts.push(Act::Block("bullet"));
-                }
-                if small(ui, Some(Icon::ListNumber), "", crate::tl_id!("ui.numbering"), crate::tl_id!("ui.a_numbered_list"), false, t).clicked() {
-                    acts.push(Act::Block("number"));
-                }
-                if mark_button(
-                    ui,
-                    Mark::IndentLess,
-                    crate::tl_id!("ui.decrease_indentation"),
-                    crate::tl_id!("ui.decrease_indentation_shift_tab"),
-                    false,
-                    t,
-                )
-                .clicked()
-                {
-                    acts.push(Act::Indent(false));
-                }
-                if mark_button(ui, Mark::IndentMore, crate::tl_id!("ui.increase_indentation"), crate::tl_id!("ui.increase_indentation_tab"), false, t)
-                    .clicked()
-                {
-                    acts.push(Act::Indent(true));
-                }
-                align_menu(ui, t, acts);
-                if small(ui, Some(Icon::Quote), "", crate::tl_id!("ui.quote_2"), crate::tl_id!("ui.quote_this_paragraph"), false, t).clicked() {
-                    acts.push(Act::Block("quote"));
-                }
-                if small(ui, Some(Icon::Link), "", crate::tl_id!("ui.link"), crate::tl_id!("ui.a_link"), false, t).clicked() {
-                    acts.push(Act::Insert("link"));
-                }
-            });
+            }
         });
     });
-    // Page direction is NoteCraft's own: OneNote has no such thing, and a notebook written
-    // in Arabic wants one. It stays visible in the ribbon as page setup rather than being
-    // hidden in a Word-style dialog. Paragraph direction remains available beside it,
-    // while the alignment menu remains the primary place for paragraph alignment and
-    // direction.
-    group(ui, crate::tl_id!("ui.page_setup"), t, |ui| {
+    group(ui, crate::tl_id!("ui.tags"), t, |ui| {
+        gallery(ui, "tags", "", t, acts, |ui, acts| {
+            for tag in [Tag::ToDo, Tag::Important, Tag::Question] {
+                if tag_row(ui, tag, 20.0, t).clicked() {
+                    acts.push(Act::Tag(tag));
+                }
+            }
+        });
+        if big(ui, Icon::Todo, crate::tl_id!("ui.to_do_tag_2"), crate::tl_id!("ui.a_to_do_box_on_this_line_ctrl_1"), t).clicked() {
+            acts.push(Act::Block("todo"));
+        }
+        if big(ui, Icon::Search, crate::tl_id!("ui.find_tags_3"), crate::tl_id!("ui.list_the_tagged_notes_and_go_to_them"), t).clicked() {
+            acts.push(Act::FindTags);
+        }
+    });
+    group(ui, crate::tl_id!("ui.email"), t, |ui| {
+        if big(ui, Icon::Attach, crate::tl_id!("ui.send_page_3"), crate::tl_id!("ui.portable_send_hint"), t).clicked() {
+            acts.push(Act::SendPage);
+        }
+    });
+    group(ui, crate::tl_id!("ui.meetings"), t, |ui| {
+        if big(ui, Icon::Calendar, crate::tl_id!("ui.meeting_details_3"), crate::tl_id!("ui.meeting_details_tip"), t).clicked() {
+            acts.push(Act::MeetingDetails);
+        }
+    });
+}
+
+/// Refresh the font controls for the ribbon and the page menu, even with Basic Text closed.
+fn update_font_boxes(ui: &Ui, view: &View<'_>) {
+    // The font name: the same combo box as the size, listing the installed fonts.
+    // The font list is read in the background. While it is not ready the list says so,
+    // and the window asks to be drawn again until it is.
+    let (families, families_note): (Vec<String>, Option<String>) = {
+        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+        {
+            match crate::fonts::catalog_if_ready() {
+                Some(Ok(catalog)) => {
+                    (catalog.families().iter().filter(|name| notecraft_formats::markdown::valid_font_family(name)).cloned().collect(), None)
+                }
+                Some(Err(error)) => {
+                    log::warn!("Could not discover installed fonts: {error}");
+                    (Vec::new(), Some(crate::tl_id!("ui.font_catalog_unavailable").to_string()))
+                }
+                None => {
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(150));
+                    (Vec::new(), Some(crate::tl_id!("ui.loading_fonts").to_string()))
+                }
+            }
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+        {
+            (Vec::new(), Some(crate::tl_id!("ui.font_catalog_unavailable").to_string()))
+        }
+    };
+    // Warn only once the installed list is known; while it loads, nothing is missing yet.
+    // The default setting shows as its translated label, which is not a font name, so it is never missing.
+    let named_family = view.font_family.filter(|family| *family != crate::tl_id!("ui.default"));
+    let family_missing = !families.is_empty() && crate::font_picker::is_missing(named_family.unwrap_or(""), &families);
+    // Record a missing font once, when it first shows, not on every frame.
+    let missing_key = egui::Id::new("notecraft-missing-font-reported");
+    if family_missing {
+        let shown = named_family.unwrap_or("");
+        if ui.data(|d| d.get_temp::<String>(missing_key)).as_deref() != Some(shown) {
+            crate::usage::record(crate::usage::Level::Warning, "font_missing_shown", &[("family", shown)]);
+            ui.data_mut(|d| d.insert_temp(missing_key, shown.to_owned()));
+        }
+    } else {
+        ui.data_mut(|d| d.remove::<String>(missing_key));
+    }
+    // The list grouped by script, with a translated heading for each. Built once per catalogue read.
+    let sections = script_sections(ui.ctx(), &families);
+    // Recently used families, most recent first. Kept for this session in egui memory.
+    let recent_families: Vec<String> = recent_families(ui.ctx());
+    // OneNote's size control: an editable box showing the size, and a drop-down arrow.
+    // The box shows the selected size; with no selection it keeps the last size seen.
+    let last_id = egui::Id::new(("font-size-last", ui.ctx().viewport_id()));
+    if let Some(now) = view.font_size.filter(|s| s.parse::<u8>().is_ok()) {
+        ui.data_mut(|d| d.insert_temp(last_id, now.to_owned()));
+    }
+    let shown_owned: String = view.font_size.map(str::to_owned).or_else(|| ui.data(|d| d.get_temp::<String>(last_id))).unwrap_or_default();
+    let sizes: Vec<String> = FONT_SIZES.iter().map(|size| size.to_string()).collect();
+    let boxes = crate::floating::FontBoxes {
+        family: view.font_family.unwrap_or("").to_owned(),
+        size: shown_owned,
+        families,
+        families_note,
+        sizes,
+        recent: recent_families,
+        family_missing,
+        sections,
+    };
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(crate::floating::FONT_BOXES_KEY), boxes));
+}
+
+/// Basic Text is shared by the Classic group and its Simplified popup.
+fn home_basic_text(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
+    if !view.text_editable {
+        ui.disable();
+    }
+    let boxes: crate::floating::FontBoxes = ui.data(|d| d.get_temp(egui::Id::new(crate::floating::FONT_BOXES_KEY))).unwrap_or_default();
+    rows(ui, |ui| {
+        ui.horizontal(|ui| {
+            let family_out = crate::combo::show(
+                ui,
+                t.text,
+                crate::combo::Spec {
+                    id: ui.id().with("font-family"),
+                    box_label: crate::tl_id!("ui.font_family_box"),
+                    arrow_label: crate::tl_id!("ui.font_family"),
+                    shown: &boxes.family,
+                    width: 96.0,
+                    items: &boxes.families,
+                    empty_note: boxes.families_note.as_deref(),
+                    accept: &|typed| notecraft_formats::markdown::valid_font_family(typed),
+                    filter: true,
+                    recent: &boxes.recent,
+                    missing: boxes.family_missing,
+                    preview: true,
+                    sections: &boxes.sections,
+                    add_font: Some(crate::tl_id!("ui.add_font")),
+                    usage: "ribbon-family",
+                    tokens: *t,
+                },
+            );
+            if family_out.add_font {
+                // The Add Font row: pick font files, install them, and read the list again.
+                if let Some(report) = crate::font_install::pick_and_install()
+                    && !report.copied.is_empty()
+                {
+                    crate::fonts::rescan_in_background(ui.ctx().clone());
+                }
+            }
+            if let Some(name) = family_out.chosen {
+                remember_family(ui.ctx(), &name);
+                acts.push(Act::FontFamily(name));
+            }
+            let size_out = crate::combo::show(
+                ui,
+                t.text,
+                crate::combo::Spec {
+                    id: ui.id().with("font-size"),
+                    box_label: crate::tl_id!("ui.font_size_box"),
+                    arrow_label: crate::tl_id!("ui.font_size"),
+                    shown: &boxes.size,
+                    width: 38.0,
+                    items: &boxes.sizes,
+                    empty_note: None,
+                    accept: &|typed| crate::font_picker::size_is_usable(typed, &FONT_SIZES),
+                    filter: false,
+                    recent: &[],
+                    missing: false,
+                    preview: false,
+                    sections: &[],
+                    add_font: None,
+                    usage: "ribbon-size",
+                    tokens: *t,
+                },
+            );
+            if let Some(size) = size_out.chosen.and_then(|typed| typed.parse::<u8>().ok()) {
+                acts.push(Act::FontSize(size));
+            }
+            if small(ui, Some(Icon::ListBullet), "", crate::tl_id!("ui.bullets"), crate::tl_id!("ui.a_bullet_list"), false, t).clicked() {
+                acts.push(Act::Block("bullet"));
+            }
+            if small(ui, Some(Icon::ListNumber), "", crate::tl_id!("ui.numbering"), crate::tl_id!("ui.a_numbered_list"), false, t).clicked() {
+                acts.push(Act::Block("number"));
+            }
+            if mark_button(
+                ui,
+                Mark::IndentLess,
+                crate::tl_id!("ui.decrease_indentation"),
+                crate::tl_id!("ui.decrease_indentation_shift_tab"),
+                false,
+                t,
+            )
+            .clicked()
+            {
+                acts.push(Act::Indent(false));
+            }
+            if mark_button(ui, Mark::IndentMore, crate::tl_id!("ui.increase_indentation"), crate::tl_id!("ui.increase_indentation_tab"), false, t)
+                .clicked()
+            {
+                acts.push(Act::Indent(true));
+            }
+            if mark_button(ui, Mark::ClearFormat, crate::tl_id!("ui.clear_formatting_2"), crate::tl_id!("ui.take_the_marks_off"), false, t).clicked()
+            {
+                acts.push(Act::ClearFormatting);
+            }
+        });
+        ui.horizontal(|ui| {
+            if mark_button(ui, Mark::Bold, crate::tl_id!("ui.bold"), crate::tl_id!("ui.bold_ctrl_b"), view.marks.bold, t).clicked() {
+                acts.push(Act::Mark("bold"));
+            }
+            if mark_button(ui, Mark::Italic, crate::tl_id!("ui.italic"), crate::tl_id!("ui.italic_ctrl_i"), view.marks.italic, t).clicked() {
+                acts.push(Act::Mark("italic"));
+            }
+            if mark_button(ui, Mark::Underline, crate::tl_id!("ui.underline"), crate::tl_id!("ui.underline"), view.marks.underline, t).clicked() {
+                acts.push(Act::Mark("underline"));
+            }
+            if mark_button(ui, Mark::Strike, crate::tl_id!("ui.strikethrough"), crate::tl_id!("ui.strike_through"), view.marks.strike, t).clicked() {
+                acts.push(Act::Mark("strike"));
+            }
+            // i18n-exempt: x2 is the compact mathematical symbol for subscript.
+            if small(ui, None, "x2", crate::tl_id!("ui.subscript"), crate::tl_id!("ui.subscript"), view.marks.subscript, t).clicked() {
+                acts.push(Act::Mark("subscript"));
+            }
+            // i18n-exempt: x^2 is the compact mathematical symbol for superscript.
+            if small(ui, None, "x^2", crate::tl_id!("ui.superscript"), crate::tl_id!("ui.superscript"), view.marks.superscript, t).clicked() {
+                acts.push(Act::Mark("superscript"));
+            }
+            colour_palette(ui, true, view.text_highlight, view.text_highlight_mixed, t, acts);
+            colour_palette(ui, false, view.text_colour, view.text_colour_mixed, t, acts);
+            align_menu(ui, t, acts);
+            if small(ui, Some(Icon::Quote), "", crate::tl_id!("ui.quote_2"), crate::tl_id!("ui.quote_this_paragraph"), false, t).clicked() {
+                acts.push(Act::Block("quote"));
+            }
+            if small(ui, Some(Icon::Link), "", crate::tl_id!("ui.link"), crate::tl_id!("ui.a_link"), false, t).clicked() {
+                acts.push(Act::Insert("link"));
+            }
+            if small(ui, Some(Icon::Code), "", crate::tl_id!("ui.code_2"), crate::tl_id!("ui.code_in_one_line"), false, t).clicked() {
+                acts.push(Act::Mark("code"));
+            }
+            page_setup_menu(ui, t, acts);
+            run_direction_menu(ui, t, acts);
+        });
+    });
+}
+
+/// Keep page and paragraph direction reachable from a secondary Home control.
+fn page_setup_menu(ui: &mut Ui, t: &Tokens, acts: &mut Vec<Act>) {
+    let label = crate::tl_id!("ui.page_setup");
+    let response = small_labeled_icon(ui, Icon::DirLtr, label, label, t);
+    egui::Popup::menu(&response).show(|ui| {
         rows(ui, |ui| {
             ui.horizontal(|ui| {
                 scope_label(ui, crate::tl_id!("ui.page"), t);
@@ -1954,47 +2117,42 @@ fn home_tab(ui: &mut Ui, view: &View<'_>, t: &Tokens, acts: &mut Vec<Act>) {
                     acts.push(Act::Direction(None));
                 }
             });
-            run_direction_menu(ui, t, acts);
         });
     });
-    group(ui, crate::tl_id!("ui.styles"), t, |ui| {
-        gallery(ui, "styles", view.style, t, acts, |ui, acts| {
-            // The box shows two rows, as OneNote's does: the first two, or, when the caret is in
-            // a later style, that one and the next (the last two for the last), so the current
-            // style is in sight. Ordinary text keeps the headings in the box.
-            let first = STYLES.iter().position(|(_, k)| *k == view.style && *k != "p").filter(|i| *i >= 2).map_or(0, |i| i.min(STYLES.len() - 2));
-            for (label, kind) in STYLES.iter().skip(first).take(2) {
-                if style_row(ui, label, kind, *kind == view.style, t).clicked() {
-                    acts.push(Act::Block(leak(kind)));
-                }
-            }
-        });
-    });
-    group(ui, crate::tl_id!("ui.tags"), t, |ui| {
-        gallery(ui, "tags", "", t, acts, |ui, acts| {
-            for tag in [Tag::ToDo, Tag::Important] {
-                if tag_row(ui, tag, t).clicked() {
-                    acts.push(Act::Tag(tag));
-                }
-            }
-        });
-        if big(ui, Icon::Todo, crate::tl_id!("ui.to_do_tag_2"), crate::tl_id!("ui.a_to_do_box_on_this_line_ctrl_1"), t).clicked() {
-            acts.push(Act::Block("todo"));
+}
+
+/// Both Paste controls dispatch the same commands and show the same paste options.
+fn paste_buttons(ui: &mut Ui, paste: egui::Response, options: egui::Response, t: &Tokens, acts: &mut Vec<Act>) {
+    if paste.clicked() {
+        acts.push(Act::Paste);
+    }
+    let popup_id = egui::Popup::default_response_id(&options);
+    let was_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+    if opened_by_keys(&options) && !was_open {
+        ui.data_mut(|d| d.insert_temp(first_choice_id(popup_id), true));
+    }
+    egui::Popup::menu(&options).show(|ui| {
+        picker_title(ui, crate::tl_id!("ui.paste_options"), t);
+        let (rich, plain) = if cfg!(target_os = "macos") { ("Cmd+V", "Cmd+Shift+V") } else { ("Ctrl+V", "Ctrl+Shift+V") };
+        let keep = floating::menu_row_shortcut(ui, Some(Glyph::Mark(Mark::Paste)), crate::tl_id!("ui.keep_source_formatting"), rich, t);
+        first_choice(ui, popup_id, &keep);
+        if keep.clicked() {
+            acts.push(Act::Paste);
+            ui.close();
         }
-        if big(ui, Icon::Search, crate::tl_id!("ui.find_tags_3"), crate::tl_id!("ui.list_the_tagged_notes_and_go_to_them"), t).clicked() {
-            acts.push(Act::FindTags);
+        // Issue #564: the source's structure and emphasis, in the page's own fonts and colours.
+        if floating::menu_row(ui, None, crate::tl_id!("ui.merge_formatting"), t).clicked() {
+            acts.push(Act::PasteMerge);
+            ui.close();
         }
-    });
-    group(ui, crate::tl_id!("ui.email"), t, |ui| {
-        if big(ui, Icon::Attach, crate::tl_id!("ui.send_page_3"), crate::tl_id!("ui.portable_send_hint"), t).clicked() {
-            acts.push(Act::SendPage);
+        if floating::menu_row_shortcut(ui, None, crate::tl_id!("ui.keep_text_only"), plain, t).clicked() {
+            acts.push(Act::PastePlain);
+            ui.close();
         }
     });
-    group(ui, crate::tl_id!("ui.meetings"), t, |ui| {
-        if big(ui, Icon::Calendar, crate::tl_id!("ui.meeting_details_3"), crate::tl_id!("ui.meeting_details_tip"), t).clicked() {
-            acts.push(Act::MeetingDetails);
-        }
-    });
+    if was_open && !egui::Popup::is_id_open(ui.ctx(), popup_id) && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        options.request_focus();
+    }
 }
 
 /// View > Paper Size (issue #269): Auto or a sheet, which way it is turned, and its margins.
@@ -2086,10 +2244,10 @@ fn leak(kind: &str) -> &'static str {
 /// A gallery like OneNote's: a bordered box with the first entries, and an arrow that opens
 /// the whole list beside it.
 fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &mut Vec<Act>, rows_in_box: impl FnOnce(&mut Ui, &mut Vec<Act>)) {
-    let height = GROUP_H - 20.0;
+    let height = GROUP_H - 28.0;
     let box_rect = egui::Frame::NONE
         .stroke(egui::Stroke::new(1.0, t.faint))
-        .corner_radius(3.0)
+        .corner_radius(egui::CornerRadius { nw: 3, sw: 3, ne: 0, se: 0 })
         .inner_margin(4.0)
         .show(ui, |ui| {
             ui.set_min_size(vec2(130.0, height));
@@ -2104,27 +2262,29 @@ fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &m
     // The button that opens the whole gallery (issue #373): edged as part of the box, with
     // Office's "more" mark (a bar over a chevron), lit under the pointer and ringed for the keyboard,
     // so it reads as the way into the full list and not as a stray strip.
-    let (rect, resp) = ui.allocate_exact_size(vec2(18.0, height), Sense::click());
+    ui.add_space(-ui.spacing().item_spacing.x);
+    let (rect, resp) = ui.allocate_exact_size(vec2(18.0, box_rect.height()), Sense::click());
     let painter = ui.painter_at(rect);
-    painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.0, t.faint), egui::StrokeKind::Inside);
+    let corners = egui::CornerRadius { nw: 0, sw: 0, ne: 3, se: 3 };
+    painter.rect_stroke(rect.shrink(0.5), corners, egui::Stroke::new(1.0, t.faint), egui::StrokeKind::Inside);
     if resp.hovered() || resp.has_focus() {
-        painter.rect_filled(rect.shrink(1.0), 3.0, t.row_hover);
+        painter.rect_filled(rect.shrink(1.0), corners, t.row_hover);
     }
     if resp.has_focus() {
-        painter.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+        painter.rect_stroke(rect.shrink(0.5), corners, egui::Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
     }
     let ink = if ui.is_enabled() { t.text } else { t.muted };
-    let c = egui::pos2(rect.center().x, rect.max.y - 9.0);
+    let c = rect.center() + vec2(0.0, 2.0);
     painter.line_segment([egui::pos2(c.x - 4.0, c.y - 5.0), egui::pos2(c.x + 4.0, c.y - 5.0)], egui::Stroke::new(1.4, ink));
     painter.line_segment([egui::pos2(c.x - 4.0, c.y - 2.0), c], egui::Stroke::new(1.4, ink));
     painter.line_segment([c, egui::pos2(c.x + 4.0, c.y - 2.0)], egui::Stroke::new(1.4, ink));
     let enabled = ui.is_enabled();
-    let name = if which == crate::tl_id!("ui.styles_2") { crate::tl_id!("ui.more_styles") } else { crate::tl_id!("ui.more_tags") };
+    let name = if which == "styles" { crate::tl_id!("ui.more_styles") } else { crate::tl_id!("ui.more_tags") };
     resp.widget_info(move || egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
     let resp = resp.on_hover_text(name);
     // The list opens over the box it belongs to, as OneNote's galleries do: same left edge,
     // same top, so the two rows in the box are the first two rows of the list.
-    let open_id = egui::Id::new(("ribbon-gallery", which));
+    let open_id = ui.id().with(("ribbon-gallery", which));
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
     if resp.clicked() {
         open = !open;
@@ -2144,27 +2304,11 @@ fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &m
                     ui.set_min_width(box_rect.width().max(210.0));
                     ui.spacing_mut().item_spacing = vec2(2.0, 1.0);
                     if which == "styles" {
-                        picker_title(ui, crate::tl_id!("ui.styles"), t);
-                        let has_current = STYLES.iter().any(|(_, k)| *k == current);
-                        for (n, (label, kind)) in STYLES.into_iter().enumerate() {
-                            let row = style_row(ui, label, kind, kind == current, t);
-                            if kind == current || (!has_current && n == 0) {
-                                first_choice(ui, open_id, &row);
-                            }
-                            if row.clicked() {
-                                acts.push(Act::Block(leak(kind)));
-                                picked = true;
-                            }
-                        }
-                        floating::menu_separator(ui, t);
-                        if floating::menu_row(ui, Some(Glyph::Mark(Mark::ClearFormat)), crate::tl_id!("ui.clear_formatting_2"), t).clicked() {
-                            acts.push(Act::ClearFormatting);
-                            picked = true;
-                        }
+                        picked = style_choices(ui, open_id, current, t, acts);
                     } else {
                         picker_title(ui, crate::tl_id!("ui.tags"), t);
                         for (n, tag) in Tag::all().into_iter().enumerate() {
-                            let row = tag_row(ui, tag, t);
+                            let row = tag_row(ui, tag, 24.0, t);
                             if n == 0 {
                                 first_choice(ui, open_id, &row);
                             }
@@ -2191,6 +2335,26 @@ fn gallery(ui: &mut Ui, which: &'static str, current: &str, t: &Tokens, acts: &m
         }
     }
     ui.data_mut(|d| d.insert_temp(open_id, open));
+}
+
+fn style_choices(ui: &mut Ui, open_id: egui::Id, current: &str, t: &Tokens, acts: &mut Vec<Act>) -> bool {
+    picker_title(ui, crate::tl_id!("ui.styles"), t);
+    let before = acts.len();
+    let has_current = STYLES.iter().any(|(_, kind)| *kind == current);
+    for (n, (label, kind)) in STYLES.into_iter().enumerate() {
+        let row = style_row(ui, label, kind, kind == current, t);
+        if kind == current || (!has_current && n == 0) {
+            first_choice(ui, open_id, &row);
+        }
+        if row.clicked() {
+            acts.push(Act::Block(leak(kind)));
+        }
+    }
+    floating::menu_separator(ui, t);
+    if floating::menu_row(ui, Some(Glyph::Mark(Mark::ClearFormat)), crate::tl_id!("ui.clear_formatting_2"), t).clicked() {
+        acts.push(Act::ClearFormatting);
+    }
+    acts.len() != before
 }
 
 /// The equations the Equation button offers, each a name and the TeX it puts in the page. They are
@@ -2528,9 +2692,9 @@ fn style_row(ui: &mut Ui, label: &str, kind: &str, current: bool, t: &Tokens) ->
 }
 
 /// One line of the Tags gallery: OneNote's own mark and the name, with its shortcut.
-fn tag_row(ui: &mut Ui, tag: Tag, t: &Tokens) -> egui::Response {
+fn tag_row(ui: &mut Ui, tag: Tag, height: f32, t: &Tokens) -> egui::Response {
     // A fixed width: the gallery box is as wide as its rows, not as wide as the ribbon.
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().clamp(150.0, 230.0), 24.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().clamp(150.0, 230.0), height), Sense::click());
     let painter = ui.painter_at(rect);
     if resp.hovered() || resp.has_focus() {
         painter.rect_filled(rect, 3.0, t.row_hover);
@@ -4190,23 +4354,6 @@ fn swatch_name(colour: Rgb) -> &'static str {
         (0x6a, 0x45, 0x2a) => "brown",
         (0xa9, 0x7c, 0x50) => "tan",
         _ => "custom",
-    }
-}
-
-/// A big button that is drawn but does nothing, for what OneNote has and NoteCraft does
-/// not. It keeps the tab's shape honest: the control is where a OneNote user looks for it,
-/// greyed, saying plainly that it is not here yet rather than being left out.
-/// A small button with an icon and a word, greyed when there is nothing for it to do.
-// i18n-ui-text: label,tip
-fn row_button(ui: &mut Ui, icon: Icon, label: &str, tip: &str, live: bool, t: &Tokens) -> egui::Response {
-    let dim = Tokens { accent: t.muted, text: t.muted, ..*t };
-    let resp = ui.add_enabled_ui(live, |ui| small(ui, Some(icon), "", label, tip, false, if live { t } else { &dim })).inner;
-    if live {
-        resp
-    } else {
-        let label = crate::tl!(label);
-        let action = label.to_lowercase();
-        resp.on_hover_text(crate::i18n::format_message_id("ui.label_nothing_to_action", &[("label", label), ("action", &action)]))
     }
 }
 

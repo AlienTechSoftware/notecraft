@@ -391,6 +391,14 @@ Parameters:
 
 - format (required): html or cmgfm
 
+## `ribbon.layout`
+
+Set the ribbon layout.
+
+Parameters:
+
+- layout (required): classic or simplified
+
 ## `ocr.refresh`
 
 Read the text and boxes of the pictures in a page.

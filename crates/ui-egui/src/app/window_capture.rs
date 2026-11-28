@@ -80,7 +80,7 @@ impl NoteCraftApp {
         let mut child = Self::new(session);
         child.secondary_window = true;
         child.restored = true;
-        child.frameless = false;
+        child.frameless = self.frameless;
         child.ui_scale_pending = false;
         if request.quick {
             child.full_page = true;

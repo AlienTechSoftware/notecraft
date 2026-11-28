@@ -14,6 +14,33 @@ use std::path::{Path, PathBuf};
 
 pub type Params = BTreeMap<String, String>;
 
+pub const RIBBON_LAYOUT_KEY: &str = "ribbon_layout";
+
+/// The saved preference for the ribbon's command layout.
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
+pub enum RibbonLayout {
+    #[default]
+    Classic,
+    Simplified,
+}
+
+impl RibbonLayout {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim() {
+            "classic" => Some(Self::Classic),
+            "simplified" => Some(Self::Simplified),
+            _ => None,
+        }
+    }
+
+    pub fn as_setting(self) -> &'static str {
+        match self {
+            Self::Classic => "classic",
+            Self::Simplified => "simplified",
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum Output {
     Voice(crate::VoiceEffect),
@@ -404,6 +431,12 @@ fn default_format_get(s: &mut Session, _p: &Params) -> Result<Output, EngineErro
 
 fn default_format_set(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
     s.settings.set_default_format(PageFormat::parse(req(p, "format")?)?)?;
+    Ok(Output::None)
+}
+
+fn ribbon_layout_set(s: &mut Session, p: &Params) -> Result<Output, EngineError> {
+    let layout = RibbonLayout::parse(req(p, "layout")?).ok_or_else(|| EngineError::BadParam("layout must be classic or simplified".into()))?;
+    s.settings.set(RIBBON_LAYOUT_KEY, layout.as_setting())?;
     Ok(Output::None)
 }
 
@@ -1082,6 +1115,13 @@ blocks (optional): the justified paragraphs' positions among the page's blocks, 
         run: default_format_set,
     },
     CommandSpec {
+        id: "ribbon.layout",
+        label: "Set the ribbon layout",
+        params: "layout (required): classic or simplified",
+        changes_tree: false,
+        run: ribbon_layout_set,
+    },
+    CommandSpec {
         id: "ocr.refresh",
         label: "Read the text and boxes of the pictures in a page",
         params: "path (required): the page, relative to the notebooks folder
@@ -1283,6 +1323,19 @@ mod tests {
         let _ = second;
         let again = Session::new(&t.path().join("notebooks"), s.settings.clone()).expect("again");
         assert_eq!(titles(&again), ["Gamma", "Beta", "Alpha"], "and it is remembered");
+    }
+
+    #[test]
+    fn ribbon_layout_command_persists_the_selected_layout_only() {
+        let t = TempDir::new("ribbon-layout-command");
+        let mut s = session(&t);
+        let layout = |value| p(&[("layout", value)]);
+        s.run("ribbon.layout", &layout("simplified")).expect("select Simplified");
+        assert_eq!(session(&t).settings.get("ribbon_layout").as_deref(), Some("simplified"));
+        assert!(s.run("ribbon.layout", &layout("unknown")).is_err());
+        assert_eq!(session(&t).settings.get("ribbon_layout").as_deref(), Some("simplified"));
+        s.run("ribbon.layout", &layout("classic")).expect("restore Classic");
+        assert_eq!(session(&t).settings.get("ribbon_layout").as_deref(), Some("classic"));
     }
 
     #[test]

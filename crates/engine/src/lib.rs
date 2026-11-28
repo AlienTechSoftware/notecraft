@@ -18,7 +18,7 @@ mod session;
 mod voice;
 pub mod watch;
 
-pub use commands::{CommandSpec, Output, Params, PictureTextError, picture_text, registry};
+pub use commands::{CommandSpec, Output, Params, PictureTextError, RIBBON_LAYOUT_KEY, RibbonLayout, picture_text, registry};
 pub use error::EngineError;
 pub use json::{commands_json, output_json, params_from_json};
 pub use session::Session;
