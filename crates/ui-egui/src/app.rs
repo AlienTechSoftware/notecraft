@@ -4676,8 +4676,7 @@ impl NoteCraftApp {
             if let Err(e) = self.session.run("ocr.refresh", &params(&[("path", &page)])) {
                 log::warn!("picture text was not read for {page}: {e:?}");
                 // The user asked for this, so the failure is shown, not only logged.
-                // DIAGNOSTIC (temporary): the real error, until the browser's OCR is confirmed.
-                self.complain(&format!("OCR error: {e:?}"));
+                self.complain(crate::tl_id!("ui.image_text_read_failed"));
             }
         }
     }
