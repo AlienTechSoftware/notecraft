@@ -131,7 +131,9 @@ impl OcrsReader {
 
     /// Reads the printed-text lines of one picture, in reading order (criteria A1 and A3).
     pub fn read_image(&self, path: &Path) -> Result<Vec<Line>, OcrError> {
-        let decoded = image::open(path).map_err(|e| OcrError::Decode(format!("{}: {e}", path.display())))?;
+        // The bytes come through std::fs (the browser build's files on the web), then are decoded in memory.
+        let bytes = std::fs::read(path).map_err(|e| OcrError::Io(format!("{}: {e}", path.display())))?;
+        let decoded = image::load_from_memory(&bytes).map_err(|e| OcrError::Decode(format!("{}: {e}", path.display())))?;
         let (width, height) = decoded.dimensions();
         let rgb = decoded.into_rgb8();
         let source = ocrs::ImageSource::from_bytes(rgb.as_raw(), (width, height)).map_err(|e| OcrError::Decode(e.to_string()))?;
@@ -200,7 +202,7 @@ pub fn refresh_companion(reader: &dyn PictureReader, picture: &Path) -> Result<R
     }
     let lines = reader.read_picture(picture)?;
     // The reader has already decoded the picture; a size the header does not give is recorded as zero.
-    let (width, height) = image::image_dimensions(picture).unwrap_or((0, 0));
+    let (width, height) = picture_size(picture).unwrap_or((0, 0));
     let json = ocr_json(picture, &hash, width, height, &lines);
     write_replacing(&ocr_json_path(picture), json.as_bytes())?;
     Ok(Refresh::Rewritten)
@@ -255,6 +257,12 @@ fn saved_for(picture: &Path, hash: &str) -> Option<Saved> {
         return None;
     }
     parse_saved(&value)
+}
+
+/// The size of a picture, read from its header, through the same files as the rest of the reader.
+fn picture_size(picture: &Path) -> Option<(u32, u32)> {
+    let bytes = std::fs::read(picture).ok()?;
+    image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?.into_dimensions().ok()
 }
 
 /// Reads a file the website serves, as bytes: a synchronous request, so the bytes come back in the
