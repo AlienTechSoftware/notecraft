@@ -107,6 +107,19 @@ impl OcrsReader {
         Ok(OcrsReader { ocr })
     }
 
+    /// Loads the detection and recognition models from their bytes. This is how the web and Android
+    /// builds read the models, which they cannot open from a folder on disk.
+    pub fn from_model_bytes(detection: &[u8], recognition: &[u8]) -> Result<OcrsReader, OcrError> {
+        let load = |bytes: &[u8], which: &str| rten::Model::load(bytes.to_vec()).map_err(|e| OcrError::Model(format!("{which}: {e}")));
+        let ocr = ocrs::OcrEngine::new(ocrs::OcrEngineParams {
+            detection_model: Some(load(detection, "detection")?),
+            recognition_model: Some(load(recognition, "recognition")?),
+            ..Default::default()
+        })
+        .map_err(|e| OcrError::Engine(e.to_string()))?;
+        Ok(OcrsReader { ocr })
+    }
+
     /// Reads the printed-text lines of one picture, in reading order (criteria A1 and A3).
     pub fn read_image(&self, path: &Path) -> Result<Vec<Line>, OcrError> {
         let decoded = image::open(path).map_err(|e| OcrError::Decode(format!("{}: {e}", path.display())))?;
@@ -356,6 +369,13 @@ fn overlaps_vertically(a: &Piece, b: &Piece) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The byte loader reports a bad model as an error the app can show, and never panics.
+    #[test]
+    fn models_from_bytes_that_are_not_models_are_an_error() {
+        let result = OcrsReader::from_model_bytes(b"not a model", b"not a model either");
+        assert!(matches!(result, Err(OcrError::Model(_))), "bad bytes are a model error");
+    }
     use std::cell::Cell;
 
     /// A reader that counts its calls and returns one fixed line. It needs no model files.

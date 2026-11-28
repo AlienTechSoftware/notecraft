@@ -165,6 +165,35 @@ mod tests {
         assert_eq!(ocr_json_path(Path::new("/page/assets/x.png")), PathBuf::from("/page/assets/x.png.ocr.json"));
     }
 
+    /// The (👁️) opener appears when the pointer is near a picture, and not otherwise.
+    #[test]
+    fn the_opener_shows_when_the_pointer_is_near_the_picture() {
+        let page = Path::new("/page");
+        let picture = Path::new("/page/assets/x.png");
+        let rect = Rect::from_min_size(pos2(100.0, 100.0), vec2(200.0, 150.0));
+        let tokens = crate::theme::Theme::DEFAULT.tokens();
+        let area = Id::new(("image-text-menu", page.to_path_buf(), 0usize));
+        let run = |pointer: Option<Pos2>| {
+            let ctx = egui::Context::default();
+            crate::fonts::install_once(&ctx);
+            let mut input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(800.0, 600.0))), ..Default::default() };
+            if let Some(p) = pointer {
+                input.events.push(egui::Event::PointerMoved(p));
+            }
+            let mut acts = Vec::new();
+            // Two frames: the pointer position is known from the first.
+            for _ in 0..2 {
+                let mut output = ctx.run_ui(input.clone(), |ui| {
+                    menu(ui, rect, page, 0, picture, "assets/x.png", &mut acts, &tokens);
+                });
+                output.textures_delta.clear();
+            }
+            ctx.memory(|m| m.area_rect(area)).is_some()
+        };
+        assert!(run(Some(pos2(105.0, 95.0))), "the opener shows with the pointer just outside the picture's corner");
+        assert!(!run(Some(pos2(600.0, 500.0))), "and stays hidden with the pointer far away");
+    }
+
     #[test]
     fn the_overlay_is_per_block_and_off_by_default() {
         let ctx = egui::Context::default();
