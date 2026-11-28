@@ -1829,6 +1829,8 @@ pub struct NoteCraftApp {
     /// True when the window has no frame of the system's own (the app asked for none), so
     /// the band across the top draws the window's buttons and moves and resizes it.
     frameless: bool,
+    /// Whether the title band offers Close. A conflicted page cannot be closed until resolved.
+    close_allowed: bool,
     editor: Option<Editor>,
     dialog: Option<Dialog>,
     import_job: Option<ImportJob>,
@@ -2173,6 +2175,7 @@ impl NoteCraftApp {
             dock_when_shown: None,
             dock_pending: false,
             frameless: false,
+            close_allowed: true,
             editor: None,
             dialog: if privacy_welcome {
                 Some(Dialog::FirstUseWizard { step: 0, level: wizard_level, format: wizard_format, add_demo: true, error: None })
@@ -6551,7 +6554,8 @@ impl NoteCraftApp {
     fn window_buttons(&self, ui: &mut Ui, on: &Tokens) {
         let ctx = ui.ctx().clone();
         let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-        for kind in ["Close", "Maximize", "Minimize"] {
+        // A conflicted page cannot be closed yet, so its screen offers no Close (review of #600).
+        for kind in ["Close", "Maximize", "Minimize"].into_iter().filter(|k| self.close_allowed || *k != "Close") {
             let (rect, resp) = ui.allocate_exact_size(vec2(46.0, 30.0), Sense::click());
             let painter = ui.painter_at(rect);
             if resp.hovered() {
@@ -7252,13 +7256,6 @@ impl NoteCraftApp {
 
     /// The ribbon under the title row: tabs and their groups.
     fn ribbon_bar(&mut self, ui: &mut Ui) {
-        // Issue #515: Alt and the letter a tab is marked with opens that tab.
-        let alt_tab = ui.ctx().input(|i| {
-            i.events.iter().find_map(|e| match e {
-                egui::Event::Key { key, pressed: true, modifiers, .. } if modifiers.alt => ribbon::tab_for_key(single_letter(key)?),
-                _ => None,
-            })
-        });
         // Alt+F opens the File backstage, as the File tab does (issue #515).
         if ui.ctx().input(|i| {
             i.events
@@ -7267,6 +7264,24 @@ impl NoteCraftApp {
         }) {
             self.ribbon_act(ribbon::Act::File);
         }
+        // Issue #515: Alt and the letter a tab is marked with opens that tab. The letter is dropped
+        // from the text, so Alt+letter never types into the page (review of #599).
+        let alt_key = ui.ctx().input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::Key { key, pressed: true, modifiers, .. } if modifiers.alt => single_letter(key),
+                _ => None,
+            })
+        });
+        if let Some(letter) = alt_key {
+            let typed = letter.to_string();
+            ui.ctx().input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Text(s) if s.eq_ignore_ascii_case(&typed))));
+        }
+        // Table and Source open only while they are there (review of #600).
+        let alt_tab = alt_key.and_then(ribbon::tab_for_key).filter(|name| match *name {
+            "Table" => self.caret_in_table(),
+            ribbon::SOURCE_TAB => self.show_source,
+            _ => true,
+        });
         if let Some(name) = alt_tab {
             self.ribbon_tab = name.to_owned();
             // Folded, the tab opens over the page as a peek; expanded, it is already shown.
@@ -18646,10 +18661,16 @@ mod keep_boxes_tests {
         let mut text = std::fs::read_to_string(&file).expect("read the page");
         text.push_str("\n<p>changed elsewhere</p>\n");
         std::fs::write(&file, text).expect("write the page");
-        h.run_steps(3);
+        // Poll for the debounced file change rather than waiting a fixed count of frames (review of #600).
+        for _ in 0..200 {
+            h.run_steps(1);
+            if h.state().page_conflict {
+                break;
+            }
+        }
         assert!(h.state().page_conflict, "a dirty window whose page changed on disk is in conflict");
         assert!(h.query_all_by_label("Minimize").next().is_some(), "Minimize is on the conflict screen");
-        assert!(h.query_all_by_label("Close").next().is_some(), "Close is on the conflict screen");
+        assert!(h.query_all_by_label("Close").next().is_none(), "Close is not offered while the conflict is open");
     }
     #[test]
     fn alt_and_each_tab_letter_opens_its_tab() {

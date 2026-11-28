@@ -352,7 +352,9 @@ impl NoteCraftApp {
         // A window that draws its own frame keeps its title band, with its window controls, so it
         // can still be moved, minimized and closed on this screen (review of #599).
         if self.frameless {
+            self.close_allowed = false;
             self.title_band(ui, false);
+            self.close_allowed = true;
         }
         ui.vertical_centered(|ui| {
             ui.add_space(24.0);
