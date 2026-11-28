@@ -342,11 +342,24 @@ pub fn ocr_json_path(picture: &Path) -> PathBuf {
 /// Counts names for temporary files, so two writers never share one.
 static TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// Tells this process's temporary files apart from another process's. The browser has no process
+/// ids (its `std` panics on them), and it runs one process, so a fixed tag is enough there.
+fn process_tag() -> u32 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::process::id()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0
+    }
+}
+
 fn write_replacing(path: &Path, bytes: &[u8]) -> Result<(), OcrError> {
     // A name unique to this process and call, so concurrent writers cannot install each other's bytes.
     let n = TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".tmp-{}-{n}", std::process::id()));
+    name.push(format!(".tmp-{}-{n}", process_tag()));
     let temp = path.with_file_name(name);
     std::fs::write(&temp, bytes).map_err(|e| OcrError::Io(format!("{}: {e}", temp.display())))?;
     std::fs::rename(&temp, path).map_err(|e| {
